@@ -1,0 +1,148 @@
+TARGET_NAME := johnny_castaway
+platform ?= unix
+BUILD_DIR := build/$(platform)
+
+SOURCES := src/jc_content.c src/jc_core.c src/jc_decompress.c src/jc_palette.c \
+           src/jc_resource_map.c src/jc_scr.c src/jc_surface.c src/libretro_core.c
+OBJECTS := $(patsubst %.c,$(BUILD_DIR)/%.o,$(SOURCES))
+INCLUDES := -Iinclude -Iexternal/libretro-common/include
+WARNINGS := -Wall -Wextra -Wpedantic
+COMMON_CFLAGS := -std=c99 $(WARNINGS) $(INCLUDES) -fvisibility=hidden
+OPTFLAGS ?= -O2
+STATIC_LINKING := 0
+
+ifeq ($(platform),unix)
+  detected_os := $(shell uname -s)
+  ifeq ($(detected_os),Darwin)
+    override platform := osx
+  else
+    override platform := linux_x86_64
+  endif
+  BUILD_DIR := build/$(platform)
+  OBJECTS := $(patsubst %.c,$(BUILD_DIR)/%.o,$(SOURCES))
+endif
+
+ifeq ($(platform),linux_x86_64)
+  CC := gcc
+  TARGET := $(BUILD_DIR)/$(TARGET_NAME)_libretro.so
+  PLATFORM_CFLAGS := -fPIC
+  SHARED := -shared
+else ifeq ($(platform),linux_aarch64)
+  CC := aarch64-linux-gnu-gcc
+  TARGET := $(BUILD_DIR)/$(TARGET_NAME)_libretro.so
+  PLATFORM_CFLAGS := -fPIC
+  SHARED := -shared
+else ifeq ($(platform),linux_armv7)
+  CC := arm-linux-gnueabihf-gcc
+  TARGET := $(BUILD_DIR)/$(TARGET_NAME)_libretro.so
+  PLATFORM_CFLAGS := -fPIC -march=armv7-a
+  SHARED := -shared
+else ifeq ($(platform),mingw_x86_64)
+  CC := x86_64-w64-mingw32-gcc
+  TARGET := $(BUILD_DIR)/$(TARGET_NAME)_libretro.dll
+  PLATFORM_CFLAGS := -D_WIN32_WINNT=0x0601
+  SHARED := -shared -static-libgcc
+else ifeq ($(platform),mingw_x86)
+  CC := i686-w64-mingw32-gcc
+  TARGET := $(BUILD_DIR)/$(TARGET_NAME)_libretro.dll
+  PLATFORM_CFLAGS := -D_WIN32_WINNT=0x0601
+  SHARED := -shared -static-libgcc
+else ifeq ($(platform),osx)
+  CC := clang
+  TARGET := $(BUILD_DIR)/$(TARGET_NAME)_libretro.dylib
+  PLATFORM_CFLAGS := -fPIC
+  SHARED := -dynamiclib
+else ifeq ($(platform),emscripten)
+  CC := emcc
+  AR := emar
+  TARGET := $(BUILD_DIR)/$(TARGET_NAME)_libretro_emscripten.bc
+  PLATFORM_CFLAGS := -DEMSCRIPTEN
+  STATIC_LINKING := 1
+else ifeq ($(platform),psp1)
+  CC := psp-gcc
+  AR := psp-ar
+  TARGET := $(BUILD_DIR)/$(TARGET_NAME)_libretro.a
+  PLATFORM_CFLAGS := -G0 -DPSP
+  STATIC_LINKING := 1
+else ifeq ($(platform),vita)
+  CC := arm-vita-eabi-gcc
+  AR := arm-vita-eabi-ar
+  TARGET := $(BUILD_DIR)/$(TARGET_NAME)_libretro.a
+  PLATFORM_CFLAGS := -DVITA
+  STATIC_LINKING := 1
+else ifeq ($(platform),ctr)
+  CC := $(DEVKITARM)/bin/arm-none-eabi-gcc
+  AR := $(DEVKITARM)/bin/arm-none-eabi-ar
+  TARGET := $(BUILD_DIR)/$(TARGET_NAME)_libretro.a
+  PLATFORM_CFLAGS := -D_3DS -DARM11 -march=armv6k -mtune=mpcore -mfloat-abi=hard
+  STATIC_LINKING := 1
+else ifeq ($(platform),ps2)
+  CC := mips64r5900el-ps2-elf-gcc
+  AR := mips64r5900el-ps2-elf-ar
+  TARGET := $(BUILD_DIR)/$(TARGET_NAME)_libretro.a
+  PLATFORM_CFLAGS := -DPS2 -G0
+  STATIC_LINKING := 1
+else
+  $(error Unsupported platform '$(platform)'; see docs/PORTING_PLAN.md)
+endif
+
+override CFLAGS := $(OPTFLAGS) $(COMMON_CFLAGS) $(PLATFORM_CFLAGS) $(CFLAGS)
+
+all: $(TARGET)
+
+$(TARGET): $(OBJECTS)
+	@mkdir -p $(dir $@)
+ifeq ($(STATIC_LINKING),1)
+	$(AR) rcs $@ $(OBJECTS)
+else
+	$(CC) $(SHARED) -o $@ $(OBJECTS) $(LDFLAGS) $(LDLIBS)
+endif
+
+$(BUILD_DIR)/%.o: %.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -MMD -MP -c -o $@ $<
+
+TEST_TARGET := build/tests/test_core
+MAP_TEST_TARGET := build/tests/test_resource_map
+GRAPHICS_TEST_TARGET := build/tests/test_graphics
+LIBRETRO_TEST_TARGET := build/tests/test_libretro
+$(TEST_TARGET): src/jc_core.c tests/test_core.c include/jc_core.h
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c99 $(WARNINGS) -Iinclude -O2 -o $@ src/jc_core.c tests/test_core.c
+
+$(MAP_TEST_TARGET): src/jc_resource_map.c tests/test_resource_map.c include/jc_resource_map.h
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c99 $(WARNINGS) -Iinclude -O2 -o $@ src/jc_resource_map.c tests/test_resource_map.c
+
+$(GRAPHICS_TEST_TARGET): src/jc_decompress.c src/jc_scr.c src/jc_surface.c tests/test_graphics.c
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c99 $(WARNINGS) -Iinclude -O2 -o $@ \
+		src/jc_decompress.c src/jc_scr.c src/jc_surface.c tests/test_graphics.c
+
+$(LIBRETRO_TEST_TARGET): $(SOURCES) tests/test_libretro.c
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c99 $(WARNINGS) -Iinclude \
+		-Iexternal/libretro-common/include -O2 -o $@ $(SOURCES) tests/test_libretro.c
+
+HOST_CC ?= cc
+test: $(TEST_TARGET) $(MAP_TEST_TARGET) $(GRAPHICS_TEST_TARGET) $(LIBRETRO_TEST_TARGET)
+	./$(TEST_TARGET)
+	./$(MAP_TEST_TARGET)
+	./$(GRAPHICS_TEST_TARGET)
+	./$(LIBRETRO_TEST_TARGET)
+
+INSPECT_TARGET := build/tools/jc_inspect
+$(INSPECT_TARGET): src/jc_content.c src/jc_resource_map.c tools/jc_inspect.c
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c99 $(WARNINGS) -Iinclude \
+		-Iexternal/libretro-common/include -O2 -o $@ \
+		src/jc_content.c src/jc_resource_map.c tools/jc_inspect.c
+
+inspect: $(INSPECT_TARGET)
+
+clean:
+	rm -rf build
+
+-include $(OBJECTS:.o=.d)
+
+.PHONY: all clean inspect test

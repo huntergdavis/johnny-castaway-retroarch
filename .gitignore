@@ -1,0 +1,11 @@
+/build/
+/dist/
+*.o
+*.a
+*.so
+*.dll
+*.dylib
+*.log
+RESOURCE.MAP
+RESOURCE.001
+sound*.wav
