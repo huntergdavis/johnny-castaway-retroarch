@@ -32,9 +32,9 @@ The optional ocean design identifies BigSoundBank sound 0266, “Sea: Waves,” 
 as CC0/public domain at <https://bigsoundbank.com/sea-waves-s0266.html>. The PS1 port's
 derived `OCEAN.VAG` has SHA-256
 `b9eeae5a7f42545ad7fe99701c248c07e8b4c0ad0ab17bb86420f36ea97259c2`.
-This repository currently contains only its source/license/hash/playback metadata, not
-the recording or derived VAG binary. If the asset is added later, this notice must ship
-with it.
+The exact derived VAG is embedded in `src/jc_ocean_vag.inc` and therefore in core
+binaries. The dedicated redistribution notice is
+`docs/licenses/BigSoundBank-0266-CC0.md`; it must ship with binary distributions.
 
 ## libretro API header
 
@@ -79,4 +79,5 @@ copied, translated, or linked. The project is therefore not a dependency of this
 
 Sierra/Dynamix content is not licensed under this repository's GPL. Users provide their
 own original data at runtime. Building or distributing this core does not grant a right
-to redistribute the original data, characters, artwork, animation, or audio.
+to redistribute the original data, characters, artwork, animation, or audio. The CC0
+ocean ambience documented above is not Sierra/Dynamix content.

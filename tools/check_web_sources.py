@@ -24,6 +24,7 @@ REQUIRED_FILES = (
     "web/style.css",
     "web/WEB_PLAYER_NOTICE.md",
     "web/licenses/BrowserFS-license.md",
+    "docs/licenses/BigSoundBank-0266-CC0.md",
 )
 
 

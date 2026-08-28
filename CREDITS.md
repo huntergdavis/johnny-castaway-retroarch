@@ -77,8 +77,8 @@ ship with the generated player and are recorded below.
 
 - BigSoundBank sound 0266, [“Sea: Waves”](https://bigsoundbank.com/sea-waves-s0266.html),
   is the CC0/public-domain recording from which the PS1 port made its seamless ocean
-  loop. This repository currently records the asset's provenance and playback settings
-  but does not distribute the audio binary.
+  loop. The exact PS1-derived VAG is embedded in this core; its checksum and dedicated
+  redistribution notice are in `docs/licenses/BigSoundBank-0266-CC0.md`.
 - The expanded holiday calendar uses the public Meeus/Jones/Butcher Gregorian Easter
   calculation, following the attribution in the PlayStation port.
 

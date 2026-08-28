@@ -94,7 +94,7 @@ The default revisions are pinned:
 - RetroArch `96a1b1a9cf3f9166affcfd7df4323aa58d5c281a`
 - retroarch-assets `73106363e14e34c08a5854b4cfbc29f184e3b783`
 
-Every generated distribution contains `BUILD-PROVENANCE.txt`, the project and
+Every generated distribution contains `BUILD-PROVENANCE.txt`, the project, CC0 ocean, and
 upstream license texts, and `WEB_PLAYER_NOTICE.md`. The notice identifies the
 exact upstream files from which the launcher and build process were derived.
 

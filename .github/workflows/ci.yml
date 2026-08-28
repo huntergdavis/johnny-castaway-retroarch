@@ -83,6 +83,7 @@ jobs:
             CREDITS.md
             docs/PROVENANCE.md
             docs/THIRD_PARTY_NOTICES.md
+            docs/licenses/BigSoundBank-0266-CC0.md
           if-no-files-found: error
           retention-days: 14
 
@@ -123,6 +124,7 @@ jobs:
             CREDITS.md
             docs/PROVENANCE.md
             docs/THIRD_PARTY_NOTICES.md
+            docs/licenses/BigSoundBank-0266-CC0.md
           if-no-files-found: error
           retention-days: 14
 
@@ -174,6 +176,7 @@ jobs:
             CREDITS.md
             docs/PROVENANCE.md
             docs/THIRD_PARTY_NOTICES.md
+            docs/licenses/BigSoundBank-0266-CC0.md
             docs/WEB_TESTING.md
           if-no-files-found: error
           retention-days: 14

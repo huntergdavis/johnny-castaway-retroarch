@@ -117,6 +117,8 @@ cp "${project_root}/web/style.css" "${staging_dir}/"
 cp "${project_root}/web/WEB_PLAYER_NOTICE.md" "${staging_dir}/"
 cp "${project_root}/web/licenses/BrowserFS-license.md" "${staging_dir}/licenses/"
 cp "${project_root}/LICENSE" "${staging_dir}/licenses/johnny-castaway-retroarch-GPL-3.0"
+cp "${project_root}/docs/licenses/BigSoundBank-0266-CC0.md" \
+    "${staging_dir}/licenses/"
 cp "${retroarch_dir}/COPYING" "${staging_dir}/licenses/RetroArch-GPL-3.0"
 cp "${assets_dir}/COPYING" "${staging_dir}/licenses/retroarch-assets-CC-BY-4.0"
 

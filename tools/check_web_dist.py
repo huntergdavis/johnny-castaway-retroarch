@@ -21,6 +21,7 @@ REQUIRED_FILES = (
     "WEB_PLAYER_NOTICE.md",
     "licenses/BrowserFS-license.md",
     "licenses/johnny-castaway-retroarch-GPL-3.0",
+    "licenses/BigSoundBank-0266-CC0.md",
     "licenses/RetroArch-GPL-3.0",
     "licenses/retroarch-assets-CC-BY-4.0",
 )
