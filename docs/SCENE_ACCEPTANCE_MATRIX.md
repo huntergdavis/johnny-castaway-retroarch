@@ -78,6 +78,11 @@ user-owned data:
 make authentic-test CONTENT=/absolute/path/to/RESOURCE.MAP
 ```
 
+The combined command writes ordered sound metadata to
+`build/scene-sound-events.csv` and production visual signatures to
+`build/scene-visual-results.csv`. Both paths are ignored build evidence and
+contain no sample bytes, screenshots, or decoded pixels.
+
 Run only the production visual sweep with:
 
 ```sh

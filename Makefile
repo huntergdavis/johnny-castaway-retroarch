@@ -487,7 +487,8 @@ authentic-visual-test: $(AUTHENTIC_VISUAL_TEST_TARGET)
 authentic-test: $(AUTHENTIC_TEST_TARGET) $(AUTHENTIC_VISUAL_TEST_TARGET)
 	@test -n "$(CONTENT)" || \
 		{ echo "Set CONTENT=/path/to/RESOURCE.MAP" >&2; exit 2; }
-	./$(AUTHENTIC_TEST_TARGET) "$(CONTENT)"
+	./$(AUTHENTIC_TEST_TARGET) "$(CONTENT)" --sound-trace \
+		build/scene-sound-events.csv
 	./$(AUTHENTIC_VISUAL_TEST_TARGET) "$(CONTENT)" --csv \
 		build/scene-visual-results.csv
 
