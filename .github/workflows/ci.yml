@@ -128,6 +128,77 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  apple-cores:
+    name: macOS, iOS, and tvOS cores
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - name: Check out source and libretro-common
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Report pinned runner toolchain
+        run: |
+          uname -a
+          xcodebuild -version
+          xcrun --sdk macosx --show-sdk-path
+          xcrun --sdk iphoneos --show-sdk-path
+          xcrun --sdk iphonesimulator --show-sdk-path
+          xcrun --sdk appletvos --show-sdk-path
+          xcrun --sdk appletvsimulator --show-sdk-path
+
+      - name: Build universal macOS and every Apple device/simulator mapping
+        run: |
+          JOBS=2 ./scripts/build-apple-universal.sh
+          make -j2 platform=ios_arm64 WARNINGS="$STRICT_WARNINGS"
+          make -j2 platform=ios_sim_arm64 WARNINGS="$STRICT_WARNINGS"
+          make -j2 platform=ios_sim_x86_64 WARNINGS="$STRICT_WARNINGS"
+          make -j2 platform=tvos_arm64 WARNINGS="$STRICT_WARNINGS"
+          make -j2 platform=tvos_sim_arm64 WARNINGS="$STRICT_WARNINGS"
+          make -j2 platform=tvos_sim_x86_64 WARNINGS="$STRICT_WARNINGS"
+
+      - name: Check Mach-O architectures and libretro exports
+        shell: bash
+        run: |
+          xcrun lipo -verify_arch x86_64 arm64 build/osx_universal/johnny_castaway_libretro.dylib
+          while IFS=: read -r architecture core; do
+            xcrun lipo -verify_arch "$architecture" "$core"
+            python3 tools/check_core_exports.py --format macho --tool nm "$core"
+          done <<'EOF'
+          arm64:build/ios_arm64/johnny_castaway_libretro_ios.dylib
+          arm64:build/ios_sim_arm64/johnny_castaway_libretro_ios_sim_arm64.dylib
+          x86_64:build/ios_sim_x86_64/johnny_castaway_libretro_ios_sim_x86_64.dylib
+          arm64:build/tvos_arm64/johnny_castaway_libretro_tvos.dylib
+          arm64:build/tvos_sim_arm64/johnny_castaway_libretro_tvos_sim_arm64.dylib
+          x86_64:build/tvos_sim_x86_64/johnny_castaway_libretro_tvos_sim_x86_64.dylib
+          EOF
+          python3 tools/check_core_exports.py \
+            --format macho --tool nm \
+            build/osx_universal/johnny_castaway_libretro.dylib
+
+      - name: Upload Apple cores
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: johnny-castaway-apple-cores
+          path: |
+            build/osx_universal/johnny_castaway_libretro.dylib
+            build/ios_arm64/*.dylib
+            build/ios_sim_arm64/*.dylib
+            build/ios_sim_x86_64/*.dylib
+            build/tvos_arm64/*.dylib
+            build/tvos_sim_arm64/*.dylib
+            build/tvos_sim_x86_64/*.dylib
+            johnny_castaway_libretro.info
+            LICENSE
+            CREDITS.md
+            docs/PROVENANCE.md
+            docs/THIRD_PARTY_NOTICES.md
+            docs/licenses/BigSoundBank-0266-CC0.md
+          if-no-files-found: error
+          retention-days: 14
+
   emscripten-core:
     name: Emscripten core and web source checks
     runs-on: ubuntu-24.04

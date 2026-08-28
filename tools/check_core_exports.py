@@ -67,9 +67,22 @@ def pe_exports(tool: str, binary: pathlib.Path) -> set[str]:
     return set(re.findall(r"\b(retro_[a-z0-9_]+)\s*$", export_table, re.MULTILINE))
 
 
+def macho_exports(tool: str, binary: pathlib.Path) -> set[str]:
+    output = run_tool(tool, ["-gU", str(binary)])
+    exports: set[str] = set()
+    for line in output.splitlines():
+        fields = line.split()
+        if not fields:
+            continue
+        symbol = fields[-1]
+        if symbol.startswith("_retro_"):
+            exports.add(symbol[1:])
+    return exports
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--format", choices=("elf", "pe"), required=True)
+    parser.add_argument("--format", choices=("elf", "pe", "macho"), required=True)
     parser.add_argument("--tool", required=True)
     parser.add_argument("binary", type=pathlib.Path)
     args = parser.parse_args()
@@ -77,11 +90,12 @@ def main() -> int:
     if not args.binary.is_file():
         raise SystemExit(f"export check failed: missing binary: {args.binary}")
 
-    exports = (
-        elf_exports(args.tool, args.binary)
-        if args.format == "elf"
-        else pe_exports(args.tool, args.binary)
-    )
+    if args.format == "elf":
+        exports = elf_exports(args.tool, args.binary)
+    elif args.format == "pe":
+        exports = pe_exports(args.tool, args.binary)
+    else:
+        exports = macho_exports(args.tool, args.binary)
     missing = REQUIRED_EXPORTS - exports
     unexpected = exports - REQUIRED_EXPORTS
     if missing or unexpected:
