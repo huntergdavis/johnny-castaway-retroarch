@@ -66,6 +66,11 @@ Thanks to the RetroArch and libretro contributors for the frontend-independent A
 Core Options specifications, reference headers, and platform ecosystem. The pinned
 dependency and its license are recorded in `docs/THIRD_PARTY_NOTICES.md`.
 
+The local browser test additionally uses the official RetroArch Emscripten frontend,
+RetroArch menu assets, and BrowserFS. John Vilk and the BrowserFS contributors created
+the in-browser filesystem used by the official frontend. Exact revisions and notices
+ship with the generated player and are recorded below.
+
 ## Additional open media and algorithms
 
 - BigSoundBank sound 0266, [“Sea: Waves”](https://bigsoundbank.com/sea-waves-s0266.html),

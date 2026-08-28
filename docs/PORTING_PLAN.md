@@ -86,7 +86,7 @@ Each row advances independently through Build/Load/Run/Regress.
 | 1 | `linux_aarch64`, `linux_armv7` | `.so` | build mapping added |
 | 2 | Android arm64/armv7/x86_64/x86 | `.so` | NDK r22+ mappings and compiler dry-runs pass; real NDK builds/frontend runs pending |
 | 2 | iOS/tvOS | static `.a` | toolchain mapping pending |
-| 2 | `emscripten` | `.bc` static core | wasm objects/archive validated; browser frontend harness in progress |
+| 2 | `emscripten` | `.bc` static core + RetroArch `.js/.wasm` | archive and pinned real-frontend link/dist/HTTP smoke pass; interactive lawful-data run pending |
 | 3 | `psp1`, `vita`, `ctr`, `ps2` | static `.a` | initial compiler mapping added |
 | 3 | Switch, Wii, GameCube, Wii U | static `.a` | devkitPro mappings and compiler dry-runs pass; real toolchain/frontend runs pending |
 | 4 | PS3, Xbox-family, Haiku/BSD/webOS and other buildbot targets | varies | inventory pending |
@@ -103,7 +103,8 @@ contract exists.
    director plans to scene transitions.
 4. Port feasible PS1 additions: captions, 36-holiday calendar, scene explorer previews,
    and the CC0 ocean ambience loop with full attribution.
-5. Complete browser/native RetroArch smoke harnesses, then expand targets one validated
+5. Browser RetroArch build/link/dist/HTTP harness. **Done; interactive lawful-data run
+   remains.** Complete native RetroArch smoke, then expand targets one validated
    compiler/frontend at a time.
 
 The project intentionally adds targets sequentially. A giant untested Makefile is not

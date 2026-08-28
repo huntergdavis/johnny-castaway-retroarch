@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Johnny Castaway — RetroArch Web Test</title>
+    <link rel="stylesheet" href="style.css">
+  </head>
+  <body>
+    <main>
+      <header>
+        <p class="eyebrow">Local RetroArch Web test</p>
+        <h1>Johnny Castaway</h1>
+        <p>
+          Choose your own <code>RESOURCE.MAP</code> and
+          <code>RESOURCE.001</code>. They are read by this page and kept in the
+          browser's in-memory filesystem; the local server never receives them.
+        </p>
+      </header>
+
+      <section class="controls" aria-label="Player controls">
+        <label class="file-picker">
+          <span>Johnny data files</span>
+          <input id="content-files" type="file" accept=".map,.001" multiple>
+        </label>
+        <button id="start" disabled>Start Johnny</button>
+        <button id="menu" disabled>RetroArch menu</button>
+        <button id="reset" disabled>Reset</button>
+        <button id="fullscreen" disabled>Fullscreen</button>
+      </section>
+
+      <p id="status" class="status" role="status">Choose both data files to begin.</p>
+      <div class="screen">
+        <canvas id="canvas" tabindex="0" aria-label="RetroArch video output"></canvas>
+      </div>
+
+      <details>
+        <summary>Testing notes</summary>
+        <ul>
+          <li>The first build is slow because it compiles RetroArch; later builds are incremental.</li>
+          <li>Use “RetroArch menu” to inspect every core option exposed by the port.</li>
+          <li>Audio may require one additional click after browser permission or autoplay prompts.</li>
+          <li>See <a href="WEB_PLAYER_NOTICE.md">credits, licenses, and provenance</a>.</li>
+        </ul>
+      </details>
+    </main>
+
+    <script src="browserfs.min.js"></script>
+    <script type="module" src="jc-web-player.js"></script>
+  </body>
+</html>

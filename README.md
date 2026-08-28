@@ -38,6 +38,17 @@ make test
 The native core is written to `build/linux_x86_64/johnny_castaway_libretro.so`
 on Linux or the corresponding platform directory on macOS.
 
+For a local browser test using a real RetroArch Web frontend:
+
+```sh
+./scripts/build-web-player.sh
+./scripts/serve-web.sh --open
+```
+
+The browser page accepts the user's `.MAP` and `.001` together and keeps both in
+an in-memory filesystem. See `docs/WEB_TESTING.md` for requirements, privacy details,
+the exact pinned RetroArch revisions, automated checks, and known limitations.
+
 List the staged cross targets with:
 
 ```sh
@@ -86,7 +97,10 @@ notices.
 - `external/libretro-common`: pinned official libretro headers
 - `tests/`: host-side deterministic tests
 - `scripts/build-target.sh`: native and cross-build entry point
+- `scripts/build-web-player.sh`, `scripts/serve-web.sh`: pinned local RetroArch Web test
+- `web/`: local two-file launcher and Web-specific license notice
 - `docs/`: architecture decisions and staged port plan
 - `docs/RETROARCH_INTEGRATION.md`: menu/options acceptance checklist
+- `docs/WEB_TESTING.md`: browser build, local server, and test workflow
 - `docs/PROVENANCE.md`: exact upstream revisions and file-by-file reuse record
 - `CREDITS.md`: original creators and open-source lineage

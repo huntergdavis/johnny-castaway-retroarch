@@ -48,6 +48,27 @@ states:
 The complete permission and warranty text remains verbatim at the top of the pinned
 header and must remain included in redistributions of that header.
 
+## Local RetroArch Web test
+
+The optional generated browser test links this core into RetroArch revision
+`96a1b1a9cf3f9166affcfd7df4323aa58d5c281a`, licensed GPLv3. Its launcher/build
+behavior follows that revision's `pkg/emscripten/README.md`,
+`pkg/emscripten/libretro/libretro.js`, and `Makefile.emscripten`. Generated players
+include the complete upstream GPL text.
+
+The generated player packages `ozone/`, `pkg/`, and `sounds/` from retroarch-assets
+revision `73106363e14e34c08a5854b4cfbc29f184e3b783`, licensed CC BY 4.0 and attributed
+to the Libretro/RetroArch contributors. Its complete license is included in generated
+players.
+
+BrowserFS is copyright 2013–2023 John Vilk and other BrowserFS contributors and is
+licensed under the MIT license. The build copies `browserfs.min.js` from the pinned
+RetroArch tree (validated SHA-256
+`a2a2b38cd567dc20cd024e681df55f34f42174c692f553f8350dae171c2b875b`) and ships the
+notice stored at `web/licenses/BrowserFS-license.md`. The BrowserFS Emscripten adapter
+also contains code under the MIT and University of Illinois/NCSA terms identified in
+that notice.
+
 ## Evaluated but not incorporated
 
 The reviewed snapshot of `deckarep/Johnny-Castaway-2026-Public` contained no detected
