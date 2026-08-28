@@ -40,6 +40,13 @@ jobs:
           printf '%s\n' "${archives[@]}"
           test "${#archives[@]}" -eq 8
 
+      - name: Build and validate runnable PSP frontend package
+        env:
+          JOBS: 2
+          PSP_CORE_ARCHIVE: build/console/psp1/johnny_castaway_libretro_psp1.a
+          PSP_FRONTEND_BUILD_DIR: build/psp-frontend
+        run: ./scripts/build-psp-frontend.sh
+
       - name: Upload validated console cores
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -55,3 +62,12 @@ jobs:
             docs/licenses/
           if-no-files-found: error
           retention-days: 14
+
+      - name: Upload runnable PSP frontend package
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: johnny-castaway-psp-frontend
+          path: build/psp-frontend/out/
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 9

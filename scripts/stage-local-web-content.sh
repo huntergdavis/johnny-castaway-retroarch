@@ -4,7 +4,7 @@
 
 set -eu
 
-project_root=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
+project_root=$(CDPATH='' cd -- "$(dirname "$0")/.." && pwd)
 source_directory=${1:-}
 dist_directory=${JC_WEB_DIST:-"$project_root/build/web-player/dist"}
 destination="$dist_directory/local-content"

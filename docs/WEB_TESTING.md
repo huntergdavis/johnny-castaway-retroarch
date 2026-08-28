@@ -169,6 +169,23 @@ Simulated Calendar, and captures the expanded Story menu at its top and bottom.
 The source files are uploaded only to the test browser’s in-memory filesystem;
 all screenshots, logs, and result metadata remain in ignored `build/` output.
 
+After using `scripts/stage-local-web-content.sh`, test the page's automatic
+server-local path without a browser file upload:
+
+```sh
+python3 tools/web_smoke_test.py \
+  --staged-local-content \
+  --artifacts build/web-smoke-staged-local \
+  --require-browser --timeout 180
+```
+
+This mode permits only the resource pair and the 23 supported WAV names beneath
+`local-content/`, validates an isolated copy of the distribution with that private
+directory excluded, and then requires Firefox to fetch and start the staged pair plus
+all 23 WAVs automatically. It does not relax `tools/check_web_dist.py`: run that checker
+only on a pristine distribution, and remove or rebuild away `local-content/` before
+publishing or sharing the Web package.
+
 Firefox's native headless mode did not expose a usable WebGL context in the
 development environment. When no display is already set, the runner therefore
 uses Xvfb and Mesa software rendering automatically. `--no-xvfb` is available
@@ -181,10 +198,11 @@ The default revisions are pinned:
 - RetroArch `96a1b1a9cf3f9166affcfd7df4323aa58d5c281a`
 - retroarch-assets `73106363e14e34c08a5854b4cfbc29f184e3b783`
 
-Every generated distribution contains `BUILD-PROVENANCE.txt`, the project,
-CC0 ocean and upstream license texts, and `WEB_PLAYER_NOTICE.md`. The notice
-identifies the exact upstream files from which the launcher and build process
-were derived.
+Every generated distribution contains `BUILD-PROVENANCE.txt`, `CREDITS.md`,
+`docs/PROVENANCE.md`, `docs/THIRD_PARTY_NOTICES.md`, the project license, CC0 ocean,
+and upstream license texts, and `WEB_PLAYER_NOTICE.md`. Together they record
+the complete community lineage and the exact upstream files from which the
+launcher and build process were derived.
 
 Primary sources:
 

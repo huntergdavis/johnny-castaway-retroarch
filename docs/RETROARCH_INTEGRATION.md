@@ -70,3 +70,17 @@ groups below are optional and must not appear as nonfunctional menu entries:
 For every platform, verify option categories and labels, persistence after restart,
 live-update behavior, controller remapping, successful save/load state, useful load
 errors, and no desktop-only options on constrained targets.
+
+Linux additionally has a bounded real-frontend execution gate:
+
+```sh
+./scripts/build-target.sh native
+scripts/test-native-retroarch.sh --content /path/to/RESOURCE.MAP
+```
+
+It asserts Core Options v2 registration and persistence, VFS, XRGB8888, API/geometry,
+content indexing, clean unload, and a non-blank 640x480 screenshot. CI repeats it with
+the generated fixture and forced `fishing1`; authentic Automatic Story remains a local,
+user-owned-data gate.
+
+For a longer automatic traversal, add `--frames 1500 --expected-min-scenes 2`.

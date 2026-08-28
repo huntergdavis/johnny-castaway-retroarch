@@ -3,6 +3,11 @@
 This generated browser test is a RetroArch Web frontend linked with the
 Johnny Castaway libretro core. It does not contain Sierra/Dynamix game data.
 
+The complete Johnny Castaway community and project lineage is included in
+`CREDITS.md`. File-level derivation and pinned upstream revisions are recorded
+in `docs/PROVENANCE.md`, with dependency notices in
+`docs/THIRD_PARTY_NOTICES.md`.
+
 ## RetroArch
 
 - Project: <https://github.com/libretro/RetroArch>

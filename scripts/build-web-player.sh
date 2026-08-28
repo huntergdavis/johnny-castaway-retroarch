@@ -105,6 +105,7 @@ trap 'rm -rf "${staging_dir}"' EXIT
 
 mkdir -p \
     "${staging_dir}/assets/frontend" \
+    "${staging_dir}/docs" \
     "${staging_dir}/licenses" \
     "${staging_dir}/bundle/assets" \
     "${staging_dir}/bundle/cores" \
@@ -115,6 +116,9 @@ cp "${project_root}/web/index.html" "${staging_dir}/"
 cp "${project_root}/web/jc-web-player.js" "${staging_dir}/"
 cp "${project_root}/web/style.css" "${staging_dir}/"
 cp "${project_root}/web/WEB_PLAYER_NOTICE.md" "${staging_dir}/"
+cp "${project_root}/CREDITS.md" "${staging_dir}/"
+cp "${project_root}/docs/PROVENANCE.md" "${staging_dir}/docs/"
+cp "${project_root}/docs/THIRD_PARTY_NOTICES.md" "${staging_dir}/docs/"
 cp "${project_root}/web/licenses/BrowserFS-license.md" "${staging_dir}/licenses/"
 cp "${project_root}/LICENSE" "${staging_dir}/licenses/johnny-castaway-retroarch-GPL-3.0"
 cp "${project_root}/docs/licenses/BigSoundBank-0266-CC0.md" \

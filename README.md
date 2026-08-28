@@ -5,7 +5,7 @@ A portable libretro core for running Johnny Castaway from user-supplied original
 
 ## Status
 
-The `0.1.0` portable core is feature-complete: it builds as a loadable libretro core,
+The `0.1.1` portable core is feature-complete: it builds as a loadable libretro core,
 validates the original resource pair, decodes the original content, and runs the full
 automatic story or any of 63 selectable live chapter previews through a deterministic
 640x480 XRGB8888 software framebuffer. Categorized Core Options v2, legacy menu
@@ -57,6 +57,17 @@ make test
 
 The native core is written to `build/linux_x86_64/johnny_castaway_libretro.so`
 on Linux or the corresponding platform directory on macOS.
+
+With native RetroArch and ImageMagick installed, exercise the actual frontend against
+your user-owned data for a bounded 180 frames and retain a screenshot/log under ignored
+`build/` output:
+
+```sh
+scripts/test-native-retroarch.sh --content /path/to/RESOURCE.MAP
+```
+
+When no display is available, the script uses `xvfb-run`. Normal CI runs this same gate
+with the repository's generated five-resource fixture and a live `fishing1` chapter.
 
 For a local browser test using a real RetroArch Web frontend:
 
@@ -119,10 +130,11 @@ Eight console cores can be reproduced with pinned official SDK containers:
 
 This builds and validates static RetroArch core archives for PSP, Vita, PlayStation 2,
 Nintendo 3DS, GameCube, Wii, Wii U, and Switch. Static `.a` files are frontend link
-inputs, not installable console applications. PSP has additionally passed a full pinned
-RetroArch link/package into `retroarchpsp.elf` and `EBOOT.PBP`; hardware execution is
-still pending. See `docs/CONSOLE_BUILDS.md` for exact image digests, outputs, validation,
-and current frontend-link boundaries.
+inputs, not installable console applications. PSP additionally ships a full pinned
+RetroArch link as a Memory Stick-ready ZIP containing
+`PSP/GAME/JohnnyCastaway/EBOOT.PBP`; PPSSPP/device execution remains the external gate.
+See `docs/PSP_PACKAGE.md` for installation and `docs/CONSOLE_BUILDS.md` for exact image
+digests, outputs, validation, and the other frontend-link boundaries.
 
 ## Data and copyright
 
@@ -147,8 +159,10 @@ notices.
 - `tests/`: host-side deterministic tests
 - `scripts/build-target.sh`: native and cross-build entry point
 - `scripts/build-console-cores.sh`: pinned eight-platform console archive builder
+- `scripts/build-psp-frontend.sh`: pinned PSP RetroArch EBOOT/install-package builder
 - `scripts/build-apple-universal.sh`: verified x86_64/arm64 macOS merger
 - `scripts/build-web-player.sh`, `scripts/serve-web.sh`: pinned local RetroArch Web test
+- `scripts/test-native-retroarch.sh`: bounded real-frontend Linux execution gate
 - `scripts/assemble-release.sh`: fail-closed assembly of exact successful CI artifacts
 - `web/`: local two-file launcher and Web-specific license notice
 - `docs/`: architecture decisions and staged port plan
@@ -157,6 +171,7 @@ notices.
 - `docs/RELEASING.md`: exact-SHA artifact assembly, audit, and publication boundary
 - `docs/OPTIONAL_ORIGINAL_AUDIO.md`: user-supplied SFX provenance and distribution boundary
 - `docs/CONSOLE_BUILDS.md`: reproducible console SDK images and packaging gates
+- `docs/PSP_PACKAGE.md`: PSP Memory Stick installation and validation boundary
 - `docs/PLATFORM_MATRIX.md`: source-backed RetroArch platform inventory and coverage
 - `docs/PROVENANCE.md`: exact upstream revisions and file-by-file reuse record
 - `CREDITS.md`: original creators and open-source lineage

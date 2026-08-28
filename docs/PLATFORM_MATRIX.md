@@ -18,7 +18,7 @@ toolchain, a current core artifact contract, and a verifiable build are required
 
 | RetroArch/buildbot family | Upstream core form | Johnny target(s) | Evidence now |
 |---|---|---|---|
-| Linux x86_64 | dynamic `.so` | `linux_x86_64` | Strict tests/build and exact ELF ABI pass in CI |
+| Linux x86_64 | dynamic `.so` | `linux_x86_64` | Strict tests/build and exact ELF ABI pass; real RetroArch runs generated content in CI and authentic Automatic Story locally with non-blank 640x480 screenshot evidence |
 | Linux AArch64 and ARM hard-float | dynamic `.so` | `linux_aarch64`, `linux_armv7` | Real GCC cross-builds, target-machine checks, VFPv3-D16 hard-float verification, and exact ELF ABI pass |
 | Linux x86 and ARMv7 NEON | dynamic `.so` | `linux_x86`, `linux_armv7_neon` | Real strict builds, i386/NEONv1/VFP-register machine checks, and exact ELF ABI pass |
 | Windows MinGW x64/x86 | dynamic `.dll` | `mingw_x86_64`, `mingw_x86` | Real cross-builds, PE machine checks, and exact exports pass |
@@ -26,11 +26,11 @@ toolchain, a current core artifact contract, and a verifiable build are required
 | Android arm64/armv7/x86_64/x86 | dynamic `.so` | all four `android_*` targets | Real NDK r29/API 21 strict builds and exact ABI checks pass |
 | macOS | dynamic `.dylib` | x86_64, arm64, universal | Real Xcode CI builds, exact exports, and universal verification pass |
 | iOS/tvOS | dynamic `.dylib` | arm64 device plus arm64/x86_64 simulators | Real Xcode CI builds and exact Mach-O checks pass |
-| Emscripten | static `.bc` linked into frontend | `emscripten` | Pinned RetroArch JS/WASM build and real-Firefox synthetic-content run pass |
+| Emscripten | static `.bc` linked into frontend | `emscripten` | Pinned RetroArch JS/WASM build and real-Firefox synthetic plus authentic auto-load/menu runs pass |
 | Nintendo Switch | static `.a` | `libnx` | Real pinned devkitA64 strict archive and 25-entry-point check pass; frontend/device gates remain |
 | Nintendo 3DS | static `.a` | `ctr` | Real pinned devkitARM strict archive and 25-entry-point check pass; frontend/device gates remain |
 | GameCube/Wii/Wii U | static `.a` | `ngc`, `wii`, `wiiu` | Real pinned devkitPPC big-endian archives and 25-entry-point checks pass; frontend/device gates remain |
-| PSP | static `.a` | `psp1` | Real pinned PSPSDK MIPS archive and 25-entry-point check pass; pinned RetroArch links it into a verified `retroarchpsp.elf`/`EBOOT.PBP`; device run remains |
+| PSP | static `.a` + installable `.PBP` | `psp1` | Real pinned PSPSDK MIPS archive and 25-entry-point check pass; pinned RetroArch links it into a verified `retroarchpsp.elf`/`EBOOT.PBP` and Memory Stick-ready release ZIP; PPSSPP/device run remains |
 | PlayStation Vita/TV | static `.a` | `vita` | Real pinned VitaSDK ARM archive and 25-entry-point check pass; frontend/device gates remain |
 | PlayStation 2 | static `.a` | `ps2` | Real pinned PS2DEV MIPS archive and 25-entry-point check pass; frontend/device gates remain |
 

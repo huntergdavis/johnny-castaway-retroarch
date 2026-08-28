@@ -23,6 +23,7 @@ import socket
 import struct
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import urllib.error
@@ -232,12 +233,21 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--artifacts", type=pathlib.Path, default=ROOT / "build/web-smoke"
     )
-    parser.add_argument(
+    content_source = parser.add_mutually_exclusive_group()
+    content_source.add_argument(
         "--content-dir",
         type=pathlib.Path,
         help=(
             "use user-owned RESOURCE.MAP/RESOURCE.001 for an optional "
             "Automatic Story menu check"
+        ),
+    )
+    content_source.add_argument(
+        "--staged-local-content",
+        action="store_true",
+        help=(
+            "exercise automatic loading from dist/local-content without a browser "
+            "file upload; local files are excluded from the pristine distribution check"
         ),
     )
     parser.add_argument("--timeout", type=float, default=45.0)
@@ -366,6 +376,50 @@ def start_web_server(dist: pathlib.Path) -> tuple[http.server.ThreadingHTTPServe
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     return server, f"http://127.0.0.1:{server.server_port}/"
+
+
+def validate_staged_local_content(dist: pathlib.Path) -> list[pathlib.Path]:
+    """Validate release files separately from an explicit ignored local-data overlay."""
+
+    local_content = dist / "local-content"
+    required_names = {"RESOURCE.MAP", "RESOURCE.001"}
+    permitted_names = required_names | {
+        f"sound{sample_id}.wav"
+        for sample_id in range(25)
+        if sample_id not in (11, 13)
+    }
+    if local_content.is_symlink():
+        raise SmokeFailure("staged local-content directory must not be a symbolic link")
+    entries = sorted(local_content.iterdir()) if local_content.is_dir() else []
+    if any(not path.is_file() or path.is_symlink() for path in entries):
+        raise SmokeFailure(
+            "staged local content must contain regular files only"
+        )
+    files = entries
+    names = {path.name for path in files}
+    missing = sorted(required_names - names)
+    unexpected = sorted(names - permitted_names)
+    if missing:
+        raise SmokeFailure(
+            "staged local content is missing: " + ", ".join(missing)
+        )
+    if unexpected:
+        raise SmokeFailure(
+            "staged local content has unexpected files: " + ", ".join(unexpected)
+        )
+    with tempfile.TemporaryDirectory(prefix="jc-web-pristine-") as temporary:
+        pristine = pathlib.Path(temporary) / "dist"
+        shutil.copytree(
+            dist,
+            pristine,
+            ignore=shutil.ignore_patterns("local-content"),
+        )
+        subprocess.run(
+            [sys.executable, str(ROOT / "tools/check_web_dist.py"), str(pristine)],
+            cwd=ROOT,
+            check=True,
+        )
+    return files
 
 
 def diagnostics(driver: WebDriver) -> dict[str, Any]:
@@ -517,17 +571,26 @@ def run_smoke(args: argparse.Namespace, firefox: str, geckodriver: str) -> int:
     if missing:
         raise SmokeFailure("generated Web distribution is incomplete: " + ", ".join(missing))
 
-    subprocess.run(
-        [sys.executable, str(ROOT / "tools/check_web_dist.py"), str(dist)],
-        cwd=ROOT,
-        check=True,
-    )
-    if args.content_dir is None:
+    if args.staged_local_content:
+        staged_files = validate_staged_local_content(dist)
+        local_content = dist / "local-content"
+        map_path = local_content / "RESOURCE.MAP"
+        archive_path = local_content / "RESOURCE.001"
+        expected_index_log = "Johnny Castaway: indexed "
+        core_options = None
+        content_description = "server-local user-owned data"
+    else:
+        subprocess.run(
+            [sys.executable, str(ROOT / "tools/check_web_dist.py"), str(dist)],
+            cwd=ROOT,
+            check=True,
+        )
+    if not args.staged_local_content and args.content_dir is None:
         map_path, archive_path = prepare_synthetic_content(artifacts / "synthetic")
         expected_index_log = "indexed 5 resources"
         core_options = 'johnny_castaway_chapter = "fishing1"\n'
         content_description = "checksum-verified synthetic fixture"
-    else:
+    elif not args.staged_local_content:
         content_directory = args.content_dir.resolve()
         map_path = content_directory / "RESOURCE.MAP"
         archive_path = content_directory / "RESOURCE.001"
@@ -561,7 +624,9 @@ def run_smoke(args: argparse.Namespace, firefox: str, geckodriver: str) -> int:
         "url": url,
         "content": content_description,
     }
-    if args.content_dir is None:
+    if args.staged_local_content:
+        result["staged_local_content"] = [path.name for path in staged_files]
+    elif args.content_dir is None:
         result["synthetic_content"] = [
             str(map_path.relative_to(ROOT)),
             str(archive_path.relative_to(ROOT)),
@@ -587,23 +652,24 @@ def run_smoke(args: argparse.Namespace, firefox: str, geckodriver: str) -> int:
             """
         )
 
-        file_input = driver.find("#content-files")
-        driver.upload(file_input, [map_path, archive_path])
-        wait_until(
-            "both content files to be accepted",
-            args.timeout,
-            lambda: diagnostics(driver).get("status", "").startswith("Ready:"),
-        )
-        driver.execute(
-            """
-            import("./jc-web-player.js").then(player => player.start(
-              undefined,
-              arguments[0],
-            ));
-            return true;
-            """,
-            core_options,
-        )
+        if not args.staged_local_content:
+            file_input = driver.find("#content-files")
+            driver.upload(file_input, [map_path, archive_path])
+            wait_until(
+                "both content files to be accepted",
+                args.timeout,
+                lambda: diagnostics(driver).get("status", "").startswith("Ready:"),
+            )
+            driver.execute(
+                """
+                import("./jc-web-player.js").then(player => player.start(
+                  undefined,
+                  arguments[0],
+                ));
+                return true;
+                """,
+                core_options,
+            )
         state = wait_until(
             "RetroArch startup",
             args.timeout,
@@ -642,6 +708,13 @@ def run_smoke(args: argparse.Namespace, firefox: str, geckodriver: str) -> int:
         ):
             if expected not in joined_console:
                 raise SmokeFailure(f"RetroArch log did not contain {expected!r}")
+        if (
+            args.staged_local_content
+            and "optional sound effects: 23 loaded" not in joined_console
+        ):
+            raise SmokeFailure(
+                "server-local auto-load did not load all 23 optional sound effects"
+            )
         fatal_messages = (
             "[EMSCRIPTEN/WebGL] Failed",
             "[libretro ERROR]",
@@ -722,7 +795,8 @@ def run_smoke(args: argparse.Namespace, firefox: str, geckodriver: str) -> int:
         )
 
         simulated_hashes: dict[str, str] = {}
-        if args.content_dir is not None:
+        authentic_content = args.content_dir is not None or args.staged_local_content
+        if authentic_content:
             # Automatic Story category ordering is declared by the core:
             # Playback/Chapter, Holiday, Seed, Calendar. Select Calendar,
             # choose its second value (Simulated), then capture the options
@@ -784,14 +858,14 @@ def run_smoke(args: argparse.Namespace, firefox: str, geckodriver: str) -> int:
         result["menu_navigation"] = {
             "route": (
                 "Quick Menu/Home/Down*4/Core Options/Home/Down*1/Story"
-                + ("/Calendar/Simulated" if args.content_dir is not None else "")
+                + ("/Calendar/Simulated" if authentic_content else "")
                 + "/End"
             ),
             "stable_frames": True,
             "visual_change_ratios": visual_changes,
-            "automatic_story_controls": args.content_dir is not None,
+            "automatic_story_controls": authentic_content,
         }
-        if args.content_dir is not None:
+        if authentic_content:
             result["menu_navigation"]["expected_story_controls"] = [
                 "Story Seed",
                 "Story Calendar",

@@ -54,6 +54,33 @@ jobs:
       - name: Build and run all host tests with warnings as errors
         run: make test HOST_CC=gcc WARNINGS="$STRICT_WARNINGS"
 
+  native-retroarch-smoke:
+    name: Real RetroArch native smoke
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out source and libretro-common
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Install the Ubuntu RetroArch frontend and headless video tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends retroarch xvfb xauth imagemagick
+
+      - name: Build fixture and core, then execute real RetroArch
+        run: |
+          make -j2 build/tests/test_libretro HOST_CC=gcc WARNINGS="$STRICT_WARNINGS"
+          ./build/tests/test_libretro
+          make -j2 platform=linux_x86_64 WARNINGS="$STRICT_WARNINGS"
+          scripts/test-native-retroarch.sh \
+            --content build/tests/RESOURCE.MAP \
+            --chapter fishing1 \
+            --expected-resources 5 \
+            --output build/native-retroarch-ci
+
   linux-core:
     name: Linux x86_64 core
     runs-on: ubuntu-24.04
@@ -398,7 +425,7 @@ jobs:
 
       - name: Validate browser tooling and local-only source graph
         run: |
-          bash -n scripts/build-web-player.sh scripts/serve-web.sh
+          bash -n scripts/build-web-player.sh scripts/serve-web.sh scripts/test-native-retroarch.sh
           node --check web/jc-web-player.js
           python3 tools/check_web_sources.py .
           python3 tools/check_web_dist.py --help >/dev/null

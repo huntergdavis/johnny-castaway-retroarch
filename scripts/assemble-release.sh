@@ -22,7 +22,7 @@ usage: scripts/assemble-release.sh \
   --console-run GITHUB_ACTIONS_RUN_ID \
   --output build/release/OUTPUT_DIRECTORY [--dry-run]
 
-Downloads exactly nine expected artifacts, validates their source runs, ABI and
+Downloads exactly ten expected artifacts, validates their source runs, ABI and
 machine contracts, scans for original game data, and writes release ZIPs plus
 SHA256SUMS, CONTENTS.sha256, INVENTORY.md, and RELEASE_NOTES_DRAFT.md.
 
@@ -94,7 +94,7 @@ done
 [[ "${ci_run}" != "${console_run}" ]] || fail 'CI and console run IDs must differ'
 
 required_commands=(
-    ar awk cat cmp dirname file find gh git grep mkdir mktemp mv nm objdump
+    ar awk cat cmp cp dirname file find gh git grep mkdir mktemp mv nm objdump
     python3 readelf realpath rm sed sha256sum sort stat unzip wc xargs zip
 )
 for command_name in "${required_commands[@]}"; do
@@ -174,7 +174,10 @@ ci_artifacts=(
     johnny-castaway-retroarch-web
     johnny-castaway-windows-x64
 )
-console_artifacts=(johnny-castaway-console-cores)
+console_artifacts=(
+    johnny-castaway-console-cores
+    johnny-castaway-psp-frontend
+)
 all_artifacts=("${ci_artifacts[@]}" "${console_artifacts[@]}")
 declare -A artifact_id artifact_api_bytes artifact_run
 
@@ -219,11 +222,12 @@ mkdir -p -- "${artifacts_dir}" "${assets_dir}"
 
 printf 'Downloading CI artifacts from %s\n' "${ci_run_url}"
 gh run download "${ci_run}" --repo "${repository}" --dir "${artifacts_dir}"
-console_name=${console_artifacts[0]}
-mkdir -p -- "${artifacts_dir}/${console_name}"
-printf 'Downloading console artifact from %s\n' "${console_run_url}"
-gh run download "${console_run}" --repo "${repository}" \
-    --name "${console_name}" --dir "${artifacts_dir}/${console_name}"
+printf 'Downloading console artifacts from %s\n' "${console_run_url}"
+for console_name in "${console_artifacts[@]}"; do
+    mkdir -p -- "${artifacts_dir}/${console_name}"
+    gh run download "${console_run}" --repo "${repository}" \
+        --name "${console_name}" --dir "${artifacts_dir}/${console_name}"
+done
 
 mapfile -t downloaded_directories < <(
     find "${artifacts_dir}" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort
@@ -308,10 +312,31 @@ done
 web_dir="${artifacts_dir}/johnny-castaway-retroarch-web"
 for relative_file in index.html jc-web-player.js johnny_castaway_libretro.js \
     johnny_castaway_libretro.wasm BUILD-PROVENANCE.txt WEB_PLAYER_NOTICE.md \
+    CREDITS.md docs/PROVENANCE.md docs/THIRD_PARTY_NOTICES.md \
     licenses/RetroArch-GPL-3.0 licenses/johnny-castaway-retroarch-GPL-3.0; do
     must_file "${web_dir}/${relative_file}"
 done
 python3 "${project_root}/tools/check_web_dist.py" "${web_dir}"
+
+psp_dir="${artifacts_dir}/johnny-castaway-psp-frontend"
+psp_elf="${psp_dir}/retroarchpsp.elf"
+psp_pbp="${psp_dir}/EBOOT.PBP"
+psp_package="${psp_dir}/johnny-castaway-psp-frontend.zip"
+for relative_file in EBOOT.PBP retroarchpsp.elf \
+    johnny-castaway-psp-frontend.zip SHA256SUMS BUILD-PROVENANCE.txt \
+    README-PSP.md; do
+    must_file "${psp_dir}/${relative_file}"
+done
+(
+    cd "${psp_dir}"
+    sha256sum -c SHA256SUMS
+)
+grep -Fxq "Johnny Castaway commit: ${expected_sha} (clean)" \
+    "${psp_dir}/BUILD-PROVENANCE.txt" ||
+    fail 'PSP build provenance does not name the exact clean release commit'
+cmp "${psp_dir}/README-PSP.md" \
+    <(git -C "${project_root}" show "${expected_sha}:docs/PSP_PACKAGE.md") ||
+    fail 'PSP package README does not match the expected commit'
 
 expect_file_type()
 {
@@ -366,6 +391,76 @@ for apple_x86_core in \
 done
 expect_file_type "${emscripten}" 'current ar archive' 'Emscripten core archive'
 expect_file_type "${web_dir}/johnny_castaway_libretro.wasm" 'WebAssembly' 'Web core'
+expect_file_type "${psp_elf}" 'ELF 32-bit.*MIPS.*MIPS-II' 'PSP frontend ELF'
+
+psp_elf_header="$(readelf -h "${psp_elf}")"
+printf '%s\n' "${psp_elf_header}" | grep -Eq 'Class:[[:space:]]+ELF32' ||
+    fail 'PSP frontend is not ELF32'
+printf '%s\n' "${psp_elf_header}" | grep -Eq 'Data:[[:space:]]+2.s complement, little endian' ||
+    fail 'PSP frontend is not little endian'
+printf '%s\n' "${psp_elf_header}" | grep -Eq 'Type:[[:space:]]+EXEC' ||
+    fail 'PSP frontend is not an executable ELF'
+printf '%s\n' "${psp_elf_header}" | grep -Eq 'Machine:[[:space:]]+MIPS R3000' ||
+    fail 'PSP frontend has the wrong machine type'
+
+psp_pbp_header="$(python3 - "${psp_pbp}" <<'PY'
+from pathlib import Path
+import sys
+
+print(Path(sys.argv[1]).read_bytes()[:8].hex())
+PY
+)"
+[[ "${psp_pbp_header}" = 0050425000000100 ]] ||
+    fail "PSP EBOOT has an invalid PBP header: ${psp_pbp_header}"
+for marker in 'Johnny Castaway' 'johnny_castaway_initial_screen' \
+    'johnny_castaway_holiday_overlay' 'Closed Captions; disabled|enabled'; do
+    grep -aFq "${marker}" "${psp_elf}" ||
+        fail "PSP frontend ELF is missing embedded marker: ${marker}"
+done
+
+unzip -tq "${psp_package}"
+psp_package_entries="$(unzip -Z1 "${psp_package}")"
+for package_entry in \
+    PSP/GAME/JohnnyCastaway/EBOOT.PBP \
+    README-PSP.md \
+    BUILD-PROVENANCE.txt \
+    LICENSE \
+    CREDITS.md \
+    johnny_castaway_libretro.info \
+    docs/CONSOLE_BUILDS.md \
+    docs/PROVENANCE.md \
+    docs/THIRD_PARTY_NOTICES.md \
+    docs/licenses/BigSoundBank-0266-CC0.md; do
+    printf '%s\n' "${psp_package_entries}" | grep -Fxq "${package_entry}" ||
+        fail "PSP install package is missing: ${package_entry}"
+done
+packaged_pbp_hash="$(unzip -p "${psp_package}" \
+    PSP/GAME/JohnnyCastaway/EBOOT.PBP | sha256sum | awk '{print $1}')"
+raw_pbp_hash="$(sha256sum "${psp_pbp}" | awk '{print $1}')"
+[[ "${packaged_pbp_hash}" = "${raw_pbp_hash}" ]] ||
+    fail 'PSP install package EBOOT does not match the validated artifact'
+
+while IFS=$'\t' read -r package_entry source_path; do
+    packaged_hash="$(unzip -p "${psp_package}" "${package_entry}" | sha256sum | awk '{print $1}')"
+    expected_hash="$(git -C "${project_root}" show \
+        "${expected_sha}:${source_path}" | sha256sum | awk '{print $1}')"
+    [[ "${packaged_hash}" = "${expected_hash}" ]] ||
+        fail "PSP install package ${package_entry} does not match ${expected_sha}:${source_path}"
+done <<'EOF'
+LICENSE	LICENSE
+CREDITS.md	CREDITS.md
+johnny_castaway_libretro.info	johnny_castaway_libretro.info
+docs/CONSOLE_BUILDS.md	docs/CONSOLE_BUILDS.md
+docs/PROVENANCE.md	docs/PROVENANCE.md
+docs/THIRD_PARTY_NOTICES.md	docs/THIRD_PARTY_NOTICES.md
+docs/licenses/BigSoundBank-0266-CC0.md	docs/licenses/BigSoundBank-0266-CC0.md
+README-PSP.md	docs/PSP_PACKAGE.md
+EOF
+packaged_provenance_hash="$(unzip -p "${psp_package}" \
+    BUILD-PROVENANCE.txt | sha256sum | awk '{print $1}')"
+root_provenance_hash="$(sha256sum "${psp_dir}/BUILD-PROVENANCE.txt" | awk '{print $1}')"
+[[ "${packaged_provenance_hash}" = "${root_provenance_hash}" ]] ||
+    fail 'PSP install package build provenance does not match the validated artifact'
 
 elf_cores=(
     "${linux64}" "${linux32}"
@@ -420,6 +515,7 @@ python3 "${project_root}/tools/check_console_archive.py" --machine PowerPC \
 python3 "${project_root}/tools/check_console_archive.py" --machine PowerPC \
     "${console_base}/wiiu/johnny_castaway_libretro_wiiu.a"
 validation_notes+=('All eight console archives passed member, target-machine, duplicate, undefined-symbol, and exact 25-symbol checks.')
+validation_notes+=('The PSP frontend passed ELF/PBP identity, embedded-option, checksum, provenance, legal-file, and Memory Stick install-layout checks.')
 
 mapfile -t emscripten_members < <(ar t "${emscripten}")
 ((${#emscripten_members[@]} > 0)) || fail 'Emscripten archive has no members'
@@ -449,12 +545,17 @@ principal[johnny-castaway-apple-cores]='Universal macOS and iOS/tvOS device/simu
 principal[johnny-castaway-emscripten-core]='Emscripten static core and local Web source kit'
 principal[johnny-castaway-retroarch-web]='Complete local RetroArch Web Player'
 principal[johnny-castaway-console-cores]='3DS, Switch, GameCube, PS2, PSP, Vita, Wii, and Wii U static cores'
+principal[johnny-castaway-psp-frontend]='Memory Stick-ready PSP RetroArch EBOOT package'
 
 for artifact_name in "${all_artifacts[@]}"; do
-    (
-        cd "${artifacts_dir}"
-        zip -q -9 -r "${assets_dir}/${artifact_name}.zip" "${artifact_name}"
-    )
+    if [[ "${artifact_name}" = johnny-castaway-psp-frontend ]]; then
+        cp -- "${psp_package}" "${assets_dir}/${artifact_name}.zip"
+    else
+        (
+            cd "${artifacts_dir}"
+            zip -q -9 -r "${assets_dir}/${artifact_name}.zip" "${artifact_name}"
+        )
+    fi
     unzip -tq "${assets_dir}/${artifact_name}.zip"
 done
 scan_file_names "${assets_dir}" 'release assets'
@@ -494,7 +595,8 @@ fi
         file_count="$(find "${artifact_directory}" -type f | wc -l)"
         binary_count="$(find "${artifact_directory}" -type f \
             \( -name '*.so' -o -name '*.dll' -o -name '*.dylib' \
-               -o -name '*.a' -o -name '*.bc' -o -name '*.wasm' \) | wc -l)"
+               -o -name '*.a' -o -name '*.bc' -o -name '*.wasm' \
+               -o -name '*.elf' -o -name '*.PBP' \) | wc -l)"
         zip_path="${assets_dir}/${artifact_name}.zip"
         zip_bytes="$(stat -c '%s' "${zip_path}")"
         zip_hash="$(sha256sum "${zip_path}" | awk '{print $1}')"
@@ -509,7 +611,7 @@ fi
         printf -- '- %s\n' "${note}"
     done
     printf -- '- The complete Web distribution passed `tools/check_web_dist.py`.\n'
-    printf -- '- Every package ZIP passed `unzip -t`; `SHA256SUMS` verifies the nine release ZIPs.\n'
+    printf -- '- Every package ZIP passed `unzip -t`; `SHA256SUMS` verifies the ten release ZIPs.\n'
     printf -- '- `CONTENTS.sha256` inventories and verifies every extracted artifact file.\n'
     printf -- '- Commit paths, extracted filenames, nested ZIP entries, static archive members, and final package entries were scanned for the original resource pair, numbered WAVs, and ADS/TTM/BMP/SCR/VAG data; none were found.\n'
     printf -- '- Legal, credit, provenance, core-info, and CC0 notice files in every applicable artifact match the expected commit byte-for-byte.\n'
@@ -522,7 +624,7 @@ fi
     fi
     printf 'This release brings Johnny Castaway to RetroArch as a portable C99 core with deterministic 640x480 software rendering, automatic story playback, and direct access to all 63 chapters.\n\n'
     printf 'Highlights include closed captions, live chapter previews, deterministic seed and simulated-calendar controls, 1x-4x playback, authentic tide/raft presentation, an asset-free 36-holiday overlay, optional user-supplied original sound effects, separately licensed CC0 ocean ambience, island walking and tree occlusion, five fade styles, and versioned save states for scenes and transitions.\n\n'
-    printf 'Packages cover Linux, Windows, Android, macOS, iOS, tvOS, Emscripten/Web, PSP, Vita, PS2, Nintendo 3DS, GameCube, Wii, Wii U, and Switch. Static console `.a` files are RetroArch frontend link inputs, not standalone applications.\n\n'
+    printf 'Packages cover Linux, Windows, Android, macOS, iOS, tvOS, Emscripten/Web, PSP, Vita, PS2, Nintendo 3DS, GameCube, Wii, Wii U, and Switch. PSP includes a Memory Stick-ready RetroArch `EBOOT.PBP`; the remaining static console `.a` files are frontend link inputs, not standalone applications.\n\n'
     printf 'Original Sierra/Dynamix data is not distributed. Supply your legally owned `RESOURCE.MAP` and `RESOURCE.001`; supported sibling sound WAVs are also user-supplied. See the included credits, provenance, third-party notices, and platform documentation for lineage and validation boundaries.\n'
 } >"${staging}/RELEASE_NOTES_DRAFT.md"
 

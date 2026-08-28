@@ -32,14 +32,14 @@ Before treating a commit as a release candidate:
 
 Choose a new ignored directory below `build/release/`. The command fails if the output
 already exists, either run is not successful at the exact SHA, the artifact sets do
-not match the nine-package contract, a required validation fails, or original data is
+not match the ten-package contract, a required validation fails, or original data is
 found.
 
 ```sh
 sha=0123456789abcdef0123456789abcdef01234567
 ci_run=12345678901
 console_run=12345678902
-output=build/release/v0.1.0
+output=build/release/v0.1.1
 
 scripts/assemble-release.sh \
   --sha "$sha" \
@@ -50,9 +50,10 @@ scripts/assemble-release.sh \
 
 The output contains:
 
-- `assets/`: nine tested ZIPs, one for each Actions artifact;
+- `assets/`: ten tested ZIPs, one for each Actions artifact; the PSP frontend asset is
+  the directly installable Memory Stick ZIP rather than a ZIP around the artifact;
 - `artifacts/`: the extracted source artifacts used to make those ZIPs;
-- `SHA256SUMS`: hashes for the nine releasable ZIPs;
+- `SHA256SUMS`: hashes for the ten releasable ZIPs;
 - `CONTENTS.sha256`: an exhaustive hash inventory of extracted artifact files;
 - `INVENTORY.md`: run URLs, artifact IDs, sizes, hashes, contents, and validation
   evidence;
@@ -65,13 +66,14 @@ Repeat the checksum checks independently:
 (cd "$output/artifacts" && sha256sum -c ../CONTENTS.sha256)
 ```
 
-Review `INVENTORY.md`, every release-note claim, licenses/notices, the nine filenames,
+Review `INVENTORY.md`, every release-note claim, licenses/notices, the ten filenames,
 and the GitHub Actions logs. Confirm there are no local original data files beneath
 the output. The Web ZIP must contain no `local-content/` directory.
 
-`--dry-run` exists only to exercise the assembler against an obsolete commit whose
-metadata still ends in `-dev`. It marks the inventory and notes non-publishable. Never
-use a dry-run output for a release.
+`--dry-run` exists only to exercise the assembler against matching current-contract
+Actions runs whose metadata still ends in `-dev`. It marks the inventory and notes
+non-publishable. Never use a dry-run output for a release; historical runs that emitted
+only the old nine-artifact set intentionally fail the current contract.
 
 ## Publish only after explicit approval
 
@@ -80,9 +82,9 @@ assembly or review. After replacing the example values with the independently ch
 SHA, version, and output directory, obtain explicit publication approval and run:
 
 ```sh
-version=v0.1.0
+version=v0.1.1
 sha=0123456789abcdef0123456789abcdef01234567
-output=build/release/v0.1.0
+output=build/release/v0.1.1
 repository=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
 
 gh release create "$version" \

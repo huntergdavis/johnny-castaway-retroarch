@@ -95,8 +95,9 @@ RetroArch menu rather than adding a second controller-driven explorer UI.
 - Complete and test every menu surface in `RETROARCH_INTEGRATION.md`; never expose a
   placeholder option that does nothing.
 - Add content-free test ROM fixtures and automated libretro ABI smoke loading.
-  **Synthetic MAP/archive fixture and mock frontend test complete; real RetroArch loading
-  remains a per-target gate.**
+  **Synthetic MAP/archive fixture, mock frontend, real Linux RetroArch fixture run, and
+  authentic local Linux run are complete; real frontend loading remains a gate for the
+  other targets.**
 
 ### M5 — Platforms, one compiler at a time
 
@@ -104,7 +105,7 @@ Each row advances independently through Build/Load/Run/Regress.
 
 | Wave | Make platform | Output | Current state |
 |---|---|---|---|
-| 0 | `linux_x86_64` | `.so` | build and mock-frontend validation pass; RetroArch load/run pending |
+| 0 | `linux_x86_64` | `.so` | strict build/ABI and mock-frontend checks pass; real RetroArch 1.22.2 loads authentic data, registers Core Options v2/VFS/XRGB8888, runs Automatic Story, and captures non-blank 640x480 output; the same bounded frontend gate runs synthetic content in CI |
 | 0 | `linux_x86` | `.so` | real GCC multilib strict build, i386 machine check, and exact 25-symbol ELF export check pass; frontend run pending |
 | 1 | `mingw_x86_64` | `.dll` | cross-build and ABI exports validated; frontend run pending |
 | 1 | `mingw_x86` | `.dll` | real MinGW i686 strict build and exact 25-symbol PE export check pass; frontend run pending |
@@ -112,8 +113,8 @@ Each row advances independently through Build/Load/Run/Regress.
 | 1 | `linux_aarch64`, `linux_armv7`, `linux_armv7_neon` | `.so` | real GCC cross-builds and exact 25-symbol ELF export checks pass; ARMv7 variants are verified VFPv3-D16 or NEONv1 hard-float; frontend runs pending |
 | 2 | Android arm64/armv7/x86_64/x86 | `.so` | real NDK r29/API 21 strict builds, machine checks, and exact 25-symbol exports pass; Android frontend/device runs pending |
 | 2 | iOS/tvOS arm64 device + arm64/x86_64 simulators | `.dylib` | real Xcode SDK builds and exact Mach-O ABI exports pass in GitHub `macos-15`; device/frontend runs pending |
-| 2 | `emscripten` | `.bc` static core + RetroArch `.js/.wasm` | archive, pinned real-frontend link/dist, HTTP checks, and real-Firefox synthetic-content run pass; interactive original-data run pending |
-| 3 | `psp1` | static `.a` + RetroArch `.elf`/`EBOOT.PBP` | real official-SDK strict core archive and all 25 entry points pass; pinned RetroArch frontend link/package pass; PSP device run pending |
+| 2 | `emscripten` | `.bc` static core + RetroArch `.js/.wasm` | archive, pinned real-frontend link/dist, HTTP checks, and real-Firefox synthetic plus authentic 180-resource/23-sound auto-load runs pass; deterministic Core Options/Story/Simulated Calendar navigation is screenshot-validated |
+| 3 | `psp1` | static `.a` + RetroArch `.elf`/`EBOOT.PBP` | real official-SDK strict core archive and all 25 entry points pass; pinned RetroArch frontend link and Memory Stick-ready release package pass; PPSSPP/device run pending |
 | 3 | `vita`, `ctr`, `ps2` | static `.a` | real official-SDK strict core archives, target-machine checks, and all 25 required entry points pass; static frontend links/device runs pending |
 | 3 | Switch, Wii, GameCube, Wii U | static `.a` | real pinned devkitPro strict core archives, target-machine checks, and all 25 required entry points pass; static frontend links/device runs pending |
 | 4 | Dingux, webOS, UWP, Haiku/BSD, PSL1GHT PS3, DOS | varies | official live/source inventory complete; add in this priority order with a real public toolchain and artifact contract |
