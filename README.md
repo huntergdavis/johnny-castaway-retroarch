@@ -12,10 +12,12 @@ automatic story or any of 63 selectable live chapter previews through a determin
 fallback, RetroPad input, audio, and versioned chapter-runtime save-state round trips
 are working. Host, Web, and cross-compilation release gates are documented below;
 physical-device execution remains a platform-specific validation step rather than a
-claim made by this repository. A current authentic-data browser acceptance run loads
-the island/tree and optional audio but does not yet show the expected waves/full
-animation, and its audio is choppy. That Web rendering/audio defect is release-blocking;
-passing synthetic/menu tests do not make v0.1.3 feature-complete until it is fixed.
+claim made by this repository. A 2026-08-28 authentic-data Firefox run now shows five
+distinct, meaningful Automatic Story frames with material lower-water motion and no
+residual color-key block (largest key-colored component: one pixel). Its independent
+Web Audio gate still failed with 5 gaps in 509 queued buffers and a 68 ms maximum gap.
+The Web renderer evidence therefore passes, but stable browser audio remains
+release-blocking; synthetic/menu and visual passes do not make v0.1.3 feature-complete.
 
 The repository now contains bounded ADS/TTM parsers and a resumable 50 Hz script VM,
 an indexed sprite compositor, the deterministic story/walking runtime, and an eight-voice

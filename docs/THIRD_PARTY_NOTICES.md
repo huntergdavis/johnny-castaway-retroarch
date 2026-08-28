@@ -34,6 +34,14 @@ The portable director, story controller, fade masks, and island-walk compositor 
 or rewritten C99 modules; copied and mechanically translated tables are listed
 separately in `PROVENANCE.md`.
 
+The authentic island-background reconstruction was likewise studied from that pinned
+revision's GPLv3 `src/scene/island.c` and `src/host/graphics.c`: backdrop and sprite
+layer order, exact frame positions, wave cycles/cadence, native SCR origin, initialization
+order, and palette-derived `#A800A8` transparency. Authentic palette index 0 was measured
+against the user's local original data; no original PAL, SCR, BMP, or pixel bytes are
+included. The portable renderer is an independent C99 rewrite, and its deterministic
+day-`OCEAN00` limitation is documented in `PROVENANCE.md`.
+
 ## CC0 ocean ambience source
 
 The optional ocean design identifies BigSoundBank sound 0266, “Sea: Waves,” published

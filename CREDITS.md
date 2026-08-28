@@ -48,11 +48,23 @@ of their respective rights holders. This repository distributes none of that con
   compositor were behaviorally derived from the PlayStation port's GPLv3 story,
   graphics, island, and walk implementations at revision
   `25c5d84593ac20cbee354eaab7779ab7397d6bbe`. The libretro implementations replace
-  blocking/platform drawing with new deterministic, bounded C99 state machines; the
-  high/low-tide foam positions, three-frame animation cycles, four-step seed, and
-  eight-tick advance cadence follow that revision's `src/scene/island.c` and
-  `src/ads/foreground_bridge.c.inc`, while all composition/state code is new. No
-  `BACKGRND.BMP` pixels or other original artwork are copied. The
+  blocking/platform drawing with new deterministic, bounded C99 state machines. The
+  authentic island reconstruction follows that revision's `src/host/graphics.c` and
+  `src/scene/island.c`: `OCEAN00`–`OCEAN02` or `NIGHT` is loaded at screen origin;
+  `MRAFT.BMP` is placed at `(512,266)` or low-tide `(529,281)`; and
+  `BACKGRND.BMP` frames 0/13/12/14 form the island, trunk, leaves, and shadow at
+  `(288,279)`, `(442,148)`, `(365,122)`, and `(396,279)`. Low tide adds frames 1/2 at
+  `(249,303)` and `(150,328)`. The high/low-tide foam positions and frames,
+  three-frame animation cycles, four-step seed, and eight-tick advance cadence also
+  follow `src/scene/island.c` and `src/ads/foreground_bridge.c.inc`. The pinned host
+  renderer's palette-derived `#A800A8` color-key behavior, together with a local
+  measurement that authentic `JOHNCAST.PAL` places that color at index 0, determines
+  the portable transparent index. Its SCR surface construction and `islandInit()`
+  ordering inform the y=0 background origin and clean composed frame presented before
+  the first frontend tick. The libretro day backdrop is intentionally deterministic
+  `OCEAN00`; the reference randomly chooses `OCEAN00`–`OCEAN02`, which remains a known
+  limitation until the chosen variant is serialized. All composition/state code is
+  new. No `BACKGRND.BMP`, palette, or other original-media bytes are copied. The
   exact copied or translated data tables remain identified separately in
   `docs/PROVENANCE.md`.
 - The tide and raft Core Options follow that PS1 revision's `AUTO/HIGH/LOW` and

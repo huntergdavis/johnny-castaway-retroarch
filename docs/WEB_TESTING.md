@@ -171,7 +171,13 @@ all screenshots, logs, and result metadata remain in ignored `build/` output.
 After startup notifications clear, authentic-data modes also require at least
 three distinct timed gameplay frames. Every settled frame must retain meaningful
 playfield pixels; a blank/lost canvas or dominant renderer color-key magenta frame
-fails independently. Automatic mode requires material lower water-band pixel
+fails independently. The frame classifier also labels the narrow `#A800A8` renderer
+key (including its observed Firefox RGB565 quantization near `#AD00AD`), finds the
+largest four-connected component, and fails a component of at least 256 pixels whose
+bounds span at least 16×4. This connected-component gate catches an opaque key block
+even when scattered key-like palette colors keep the total fraction below the
+dominant-frame threshold; the largest solid rectangle is retained as an additional
+diagnostic. Automatic mode requires material lower water-band pixel
 changes; a fixed chapter requires material scripted-playfield changes. Both
 continuously queue and complete the pinned RetroArch Web Audio
 driver's 10 ms blocks during a separate idle five-second interval, with scheduled
@@ -184,6 +190,15 @@ bytes are never exposed or retained. These probes are enabled only for the runne
 `?smoke=1` URL and never record audio samples, frames, pixel buffers, or user-owned
 resource contents. The metrics are preserved in `result.json` even when later motion,
 frame-quality, audio, or WebGL assertions fail.
+
+The 2026-08-28 local authentic Automatic Story run recorded in ignored artifact
+`build/web-real-scene-preview-20260828-1409-automatic-results/result.json` is the
+current renderer evidence: all five captured frames were distinct and about 88%
+meaningful, consecutive water-band changes were 2.82–3.22%, and every frame's largest
+renderer-key component was a single 1×1 pixel. This verifies the automatic visual
+renderer and water-motion gates only. The same run did **not** pass overall: its
+independent audio check found 5 underrun gaps among 509 queued buffers, with a 68 ms
+maximum gap. Browser audio is not fixed and remains release-blocking.
 
 For a separate deterministic scripted-motion gate, use a chapter ID present in
 `src/jc_chapters.c` with explicit local content:
