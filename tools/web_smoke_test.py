@@ -178,8 +178,16 @@ class WebDriver:
     def click(self, element: str) -> None:
         self.request("POST", f"{self.session_path}/element/{element}/click", {})
 
-    def key_press(self, value: str, hold_ms: int = 120) -> None:
-        """Send a key long enough for RetroArch's frame-polled input to see it."""
+    def key_press(
+        self, value: str, hold_ms: int = 120, release_ms: int = 350
+    ) -> None:
+        """Send one key edge through RetroArch's frame-polled Web input.
+
+        The release interval must outlast a slow browser callback. Otherwise
+        adjacent synthetic taps can appear as one continuous hold and engage
+        RetroArch's menu auto-repeat. Keep the press itself below the default
+        256 ms menu repeat delay.
+        """
         self.request(
             "POST",
             f"{self.session_path}/actions",
@@ -192,7 +200,7 @@ class WebDriver:
                             {"type": "keyDown", "value": value},
                             {"type": "pause", "duration": hold_ms},
                             {"type": "keyUp", "value": value},
-                            {"type": "pause", "duration": hold_ms},
+                            {"type": "pause", "duration": release_ms},
                         ],
                     }
                 ]
@@ -597,24 +605,151 @@ def region_change_ratio(
     return changed / total if total else 0.0
 
 
-def frame_quality(frame: tuple[int, int, int, bytes]) -> dict[str, float]:
-    """Reject blank/lost canvas and the renderer's magenta color-key frame."""
-    _, _, channels, pixels = frame
+def _largest_solid_rectangle(
+    mask: list[bool], width: int, height: int
+) -> tuple[int, int, int]:
+    """Return pixel area, width, and height of the largest true rectangle."""
+    heights = [0] * width
+    best_area = best_width = best_height = 0
+    for y_position in range(height):
+        row = y_position * width
+        for x_position in range(width):
+            heights[x_position] = (
+                heights[x_position] + 1 if mask[row + x_position] else 0
+            )
+        stack: list[tuple[int, int]] = []
+        for x_position in range(width + 1):
+            current_height = heights[x_position] if x_position < width else 0
+            start = x_position
+            while stack and stack[-1][1] > current_height:
+                rectangle_start, rectangle_height = stack.pop()
+                rectangle_width = x_position - rectangle_start
+                rectangle_area = rectangle_width * rectangle_height
+                if rectangle_area > best_area:
+                    best_area = rectangle_area
+                    best_width = rectangle_width
+                    best_height = rectangle_height
+                start = rectangle_start
+            if not stack or stack[-1][1] < current_height:
+                stack.append((start, current_height))
+    return best_area, best_width, best_height
+
+
+def _largest_component(
+    mask: list[bool], width: int, height: int
+) -> tuple[int, int, int]:
+    """Return area and bounds of the largest four-connected true component."""
+    seen = bytearray(width * height)
+    best_area = best_width = best_height = 0
+    for seed, present in enumerate(mask):
+        if not present or seen[seed]:
+            continue
+        queue = [seed]
+        seen[seed] = 1
+        cursor = 0
+        area = 0
+        minimum_x = maximum_x = seed % width
+        minimum_y = maximum_y = seed // width
+        while cursor < len(queue):
+            position = queue[cursor]
+            cursor += 1
+            y_position, x_position = divmod(position, width)
+            area += 1
+            minimum_x = min(minimum_x, x_position)
+            maximum_x = max(maximum_x, x_position)
+            minimum_y = min(minimum_y, y_position)
+            maximum_y = max(maximum_y, y_position)
+            for neighbor in (
+                position - 1,
+                position + 1,
+                position - width,
+                position + width,
+            ):
+                if neighbor < 0 or neighbor >= len(mask):
+                    continue
+                neighbor_y, neighbor_x = divmod(neighbor, width)
+                if abs(neighbor_x - x_position) + abs(neighbor_y - y_position) != 1:
+                    continue
+                if mask[neighbor] and not seen[neighbor]:
+                    seen[neighbor] = 1
+                    queue.append(neighbor)
+        if area > best_area:
+            best_area = area
+            best_width = maximum_x - minimum_x + 1
+            best_height = maximum_y - minimum_y + 1
+    return best_area, best_width, best_height
+
+
+def frame_quality(
+    frame: tuple[int, int, int, bytes]
+) -> dict[str, float | int]:
+    """Measure blank/lost canvas and indexed-renderer color-key leakage."""
+    width, height, channels, pixels = frame
     total = len(pixels) // channels
-    non_black = magenta = meaningful = 0
+    non_black = magenta = meaningful = renderer_key = 0
+    renderer_key_mask: list[bool] = []
     for pixel in range(0, len(pixels), channels):
         red, green, blue = pixels[pixel : pixel + 3]
         opaque = channels == 3 or pixels[pixel + 3] > 16
         is_non_black = opaque and max(red, green, blue) > 12
-        is_magenta = opaque and red > 224 and green < 48 and blue > 224
+        # The indexed renderer's key is 0xA800A8. XRGB8888/WebGL paths may
+        # preserve that value or quantize it through RGB565 (observed as
+        # #AD00AD in Firefox). Keep the older bright-magenta guard as well,
+        # since a lost GL texture may be cleared to that diagnostic color.
+        red_blue_min = min(red, blue)
+        is_color_key = (
+            red_blue_min >= 144
+            and green <= 48
+            and abs(red - blue) <= 24
+            and red_blue_min - green >= 112
+        )
+        is_renderer_key = (
+            opaque
+            and 164 <= red <= 176
+            and 164 <= blue <= 176
+            and green <= 4
+            and abs(red - blue) <= 2
+        )
         non_black += int(is_non_black)
-        magenta += int(is_magenta)
-        meaningful += int(is_non_black and not is_magenta)
+        magenta += int(opaque and is_color_key)
+        renderer_key += int(is_renderer_key)
+        meaningful += int(is_non_black and not is_color_key)
+        renderer_key_mask.append(is_renderer_key)
+    rectangle_pixels, rectangle_width, rectangle_height = (
+        _largest_solid_rectangle(renderer_key_mask, width, height)
+        if total and width * height == total
+        else (0, 0, 0)
+    )
+    component_pixels, component_width, component_height = (
+        _largest_component(renderer_key_mask, width, height)
+        if total and width * height == total
+        else (0, 0, 0)
+    )
     return {
         "non_black_ratio": non_black / total if total else 0.0,
         "magenta_ratio": magenta / total if total else 0.0,
+        "renderer_key_ratio": renderer_key / total if total else 0.0,
+        "renderer_key_rect_ratio": rectangle_pixels / total if total else 0.0,
+        "renderer_key_rect_pixels": rectangle_pixels,
+        "renderer_key_rect_width": rectangle_width,
+        "renderer_key_rect_height": rectangle_height,
+        "renderer_key_component_pixels": component_pixels,
+        "renderer_key_component_width": component_width,
+        "renderer_key_component_height": component_height,
         "meaningful_ratio": meaningful / total if total else 0.0,
     }
+
+
+def frame_has_color_key_failure(quality: dict[str, float | int]) -> bool:
+    """Reject lost frames or a material rectangular renderer-key leak."""
+    return bool(
+        quality["magenta_ratio"] >= 0.50
+        or (
+            quality["renderer_key_component_pixels"] >= 256
+            and quality["renderer_key_component_width"] >= 16
+            and quality["renderer_key_component_height"] >= 4
+        )
+    )
 
 
 def capture_temporal_gameplay(
@@ -690,10 +825,16 @@ def capture_temporal_gameplay(
         failures.append("gameplay canvas geometry changed or disappeared")
     frame_qualities = [frame_quality(frame) for frame in decoded_frames]
     for path, quality in zip(paths, frame_qualities):
-        if quality["magenta_ratio"] > 0.20:
+        if frame_has_color_key_failure(quality):
             failures.append(
-                f"settled gameplay frame is dominated by color-key magenta: "
-                f"{path.name} ({quality['magenta_ratio']:.3%})"
+                f"settled gameplay frame leaks renderer color-key magenta: "
+                f"{path.name} ({quality['magenta_ratio']:.3%} broad key, "
+                f"{quality['renderer_key_ratio']:.3%} sentinel, largest "
+                f"component {quality['renderer_key_component_pixels']} px/"
+                f"{quality['renderer_key_component_width']}x"
+                f"{quality['renderer_key_component_height']}, rectangle "
+                f"{quality['renderer_key_rect_width']}x"
+                f"{quality['renderer_key_rect_height']})"
             )
         if quality["meaningful_ratio"] < 0.05:
             failures.append(
@@ -991,10 +1132,10 @@ def run_smoke(args: argparse.Namespace, firefox: str, geckodriver: str) -> int:
             )
             driver.execute(
                 """
-                import("./jc-web-player.js").then(player => player.start(
-                  undefined,
-                  arguments[0],
-                ));
+                if (typeof window.__jcStartForSmoke !== "function") {
+                  throw new Error("smoke-only player start hook is unavailable");
+                }
+                window.__jcStartForSmoke(undefined, arguments[0]);
                 return true;
                 """,
                 core_options,

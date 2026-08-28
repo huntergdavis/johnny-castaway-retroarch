@@ -70,7 +70,7 @@ button:disabled { opacity: .45; }
 
 canvas {
   display: block;
-  width: min(100%, 960px);
+  width: min(100%, 640px);
   aspect-ratio: 4 / 3;
   image-rendering: pixelated;
   outline: none;

@@ -185,6 +185,12 @@ installAudioSmokeProbe();
 
 function installWebGLSmokeProbe() {
   if (!new URLSearchParams(window.location.search).has("smoke")) return;
+  if (
+    window.__jcWebGLProbe?.installed &&
+    typeof window.__jcResetWebGLProbe === "function"
+  ) {
+    return;
+  }
 
   const canvasPrototype = window.HTMLCanvasElement?.prototype;
   const randomSalt = new Uint32Array(1);
@@ -474,6 +480,8 @@ function installContent(module, pair, mapData, archiveData, sounds, coreOptions)
       'menu_driver = "ozone"',
       'video_driver = "gl"',
       'audio_driver = "rwebaudio"',
+      'audio_latency = "256"',
+      'menu_scroll_delay = "500"',
       "menu_show_load_core = false",
       "menu_show_load_content = false",
       `# Loaded locally from ${pair.map.name} and ${pair.archive.name}`,
@@ -529,6 +537,10 @@ export async function start(pair = selectedPair(), coreOptions = null) {
     startButton.disabled = false;
     contentInput.disabled = false;
   }
+}
+
+if (new URLSearchParams(window.location.search).has("smoke")) {
+  window.__jcStartForSmoke = start;
 }
 
 async function autoStartLocalContent() {

@@ -11,6 +11,8 @@ import tempfile
 import unittest
 import zipfile
 
+from web_smoke_test import frame_has_color_key_failure, frame_quality
+
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 CHECKER = ROOT / "tools/check_web_dist.py"
@@ -167,6 +169,7 @@ class WebDiagnosticProbeSourceTests(unittest.TestCase):
         end = player.index("installWebGLSmokeProbe();", start)
         probe = player[start:end]
         self.assertIn('has("smoke")', probe)
+        self.assertIn("window.__jcWebGLProbe?.installed", probe)
         self.assertIn("crypto.getRandomValues(randomSalt)", probe)
         self.assertNotIn("randomSalt:", probe)
         self.assertIn("Math.min(64, bytes.length)", probe)
@@ -195,11 +198,82 @@ class WebDiagnosticProbeSourceTests(unittest.TestCase):
         harness = (ROOT / "tools/web_smoke_test.py").read_text(encoding="utf-8")
         for marker in (
             "__jcResetWebGLProbe",
+            "__jcStartForSmoke",
             '"webgl": webgl_metrics',
             '"distinct_sampled_video_uploads"',
             '"context_lost_events"',
         ):
             self.assertIn(marker, harness)
+        self.assertNotIn('import("./jc-web-player.js")', harness)
+
+
+class WebSmokeFrameQualityTests(unittest.TestCase):
+    def test_color_key_variants_are_classified_as_magenta(self) -> None:
+        pixels = bytes(
+            (
+                0xA8, 0x00, 0xA8,
+                0xAD, 0x00, 0xAD,
+                0xFF, 0x00, 0xFF,
+                0x20, 0x80, 0xC0,
+            )
+        )
+        quality = frame_quality((4, 1, 3, pixels))
+        self.assertEqual(quality["magenta_ratio"], 0.75)
+        self.assertEqual(quality["meaningful_ratio"], 0.25)
+
+    def test_non_key_palette_colors_remain_meaningful(self) -> None:
+        pixels = bytes(
+            (
+                0xFF, 0x69, 0xB4,
+                0xEE, 0x82, 0xEE,
+                0x80, 0x00, 0x80,
+                180, 30, 150,
+                0, 0, 0,
+            )
+        )
+        quality = frame_quality((5, 1, 3, pixels))
+        self.assertEqual(quality["magenta_ratio"], 0.0)
+        self.assertEqual(quality["meaningful_ratio"], 0.8)
+
+    def test_small_color_key_accent_does_not_dominate(self) -> None:
+        pixels = bytes((0xA8, 0, 0xA8) + (0x20, 0x80, 0xC0) * 9)
+        quality = frame_quality((10, 1, 3, pixels))
+        self.assertAlmostEqual(quality["magenta_ratio"], 0.1)
+        self.assertAlmostEqual(quality["meaningful_ratio"], 0.9)
+        self.assertEqual(quality["renderer_key_component_pixels"], 1)
+        self.assertFalse(frame_has_color_key_failure(quality))
+
+    def test_residual_renderer_key_rectangle_fails_below_half_frame(self) -> None:
+        width = 100
+        height = 80
+        pixels = bytearray((0x20, 0x80, 0xC0) * width * height)
+        for y_position in range(20, 28):
+            for x_position in range(10, 50):
+                pixel = (y_position * width + x_position) * 3
+                pixels[pixel : pixel + 3] = bytes((0xAD, 0, 0xAD))
+        quality = frame_quality((width, height, 3, bytes(pixels)))
+        self.assertAlmostEqual(quality["magenta_ratio"], 0.04)
+        self.assertEqual(quality["renderer_key_rect_pixels"], 320)
+        self.assertEqual(quality["renderer_key_rect_width"], 40)
+        self.assertEqual(quality["renderer_key_rect_height"], 8)
+        self.assertEqual(quality["renderer_key_component_pixels"], 320)
+        self.assertEqual(quality["renderer_key_component_width"], 40)
+        self.assertEqual(quality["renderer_key_component_height"], 8)
+        self.assertTrue(frame_has_color_key_failure(quality))
+
+    def test_legitimate_pink_rectangle_does_not_trip_sentinel_gate(self) -> None:
+        width = 100
+        height = 80
+        pixels = bytearray((0x20, 0x80, 0xC0) * width * height)
+        for y_position in range(20, 28):
+            for x_position in range(10, 50):
+                pixel = (y_position * width + x_position) * 3
+                pixels[pixel : pixel + 3] = bytes((0xFF, 0x69, 0xB4))
+        quality = frame_quality((width, height, 3, bytes(pixels)))
+        self.assertEqual(quality["renderer_key_ratio"], 0.0)
+        self.assertEqual(quality["renderer_key_rect_pixels"], 0)
+        self.assertEqual(quality["renderer_key_component_pixels"], 0)
+        self.assertFalse(frame_has_color_key_failure(quality))
 
 
 if __name__ == "__main__":

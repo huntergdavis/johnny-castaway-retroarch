@@ -27,7 +27,8 @@ usage: scripts/test-native-retroarch.sh \
 
 Runs the core in a real native RetroArch frontend for a bounded number of frames,
 captures a screenshot, and checks Core Options v2, VFS, pixel format, geometry,
-content indexing, API version, clean unload, and non-blank 640x480 video.
+content indexing, API version, clean unload, and material 640x480 video without
+a dominant indexed-renderer color key.
 
 Use --chapter fishing1 with this repository's five-resource synthetic fixture.
 Authentic data should normally retain the default Automatic Story selection.
@@ -111,7 +112,7 @@ if [[ -n "${expected_min_scenes}" ]]; then
         fail '--expected-min-scenes must be a positive integer'
 fi
 
-for command_name in grep identify realpath sha256sum; do
+for command_name in grep identify python3 realpath sha256sum; do
     command -v "${command_name}" >/dev/null 2>&1 ||
         fail "required command not found: ${command_name}"
 done
@@ -224,6 +225,32 @@ read -r image_width image_height image_colors < <(
     fail "unexpected screenshot geometry: ${image_width}x${image_height}"
 [[ "${image_colors}" =~ ^[0-9]+$ && "${image_colors}" -gt 1 ]] ||
     fail "screenshot is blank or monochrome: ${image_colors} colors"
+frame_quality="$({
+    PYTHONPATH="${project_root}" python3 - "${screenshot}" <<'PY'
+import pathlib
+import sys
+
+from tools.web_smoke_test import (
+    frame_has_color_key_failure,
+    frame_quality,
+    png_pixels,
+)
+
+quality = frame_quality(png_pixels(pathlib.Path(sys.argv[1])))
+print(
+    f"key_ratio={quality['magenta_ratio']:.6f} "
+    f"key_component={quality['renderer_key_component_pixels']}px/"
+    f"{quality['renderer_key_component_width']}x"
+    f"{quality['renderer_key_component_height']} "
+    f"meaningful_ratio={quality['meaningful_ratio']:.6f}"
+)
+raise SystemExit(
+    frame_has_color_key_failure(quality)
+    or quality["meaningful_ratio"] < 0.05
+)
+PY
+} 2>&1)" ||
+    fail "screenshot is dominated by the renderer color key or lacks material pixels: ${frame_quality}"
 
 [[ -s "${options_file}" ]] || fail 'RetroArch did not persist core options'
 grep -Fq 'johnny_castaway_story_seed = ' "${options_file}" ||
@@ -231,6 +258,7 @@ grep -Fq 'johnny_castaway_story_seed = ' "${options_file}" ||
 grep -Fq 'johnny_castaway_raft_stage = ' "${options_file}" ||
     fail 'Raft Stage is absent from persisted Core Options'
 
-printf 'Native RetroArch smoke passed: frames=%s geometry=%sx%s colors=%s screenshot_sha256=%s\n' \
+printf 'Native RetroArch smoke passed: frames=%s geometry=%sx%s colors=%s %s screenshot_sha256=%s\n' \
     "${frames}" "${image_width}" "${image_height}" "${image_colors}" \
+    "${frame_quality}" \
     "$(sha256sum "${screenshot}" | awk '{print $1}')"
