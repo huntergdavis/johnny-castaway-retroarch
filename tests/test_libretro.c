@@ -53,6 +53,8 @@ static const char *caption_opacity_value = "63";
 static const char *caption_position_value = "bottom";
 static uint64_t frame_hash;
 static size_t magenta_pixels;
+static size_t canonical_key_pixels;
+static size_t canonical_key_longest_run;
 static bool last_audio_has_signal;
 static size_t chapter_value_count;
 static size_t holiday_value_count;
@@ -79,6 +81,7 @@ size_t jc_test_story_wave_frame(size_t position, size_t position_count,
                                 uint64_t runtime_ticks);
 bool jc_test_story_wave_composition(void);
 bool jc_test_story_palette_selection(void);
+size_t jc_test_current_canonical_key_longest_run(void);
 
 static void assert_story_wave_cadence(void)
 {
@@ -612,6 +615,7 @@ static void RETRO_CALLCONV video(const void *data, unsigned width,
     const uint32_t *pixels = (const uint32_t *)data;
     size_t count = (size_t)width * height;
     size_t index;
+    size_t canonical_key_run = 0u;
     uint64_t hash = 1469598103934665603ull;
     assert(data != NULL);
     assert(width == 640u && height == 480u);
@@ -620,6 +624,8 @@ static void RETRO_CALLCONV video(const void *data, unsigned width,
     holiday_bar_top_pixels = 0u;
     holiday_bar_bottom_pixels = 0u;
     magenta_pixels = 0u;
+    canonical_key_pixels = 0u;
+    canonical_key_longest_run = 0u;
     for (index = 0u; index < count; ++index) {
         unsigned red = (pixels[index] >> 16) & 0xffu;
         unsigned green = (pixels[index] >> 8) & 0xffu;
@@ -640,9 +646,29 @@ static void RETRO_CALLCONV video(const void *data, unsigned width,
         if (minimum >= 144u && green <= 48u && maximum - minimum <= 24u &&
             minimum - green >= 112u)
             ++magenta_pixels;
+        if (pixels[index] == 0x00a800a8u) {
+            ++canonical_key_pixels;
+            ++canonical_key_run;
+            if (canonical_key_run > canonical_key_longest_run)
+                canonical_key_longest_run = canonical_key_run;
+        } else {
+            canonical_key_run = 0u;
+        }
+        if ((index + 1u) % width == 0u)
+            canonical_key_run = 0u;
     }
     frame_hash = hash;
     ++video_calls;
+}
+
+static void assert_no_canonical_key_blocks(const char *context)
+{
+    if (canonical_key_longest_run >= 8u) {
+        fprintf(stderr,
+                "%s leaked canonical color-key pixels: count=%zu longest-horizontal-run=%zu\n",
+                context, canonical_key_pixels, canonical_key_longest_run);
+    }
+    assert(canonical_key_longest_run < 8u);
 }
 
 static void RETRO_CALLCONV audio_sample(int16_t left, int16_t right)
@@ -767,8 +793,15 @@ int main(int argc, char **argv)
     assert(!playback_speed_option_visible);
     story_calendar_value = "system";
 
+    if (argc == 2)
+        chapter_value = "automatic";
     game.path = argc == 2 ? argv[1] : make_synthetic_content();
     assert(retro_load_game(&game));
+    if (argc == 2) {
+        assert(jc_test_current_canonical_key_longest_run() < 8u);
+        chapter_value = "screen";
+        variable_updated = true;
+    }
     retro_run();
     assert(video_calls == 1u && frame_has_color);
     assert(audio_frames == 882u);
@@ -847,9 +880,11 @@ int main(int argc, char **argv)
             retro_run();
         assert(frame_hash != chapter_hash);
         assert(magenta_pixels < (size_t)640u * 480u / 2u);
+        assert_no_canonical_key_blocks("authentic fixed chapter");
         assert(retro_unserialize(animation_state, animation_state_size));
         retro_run();
         assert(magenta_pixels < (size_t)640u * 480u / 2u);
+        assert_no_canonical_key_blocks("restored authentic fixed chapter");
         assert(retro_unserialize(animation_state, animation_state_size));
         free(animation_state);
     }
@@ -1003,6 +1038,7 @@ int main(int argc, char **argv)
         variable_updated = true;
         retro_run();
         assert(automatic_scene_starts == starts_before + 1u);
+        assert_no_canonical_key_blocks("authentic automatic scene");
 
         starts_before = automatic_scene_starts;
         story_seed_value = "42";
@@ -1119,6 +1155,7 @@ int main(int argc, char **argv)
         retro_run();
         assert(frame_hash == automatic_next_hash);
         assert(last_audio_has_signal == automatic_next_audio);
+        assert_no_canonical_key_blocks("restored automatic walk");
 
         for (frame = 0u;
              frame < 5000u &&

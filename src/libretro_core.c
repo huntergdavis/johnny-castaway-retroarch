@@ -1260,8 +1260,117 @@ static uint8_t story_background_fill_index(void)
     return 0u;
 }
 
+static bool chapter_story_scene(const jc_chapter_t *chapter,
+                                jc_story_scene_t *scene)
+{
+    size_t index;
+
+    if (chapter == NULL || scene == NULL)
+        return false;
+    for (index = 0u; index < jc_director_scene_count(); ++index) {
+        jc_story_scene_t candidate;
+        size_t name_length = strlen(chapter->ads_name);
+        if (jc_director_scene(index, &candidate) &&
+            candidate.ads_tag == chapter->ads_tag &&
+            strncmp(candidate.ads_name, chapter->ads_name, name_length) == 0 &&
+            (candidate.ads_name[name_length] == '\0' ||
+             strcmp(candidate.ads_name + name_length, ".ADS") == 0)) {
+            *scene = candidate;
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool fixed_chapter_story_player(const jc_chapter_t *chapter,
+                                       jc_story_player_t *player)
+{
+    jc_story_scene_t scene;
+    jc_scene_play_t *play;
+    uint8_t story_day;
+
+    if (player == NULL || !chapter_story_scene(chapter, &scene) ||
+        (scene.flags & JC_SCENE_ISLAND) == 0u)
+        return false;
+    memset(player, 0, sizeof(*player));
+    player->ready = true;
+    player->run.on_island = true;
+    player->run.scene_count = 1u;
+    play = &player->run.scenes[0];
+    play->scene = scene;
+    play->left_island = (scene.flags & JC_SCENE_LEFT_ISLAND) != 0u;
+    story_day = scene.story_day != 0u ? scene.story_day : 1u;
+    player->run.island.raft_stage =
+        (scene.flags & JC_SCENE_NO_RAFT) != 0u ? 0u :
+        jc_director_raft_for_day(story_day);
+    if (play->left_island)
+        player->run.island.x = -272;
+    return true;
+}
+
+static bool blit_story_sprite_with_key(jc_bmp_t *bmp, size_t frame,
+                                       jc_surface_t *destination,
+                                       int x, int y, int transparent_index)
+{
+    jc_surface_t sprite;
+
+    if (bmp == NULL || destination == NULL ||
+        !jc_bmp_image_surface(bmp, frame, &sprite))
+        return false;
+    jc_surface_blit(destination, x, y, &sprite, transparent_index, false);
+    return true;
+}
+
+static bool compose_story_island_base(jc_surface_t *background,
+                                      const jc_island_state_t *island,
+                                      int transparent_index)
+{
+    static const struct {
+        int x;
+        int y;
+        size_t frame;
+    } base_sprites[] = {
+        {288, 279, 0u},
+        {442, 148, 13u},
+        {365, 122, 12u},
+        {396, 279, 14u}
+    };
+    size_t index;
+
+    if (background == NULL || island == NULL ||
+        island_sprites.image_count <= 14u)
+        return false;
+    if (island->raft_stage >= 1u && island->raft_stage <= 5u) {
+        int x = island->low_tide ? 529 : 512;
+        int y = island->low_tide ? 281 : 266;
+        if (raft_sprites.image_count < island->raft_stage ||
+            !blit_story_sprite_with_key(
+                &raft_sprites, island->raft_stage - 1u, background,
+                x + island->x, y + island->y, transparent_index))
+            return false;
+    }
+    for (index = 0u;
+         index < sizeof(base_sprites) / sizeof(base_sprites[0]); ++index) {
+        if (!blit_story_sprite_with_key(
+                &island_sprites, base_sprites[index].frame, background,
+                base_sprites[index].x + island->x,
+                base_sprites[index].y + island->y, transparent_index))
+            return false;
+    }
+    if (island->low_tide &&
+        (!blit_story_sprite_with_key(&island_sprites, 1u, background,
+                                     249 + island->x, 303 + island->y,
+                                     transparent_index) ||
+         !blit_story_sprite_with_key(&island_sprites, 2u, background,
+                                     150 + island->x, 328 + island->y,
+                                     transparent_index)))
+        return false;
+    return true;
+}
+
 static bool load_runtime_chapter_background(
     jc_runtime_t *target_runtime, const jc_chapter_t *chapter,
+    const jc_story_player_t *player,
     char *error, size_t error_size)
 {
     jc_resource_info_t screen_resource;
@@ -1271,12 +1380,28 @@ static bool load_runtime_chapter_background(
     uint8_t *pixels = NULL;
     bool success = false;
     const char *screen_name;
+    const jc_island_state_t *island = NULL;
+    jc_story_player_t fixed_player;
+    const jc_scene_play_t *play = jc_story_player_current(player);
+    int transparent_index;
+    bool assemble_island;
 
     if (target_runtime == NULL || chapter == NULL) {
         snprintf(error, error_size, "invalid runtime background target");
         return false;
     }
-    screen_name = chapter_location_screen(chapter);
+    if (play != NULL && (play->scene.flags & JC_SCENE_ISLAND) != 0u)
+        island = &player->run.island;
+    else if (player == NULL &&
+             fixed_chapter_story_player(chapter, &fixed_player))
+        island = &fixed_player.run.island;
+    assemble_island = island != NULL && island_sprites.image_count > 14u;
+    /* Johnny Reborn's GPL islandInit() selects OCEAN00..02 with ambient RNG,
+     * or NIGHT for a night run, before layering BACKGRND.BMP. Keep day setup
+     * deterministic with OCEAN00 until a backdrop variant is serialized. */
+    screen_name = assemble_island ?
+        (island->night ? "NIGHT.SCR" : "OCEAN00.SCR") :
+        chapter_location_screen(chapter);
     if (!jc_content_find_resource(&content, screen_name, vfs,
                                   &screen_resource, error, error_size))
         return false;
@@ -1294,16 +1419,24 @@ static bool load_runtime_chapter_background(
                        JC_FRAME_WIDTH * JC_FRAME_HEIGHT, &screen,
                        error, error_size))
         goto cleanup;
-    target_runtime->transparent_source_index = story_transparent_index();
+    transparent_index = story_transparent_index();
+    target_runtime->transparent_source_index = transparent_index;
     target_runtime->renderer.transparent_source_index =
         target_runtime->transparent_source_index;
     jc_surface_clear(&target_runtime->renderer.scratch,
                      story_background_fill_index());
     jc_surface_blit(
         &target_runtime->renderer.scratch,
-        ((int)JC_FRAME_WIDTH - (int)screen.width) / 2,
-        ((int)JC_FRAME_HEIGHT - (int)screen.height) / 2,
+        0, 0,
         &screen, -1, false);
+    if (assemble_island &&
+        !compose_story_island_base(&target_runtime->renderer.scratch,
+                                   island, transparent_index)) {
+        snprintf(error, error_size,
+                 "runtime background %s lacks island sprite frames",
+                 screen_name);
+        goto cleanup;
+    }
     if (!jc_ttm_renderer_set_background(&target_runtime->renderer,
                                         &target_runtime->renderer.scratch,
                                         &script_error) ||
@@ -1386,6 +1519,12 @@ static bool load_walk_resources(char *error, size_t error_size)
     bool have_raft_sprites;
 
     unload_walk_resources();
+    /* Establish the canonical palette before initializing indexed sprite
+     * compositors. Authentic transparency is index 0; the historical
+     * synthetic fixture has no magenta entry and deliberately falls back to
+     * index 5. This internal frame is replaced before any video callback. */
+    if (!load_frame_into(&core, "INTRO.SCR", false, error, error_size))
+        return false;
     if (!load_content_bmp("JOHNWALK.BMP", &johnny_walk_sprites,
                           error, error_size))
         return false;
@@ -1415,7 +1554,7 @@ static bool load_walk_resources(char *error, size_t error_size)
                          (size_t)JC_FRAME_WIDTH * JC_FRAME_HEIGHT,
                          JC_FRAME_WIDTH, JC_FRAME_HEIGHT, JC_FRAME_WIDTH) ||
         !jc_island_walk_init(&island_walk, JC_FRAME_WIDTH, JC_FRAME_HEIGHT,
-                             5) ||
+                             story_transparent_index()) ||
         !jc_island_walk_bind_sprites(
             &island_walk, &johnny_walk_sprites,
             have_island_sprites ? &island_sprites : NULL)) {
@@ -1573,13 +1712,8 @@ static void apply_story_island_options(jc_story_player_t *player)
 static bool blit_story_sprite(jc_bmp_t *bmp, size_t frame,
                               jc_surface_t *destination, int x, int y)
 {
-    jc_surface_t sprite;
-
-    if (bmp == NULL || destination == NULL ||
-        !jc_bmp_image_surface(bmp, frame, &sprite))
-        return false;
-    jc_surface_blit(destination, x, y, &sprite, 5, false);
-    return true;
+    return blit_story_sprite_with_key(bmp, frame, destination, x, y,
+                                      story_transparent_index());
 }
 
 typedef struct jc_story_wave_position {
@@ -1616,6 +1750,28 @@ size_t jc_test_story_wave_frame(size_t position, size_t position_count,
                                 uint64_t runtime_ticks)
 {
     return story_wave_frame(position, position_count, runtime_ticks);
+}
+
+size_t jc_test_current_canonical_key_longest_run(void)
+{
+    const uint32_t *pixels = jc_core_framebuffer(&core);
+    size_t longest = 0u;
+    size_t run = 0u;
+    size_t index;
+
+    for (index = 0u; index < (size_t)JC_FRAME_WIDTH * JC_FRAME_HEIGHT;
+         ++index) {
+        if (pixels[index] == 0x00a800a8u) {
+            ++run;
+            if (run > longest)
+                longest = run;
+        } else {
+            run = 0u;
+        }
+        if ((index + 1u) % JC_FRAME_WIDTH == 0u)
+            run = 0u;
+    }
+    return longest;
 }
 #endif
 
@@ -1722,6 +1878,8 @@ bool jc_test_story_wave_composition(void)
     uint8_t raft_pixel = 90u;
     jc_core_t target_core;
     jc_palette_t palette;
+    jc_palette_t saved_walk_palette = walk_palette;
+    bool saved_walk_palette_ready = walk_palette_ready;
     jc_script_error_t error;
     uint64_t clean_output_hash;
     uint64_t first_hash;
@@ -1738,6 +1896,9 @@ bool jc_test_story_wave_composition(void)
     memset(&palette, 0, sizeof(palette));
     for (index = 0u; index < 256u; ++index)
         palette.xrgb[index] = (uint32_t)index;
+    palette.xrgb[0] = 0x00a800a8u;
+    walk_palette = palette;
+    walk_palette_ready = true;
     jc_core_init(&target_core);
     for (index = 0u; index < 42u; ++index) {
         pixels[index] = (uint8_t)(20u + index);
@@ -1748,7 +1909,7 @@ bool jc_test_story_wave_composition(void)
     }
     /* The second phase at the rightmost high-tide position is transparent,
      * proving that the preceding phase is not left baked into the backdrop. */
-    pixels[10] = 5u;
+    pixels[10] = 0u;
     fixture.image_count = 42u;
     fixture.images = images;
     fixture.pixel_storage = pixels;
@@ -1820,6 +1981,8 @@ restore:
     island_sprites = previous_sprites;
     raft_sprites = previous_raft_sprites;
 cleanup:
+    walk_palette = saved_walk_palette;
+    walk_palette_ready = saved_walk_palette_ready;
     if (target != NULL) {
         jc_ttm_renderer_destroy(&target->renderer);
         free(target);
@@ -1960,11 +2123,16 @@ static void refresh_story_island_animation(uint64_t previous_ticks)
     const jc_scene_play_t *play;
     const jc_palette_t *palette;
     jc_script_error_t error;
+    jc_story_player_t fixed_player;
+    const jc_story_player_t *player;
 
-    if (!game_loaded || !automatic_story || !runtime_ready || runtime == NULL ||
+    if (!game_loaded || !runtime_ready || runtime == NULL ||
         runtime_failed || automatic_transition != JC_AUTOMATIC_TRANSITION_NONE)
         return;
-    play = jc_story_player_current(&story_player);
+    player = automatic_story ? &story_player :
+        (fixed_chapter_story_player(selected_chapter, &fixed_player) ?
+             &fixed_player : NULL);
+    play = jc_story_player_current(player);
     if (play == NULL || (play->scene.flags & JC_SCENE_ISLAND) == 0u)
         return;
     if (runtime->vm.tick_count / ISLAND_WAVE_INTERVAL_TICKS ==
@@ -1973,7 +2141,7 @@ static void refresh_story_island_animation(uint64_t previous_ticks)
     palette = story_runtime_palette(runtime);
     if (palette == NULL)
         return;
-    if (!present_story_frame(&core, runtime, &story_player, palette, &error)) {
+    if (!present_story_frame(&core, runtime, player, palette, &error)) {
         runtime_failed = true;
         if (log_cb != NULL)
             log_cb(RETRO_LOG_ERROR,
@@ -2024,6 +2192,44 @@ static bool render_story_walk_frame(jc_island_walk_t *transition,
     return rendered;
 }
 
+static bool present_started_chapter(const jc_chapter_t *chapter,
+                                    const jc_story_player_t *player,
+                                    char *error, size_t error_size)
+{
+    const jc_palette_t *palette = story_runtime_palette(runtime);
+    const jc_surface_t *surface = jc_runtime_output(runtime);
+    jc_story_player_t fixed_player;
+    const jc_story_player_t *presentation_player = player;
+    const jc_scene_play_t *presentation_play;
+    jc_script_error_t presentation_error;
+
+    if (runtime == NULL || palette == NULL || surface == NULL) {
+        snprintf(error, error_size,
+                 "started chapter has no renderable frame or palette");
+        return false;
+    }
+    if (presentation_player == NULL &&
+        fixed_chapter_story_player(chapter, &fixed_player))
+        presentation_player = &fixed_player;
+    presentation_play = jc_story_player_current(presentation_player);
+    if (presentation_play != NULL &&
+        (presentation_play->scene.flags & JC_SCENE_ISLAND) != 0u) {
+        if (!present_story_frame(&core, runtime, presentation_player, palette,
+                                 &presentation_error)) {
+            snprintf(error, error_size, "initial island frame: %s",
+                     presentation_error.message);
+            return false;
+        }
+        return true;
+    }
+    if (!jc_core_update_content_frame(&core, surface, palette)) {
+        snprintf(error, error_size,
+                 "could not convert the initial runtime frame");
+        return false;
+    }
+    return true;
+}
+
 static bool start_automatic_scene(char *error, size_t error_size)
 {
     const jc_scene_play_t *play = jc_story_player_current(&story_player);
@@ -2055,7 +2261,8 @@ static bool start_automatic_scene(char *error, size_t error_size)
                  script_error.message);
         return false;
     }
-    if (!load_runtime_chapter_background(runtime, chapter, error, error_size))
+    if (!load_runtime_chapter_background(runtime, chapter, &story_player,
+                                         error, error_size))
         return false;
     if ((play->scene.flags & JC_SCENE_ISLAND) != 0u) {
         offset_x = story_player.run.island.x +
@@ -2068,6 +2275,8 @@ static bool start_automatic_scene(char *error, size_t error_size)
                  script_error.message);
         return false;
     }
+    if (!present_started_chapter(chapter, &story_player, error, error_size))
+        return false;
     selected_chapter = chapter;
     (void)jc_captions_show_ads(&captions, play->scene.ads_name,
                                play->scene.ads_tag,
@@ -2149,8 +2358,11 @@ static bool start_selected_presentation(char *error, size_t error_size)
                      selected_chapter->slug, script_error.message);
             return false;
         }
-        if (!load_runtime_chapter_background(runtime, selected_chapter,
+        if (!load_runtime_chapter_background(runtime, selected_chapter, NULL,
                                              error, error_size))
+            return false;
+        if (!present_started_chapter(selected_chapter, NULL,
+                                     error, error_size))
             return false;
         (void)jc_captions_show(&captions, selected_chapter->caption_id,
                                JC_CAPTION_DEFAULT_TICKS);
@@ -2201,6 +2413,7 @@ static bool begin_automatic_walk(const jc_scene_play_t *next,
         return false;
     }
     clean_island = &runtime->renderer.background;
+    island_walk.transparent_index = story_transparent_index();
     jc_rng_init(&walk_rng,
                 jc_story_player_runtime_seed(&story_player) ^
                     WALK_RUNTIME_SEED_XOR ^
@@ -2344,7 +2557,23 @@ static void tick_story_runtime(void)
                                error.message);
                 }
             } else {
-                (void)jc_core_update_content_frame(&core, surface, palette);
+                jc_story_player_t fixed_player;
+                bool fixed_island = fixed_chapter_story_player(
+                    selected_chapter, &fixed_player);
+                if (fixed_island) {
+                    if (!present_story_frame(&core, runtime, &fixed_player,
+                                             palette, &error)) {
+                        runtime_failed = true;
+                        if (log_cb != NULL)
+                            log_cb(
+                                RETRO_LOG_ERROR,
+                                "Johnny Castaway island presentation: %s\n",
+                                error.message);
+                    }
+                } else {
+                    (void)jc_core_update_content_frame(&core, surface,
+                                                       palette);
+                }
             }
         }
     } else if (result == JC_SCRIPT_TICK_ERROR) {
@@ -2799,6 +3028,7 @@ static bool init_runtime_candidate(jc_runtime_t *candidate,
 
 static bool restore_runtime_candidate(jc_runtime_t *candidate,
                                       const jc_chapter_t *chapter,
+                                      const jc_story_player_t *player,
                                       bool diagnostic, bool has_scene,
                                       bool finished, uint64_t ticks,
                                       uint32_t seed, int offset_x,
@@ -2827,7 +3057,7 @@ static bool restore_runtime_candidate(jc_runtime_t *candidate,
         goto failed;
     {
         char background_error[256];
-        if (!load_runtime_chapter_background(candidate, chapter,
+        if (!load_runtime_chapter_background(candidate, chapter, player,
                                              background_error,
                                              sizeof(background_error)))
             goto failed;
@@ -3303,6 +3533,7 @@ bool retro_unserialize(const void *data, size_t size)
                                   core_size,
                               audio_size) ||
         !restore_runtime_candidate(candidate_runtime, candidate_chapter,
+                                   automatic ? &candidate_story_player : NULL,
                                    diagnostic, has_scene, finished,
                                    runtime_ticks, seed, runtime_offset_x,
                                    runtime_offset_y))
@@ -3341,7 +3572,8 @@ bool retro_unserialize(const void *data, size_t size)
                              JC_FRAME_WIDTH, JC_FRAME_HEIGHT,
                              JC_FRAME_WIDTH) ||
             !jc_island_walk_init(&candidate_island_walk, JC_FRAME_WIDTH,
-                                 JC_FRAME_HEIGHT, 5))
+                                 JC_FRAME_HEIGHT,
+                                 story_transparent_index()))
             goto cleanup;
         candidate_walk_initialized = true;
         jc_rng_init(&walk_rng,
