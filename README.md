@@ -58,6 +58,12 @@ ANDROID_NDK_HOME=/path/to/android-ndk ./scripts/build-target.sh android-x86
 `ANDROID_API` defaults to 21. `ANDROID_NDK_HOST_TAG` is inferred for Linux and macOS
 and can be overridden for another NDK host package.
 
+The `switch`, `wii`, `gamecube`, and `wiiu` aliases use devkitPro and produce static
+core archives for the corresponding statically linked RetroArch frontend. Run them from
+a configured devkitPro shell (`DEVKITPRO`/`DEVKITA64` for Switch or `DEVKITPPC` for the
+PowerPC consoles). Their current compiler/runtime validation status is recorded in the
+porting plan.
+
 ## Data and copyright
 
 No Sierra/Dynamix game data, artwork, or audio is distributed here. Users must provide

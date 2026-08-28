@@ -106,6 +106,37 @@ else ifeq ($(platform),ctr)
   TARGET := $(BUILD_DIR)/$(TARGET_NAME)_libretro.a
   PLATFORM_CFLAGS := -D_3DS -DARM11 -march=armv6k -mtune=mpcore -mfloat-abi=hard
   STATIC_LINKING := 1
+else ifneq (,$(filter $(platform),ngc wii wiiu))
+  ifeq ($(strip $(DEVKITPPC)),)
+    $(error Set DEVKITPPC for $(platform))
+  endif
+  CC := $(DEVKITPPC)/bin/powerpc-eabi-gcc
+  AR := $(DEVKITPPC)/bin/powerpc-eabi-ar
+  TARGET := $(BUILD_DIR)/$(TARGET_NAME)_libretro_$(platform).a
+  PLATFORM_CFLAGS := -DGEKKO -mcpu=750 -meabi -mhard-float \
+                     -ffunction-sections -fdata-sections -DMSB_FIRST
+  ifeq ($(platform),ngc)
+    PLATFORM_CFLAGS += -DHW_DOL -mrvl
+  else ifeq ($(platform),wii)
+    PLATFORM_CFLAGS += -DHW_RVL -mrvl
+  else
+    PLATFORM_CFLAGS += -DWIIU -DHW_RVL -D__wiiu__ -D__wut__
+  endif
+  STATIC_LINKING := 1
+else ifeq ($(platform),libnx)
+  ifeq ($(strip $(DEVKITPRO)),)
+    $(error Set DEVKITPRO for libnx)
+  endif
+  DEVKITA64 ?= $(DEVKITPRO)/devkitA64
+  LIBNX ?= $(DEVKITPRO)/libnx
+  CC := $(DEVKITA64)/bin/aarch64-none-elf-gcc
+  AR := $(DEVKITA64)/bin/aarch64-none-elf-ar
+  TARGET := $(BUILD_DIR)/$(TARGET_NAME)_libretro_libnx.a
+  PLATFORM_CFLAGS := -D__SWITCH__=1 -DSWITCH=1 -DHAVE_LIBNX=1 \
+                     -U__linux__ -U__linux -fPIE -ffunction-sections \
+                     -fdata-sections -march=armv8-a -mtune=cortex-a57 \
+                     -mtp=soft -I$(LIBNX)/include -specs=$(LIBNX)/switch.specs
+  STATIC_LINKING := 1
 else ifeq ($(platform),ps2)
   CC := mips64r5900el-ps2-elf-gcc
   AR := mips64r5900el-ps2-elf-ar

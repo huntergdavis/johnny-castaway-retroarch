@@ -86,7 +86,7 @@ Each row advances independently through Build/Load/Run/Regress.
 | 2 | iOS/tvOS | static `.a` | toolchain mapping pending |
 | 2 | `emscripten` | `.bc` static core | wasm objects/archive validated; browser frontend harness in progress |
 | 3 | `psp1`, `vita`, `ctr`, `ps2` | static `.a` | initial compiler mapping added |
-| 3 | Switch, Wii, GameCube, Wii U | static `.a` | devkitPro mapping pending |
+| 3 | Switch, Wii, GameCube, Wii U | static `.a` | devkitPro mappings and compiler dry-runs pass; real toolchain/frontend runs pending |
 | 4 | PS3, Xbox-family, Haiku/BSD/webOS and other buildbot targets | varies | inventory pending |
 
 Dreamcast and original PlayStation ports remain architectural and regression references.
