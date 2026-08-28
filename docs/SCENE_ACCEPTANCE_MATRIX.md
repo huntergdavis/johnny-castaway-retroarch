@@ -83,6 +83,16 @@ The combined command writes ordered sound metadata to
 `build/scene-visual-results.csv`. Both paths are ignored build evidence and
 contain no sample bytes, screenshots, or decoded pixels.
 
+The tracked `docs/scene_acceptance_matrix.csv` is a metadata-only snapshot of
+those two outputs from evidence commit
+`b7f151f3c1b794d1bd5c31819b6a59ba48c70624`, joined to the 63-entry PS1
+catalog at the oracle revision above. It records all 126 measured tide rows,
+the six initial-screen rows, and ordered sound events as
+`event@tick/frame:sample/status`. The sound sequence is repeated on the high
+and low rows because tide changes composition, not the ADS script event
+stream. Its `web_acceptance` field remains `pending_all_scene_matrix`; native
+acceptance is not presented as evidence that every Web row has run.
+
 Run only the production visual sweep with:
 
 ```sh
