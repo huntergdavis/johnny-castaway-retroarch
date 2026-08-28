@@ -2,10 +2,11 @@ TARGET_NAME := johnny_castaway
 platform ?= unix
 BUILD_DIR := build/$(platform)
 
-SOURCES := src/jc_audio.c src/jc_bmp.c src/jc_compositor.c src/jc_content.c \
-           src/jc_core.c src/jc_decompress.c src/jc_director.c src/jc_palette.c \
-           src/jc_path.c src/jc_resource_map.c src/jc_rng.c src/jc_scr.c \
-           src/jc_surface.c src/jc_walk.c src/jc_wav.c src/libretro_core.c
+SOURCES := src/jc_ads.c src/jc_audio.c src/jc_bmp.c src/jc_compositor.c \
+           src/jc_content.c src/jc_core.c src/jc_decompress.c src/jc_director.c \
+           src/jc_palette.c src/jc_path.c src/jc_resource_map.c src/jc_rng.c \
+           src/jc_scr.c src/jc_script_vm.c src/jc_surface.c src/jc_ttm.c \
+           src/jc_walk.c src/jc_wav.c src/libretro_core.c
 OBJECTS := $(patsubst %.c,$(BUILD_DIR)/%.o,$(SOURCES))
 INCLUDES := -Iinclude -Iexternal/libretro-common/include
 WARNINGS := -Wall -Wextra -Wpedantic
@@ -112,6 +113,7 @@ DIRECTOR_TEST_TARGET := build/tests/test_director
 PATH_TEST_TARGET := build/tests/test_path
 WALK_TEST_TARGET := build/tests/test_walk
 AUDIO_TEST_TARGET := build/tests/test_audio
+SCRIPT_TEST_TARGET := build/tests/test_script_vm
 LIBRETRO_TEST_TARGET := build/tests/test_libretro
 $(TEST_TARGET): src/jc_core.c tests/test_core.c include/jc_core.h
 	@mkdir -p $(dir $@)
@@ -156,6 +158,13 @@ $(AUDIO_TEST_TARGET): src/jc_audio.c src/jc_wav.c tests/test_audio.c
 	$(HOST_CC) -std=c99 $(WARNINGS) -Iinclude -O2 -o $@ \
 		src/jc_audio.c src/jc_wav.c tests/test_audio.c
 
+$(SCRIPT_TEST_TARGET): src/jc_ads.c src/jc_decompress.c src/jc_script_vm.c \
+                       src/jc_ttm.c tests/test_script_vm.c
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c99 $(WARNINGS) -Iinclude -O2 -o $@ \
+		src/jc_ads.c src/jc_decompress.c src/jc_script_vm.c src/jc_ttm.c \
+		tests/test_script_vm.c
+
 $(LIBRETRO_TEST_TARGET): $(SOURCES) tests/test_libretro.c
 	@mkdir -p $(dir $@)
 	$(HOST_CC) -std=c99 $(WARNINGS) -Iinclude \
@@ -164,7 +173,8 @@ $(LIBRETRO_TEST_TARGET): $(SOURCES) tests/test_libretro.c
 HOST_CC ?= cc
 test: $(TEST_TARGET) $(MAP_TEST_TARGET) $(GRAPHICS_TEST_TARGET) \
       $(BMP_TEST_TARGET) $(DIRECTOR_TEST_TARGET) $(PATH_TEST_TARGET) \
-      $(WALK_TEST_TARGET) $(AUDIO_TEST_TARGET) $(LIBRETRO_TEST_TARGET)
+      $(WALK_TEST_TARGET) $(AUDIO_TEST_TARGET) $(SCRIPT_TEST_TARGET) \
+      $(LIBRETRO_TEST_TARGET)
 	./$(TEST_TARGET)
 	./$(MAP_TEST_TARGET)
 	./$(GRAPHICS_TEST_TARGET)
@@ -173,6 +183,7 @@ test: $(TEST_TARGET) $(MAP_TEST_TARGET) $(GRAPHICS_TEST_TARGET) \
 	./$(PATH_TEST_TARGET)
 	./$(WALK_TEST_TARGET)
 	./$(AUDIO_TEST_TARGET)
+	./$(SCRIPT_TEST_TARGET)
 	./$(LIBRETRO_TEST_TARGET)
 
 INSPECT_TARGET := build/tools/jc_inspect

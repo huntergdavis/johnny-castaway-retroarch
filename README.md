@@ -11,8 +11,10 @@ resources, and displays selectable authentic screens through a deterministic 640
 XRGB8888 software framebuffer. Categorized Core Options v2, legacy menu fallback,
 RetroPad input, correctly paced silent audio, and save-state round trips are working.
 
-The ADS/TTM story runtime, animated sprite compositor, and sound mixer are still being
-migrated; this is not yet the complete screensaver experience.
+The repository now contains bounded ADS/TTM parsers and a resumable 50 Hz script VM,
+an indexed sprite compositor, the deterministic story/walking runtime, and an eight-voice
+sound mixer. Their event/resource orchestration is still being connected to the libretro
+adapter, so this is not yet the complete screensaver experience.
 
 ## Why C
 
