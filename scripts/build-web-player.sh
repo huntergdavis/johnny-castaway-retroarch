@@ -15,6 +15,15 @@ retroarch_revision="${RETROARCH_REVISION:-96a1b1a9cf3f9166affcfd7df4323aa58d5c28
 assets_revision="${RETROARCH_ASSETS_REVISION:-73106363e14e34c08a5854b4cfbc29f184e3b783}"
 
 core_archive="${project_root}/build/emscripten/johnny_castaway_libretro_emscripten.bc"
+project_commit="$(git -C "${project_root}" rev-parse HEAD)"
+project_version="$(sed -n 's/^display_version = "\(.*\)"$/\1/p' \
+    "${project_root}/johnny_castaway_libretro.info")"
+project_info_sha="$(sha256sum \
+    "${project_root}/johnny_castaway_libretro.info" | awk '{print $1}')"
+project_tree_state=clean
+if [[ -n "$(git -C "${project_root}" status --porcelain --untracked-files=all)" ]]; then
+    project_tree_state=dirty-developer-mode
+fi
 
 require_command() {
     if ! command -v "$1" >/dev/null 2>&1; then
@@ -147,13 +156,32 @@ rm -rf "${staging_dir}/bundle"
 
 {
     echo "Johnny Castaway RetroArch Web Player build provenance"
+    echo "Johnny Castaway commit: ${project_commit} (${project_tree_state})"
+    echo "Frontend version: ${project_version}"
+    echo "Tree state: ${project_tree_state}"
+    echo "Core metadata SHA-256: ${project_info_sha}"
     echo "RetroArch: https://github.com/libretro/RetroArch/tree/${retroarch_revision}"
     echo "retroarch-assets: https://github.com/libretro/retroarch-assets/tree/${assets_revision}"
     echo "Core archive SHA-256: $(sha256sum "${core_archive}" | awk '{print $1}')"
     echo "BrowserFS SHA-256: $(sha256sum "${staging_dir}/browserfs.min.js" | awk '{print $1}')"
+    echo "JavaScript SHA-256: $(sha256sum "${staging_dir}/johnny_castaway_libretro.js" | awk '{print $1}')"
     echo "WebAssembly SHA-256: $(sha256sum "${staging_dir}/johnny_castaway_libretro.wasm" | awk '{print $1}')"
+    echo "Asset bundle SHA-256: $(sha256sum "${staging_dir}/assets/frontend/bundle.zip" | awk '{print $1}')"
+    echo "RetroArch license SHA-256: $(sha256sum "${staging_dir}/licenses/RetroArch-GPL-3.0" | awk '{print $1}')"
+    echo "retroarch-assets license SHA-256: $(sha256sum "${staging_dir}/licenses/retroarch-assets-CC-BY-4.0" | awk '{print $1}')"
     echo "Built with: $(emcc --version | head -n 1)"
 } >"${staging_dir}/BUILD-PROVENANCE.txt"
+
+if [[ "$(git -C "${project_root}" rev-parse HEAD)" != "${project_commit}" ||
+      "$(sha256sum "${project_root}/johnny_castaway_libretro.info" | awk '{print $1}')" != "${project_info_sha}" ]]; then
+    echo "error: Johnny Castaway commit or core metadata changed during the Web build" >&2
+    exit 1
+fi
+if [[ "${project_tree_state}" == clean &&
+      -n "$(git -C "${project_root}" status --porcelain --untracked-files=all)" ]]; then
+    echo "error: clean Johnny Castaway source changed during the Web build" >&2
+    exit 1
+fi
 
 python3 "${project_root}/tools/check_web_dist.py" "${staging_dir}"
 

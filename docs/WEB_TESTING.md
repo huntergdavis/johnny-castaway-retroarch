@@ -202,7 +202,11 @@ Every generated distribution contains `BUILD-PROVENANCE.txt`, `CREDITS.md`,
 `docs/PROVENANCE.md`, `docs/THIRD_PARTY_NOTICES.md`, the project license, CC0 ocean,
 and upstream license texts, and `WEB_PLAYER_NOTICE.md`. Together they record
 the complete community lineage and the exact upstream files from which the
-launcher and build process were derived.
+launcher and build process were derived. The provenance record binds the full Johnny
+commit, clean/developer tree state, frontend version, core metadata hash, and generated
+runtime hashes. The release assembler accepts only a clean exact-commit record and
+byte-compares every project Web source, credit, provenance, notice, license, and the
+metadata inside `bundle.zip` to that commit.
 
 Primary sources:
 

@@ -43,8 +43,10 @@ sudo apt-get install xvfb xauth
 
 Each run uses new XDG config/data/cache directories beneath an ignored
 `build/ppsspp-smoke.*` directory. It does not read or modify the user's
-normal PPSSPP settings or memory stick. Evidence is retained there after
-both success and failure.
+normal PPSSPP settings or memory stick. It requests the dummy audio backend
+under both the SDL2 and SDL3 environment-variable names so headless runners
+never require a host PulseAudio service. Evidence is retained there after both
+success and failure.
 
 ## What passing means
 

@@ -19,6 +19,7 @@ REQUIRED_FILES = (
     "scripts/serve-web.sh",
     "scripts/stage-local-web-content.sh",
     "tools/check_web_dist.py",
+    "tools/test_web_dist_validator.py",
     "tools/serve_web.py",
     "tools/web_smoke_test.py",
     "web/index.html",

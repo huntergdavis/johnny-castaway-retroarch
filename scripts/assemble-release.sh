@@ -314,13 +314,70 @@ for artifact_name in "${common_artifacts[@]}"; do
 done
 
 web_dir="${artifacts_dir}/johnny-castaway-retroarch-web"
-for relative_file in index.html jc-web-player.js johnny_castaway_libretro.js \
-    johnny_castaway_libretro.wasm BUILD-PROVENANCE.txt WEB_PLAYER_NOTICE.md \
+for relative_file in index.html style.css jc-web-player.js browserfs.min.js \
+    johnny_castaway_libretro.js johnny_castaway_libretro.wasm \
+    assets/frontend/bundle.zip BUILD-PROVENANCE.txt WEB_PLAYER_NOTICE.md \
     CREDITS.md docs/PROVENANCE.md docs/THIRD_PARTY_NOTICES.md \
-    licenses/RetroArch-GPL-3.0 licenses/johnny-castaway-retroarch-GPL-3.0; do
+    licenses/BrowserFS-license.md licenses/BigSoundBank-0266-CC0.md \
+    licenses/RetroArch-GPL-3.0 licenses/johnny-castaway-retroarch-GPL-3.0 \
+    licenses/retroarch-assets-CC-BY-4.0; do
     must_file "${web_dir}/${relative_file}"
 done
 python3 "${project_root}/tools/check_web_dist.py" "${web_dir}"
+web_expected_info_hash="$(git -C "${project_root}" show \
+    "${expected_sha}:johnny_castaway_libretro.info" | sha256sum | awk '{print $1}')"
+grep -Fxq "Johnny Castaway commit: ${expected_sha} (clean)" \
+    "${web_dir}/BUILD-PROVENANCE.txt" ||
+    fail 'Web build provenance does not name the exact clean release commit'
+grep -Fxq "Frontend version: ${display_version}" \
+    "${web_dir}/BUILD-PROVENANCE.txt" ||
+    fail 'Web build provenance has the wrong frontend version'
+grep -Fxq 'Tree state: clean' "${web_dir}/BUILD-PROVENANCE.txt" ||
+    fail 'Web build provenance is not clean'
+grep -Fxq "Core metadata SHA-256: ${web_expected_info_hash}" \
+    "${web_dir}/BUILD-PROVENANCE.txt" ||
+    fail 'Web build provenance has the wrong core metadata hash'
+grep -Fxq \
+    'RetroArch: https://github.com/libretro/RetroArch/tree/96a1b1a9cf3f9166affcfd7df4323aa58d5c281a' \
+    "${web_dir}/BUILD-PROVENANCE.txt" ||
+    fail 'Web build provenance has the wrong RetroArch revision'
+grep -Fxq \
+    'retroarch-assets: https://github.com/libretro/retroarch-assets/tree/73106363e14e34c08a5854b4cfbc29f184e3b783' \
+    "${web_dir}/BUILD-PROVENANCE.txt" ||
+    fail 'Web build provenance has the wrong assets revision'
+grep -Fxq \
+    'RetroArch license SHA-256: 8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903' \
+    "${web_dir}/BUILD-PROVENANCE.txt" ||
+    fail 'Web build provenance has the wrong RetroArch license hash'
+grep -Fxq \
+    'retroarch-assets license SHA-256: 469faa8457ffed7428f1c150f4d8682ce25f2d991a694eec544e661f43452f50' \
+    "${web_dir}/BUILD-PROVENANCE.txt" ||
+    fail 'Web build provenance has the wrong retroarch-assets license hash'
+
+declare -A web_project_source
+web_project_source[index.html]=web/index.html
+web_project_source[style.css]=web/style.css
+web_project_source[jc-web-player.js]=web/jc-web-player.js
+web_project_source[WEB_PLAYER_NOTICE.md]=web/WEB_PLAYER_NOTICE.md
+web_project_source[CREDITS.md]=CREDITS.md
+web_project_source[docs/PROVENANCE.md]=docs/PROVENANCE.md
+web_project_source[docs/THIRD_PARTY_NOTICES.md]=docs/THIRD_PARTY_NOTICES.md
+web_project_source[licenses/BrowserFS-license.md]=web/licenses/BrowserFS-license.md
+web_project_source[licenses/BigSoundBank-0266-CC0.md]=docs/licenses/BigSoundBank-0266-CC0.md
+web_project_source[licenses/johnny-castaway-retroarch-GPL-3.0]=LICENSE
+for packaged_file in "${!web_project_source[@]}"; do
+    expected_web_hash="$(git -C "${project_root}" show \
+        "${expected_sha}:${web_project_source[${packaged_file}]}" | \
+        sha256sum | awk '{print $1}')"
+    actual_web_hash="$(sha256sum "${web_dir}/${packaged_file}" | awk '{print $1}')"
+    [[ "${actual_web_hash}" = "${expected_web_hash}" ]] ||
+        fail "Web ${packaged_file} does not match ${expected_sha}:${web_project_source[${packaged_file}]}"
+done
+cmp <(unzip -p "${web_dir}/assets/frontend/bundle.zip" \
+        info/johnny_castaway_libretro.info) \
+    <(git -C "${project_root}" show \
+        "${expected_sha}:johnny_castaway_libretro.info") ||
+    fail 'Web bundled core metadata does not match the exact release commit'
 
 psp_dir="${artifacts_dir}/johnny-castaway-psp-frontend"
 psp_elf="${psp_dir}/retroarchpsp.elf"

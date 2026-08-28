@@ -429,6 +429,7 @@ jobs:
           node --check web/jc-web-player.js
           python3 tools/check_web_sources.py .
           python3 tools/check_web_dist.py --help >/dev/null
+          python3 tools/test_web_dist_validator.py
           python3 tools/web_smoke_test.py --help >/dev/null
 
       - name: Upload Emscripten core and web source kit

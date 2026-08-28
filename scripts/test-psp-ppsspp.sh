@@ -108,6 +108,7 @@ XDG_CONFIG_HOME="$run_dir/config" \
 XDG_DATA_HOME="$run_dir/data" \
 XDG_CACHE_HOME="$run_dir/cache" \
 SDL_AUDIODRIVER=dummy \
+SDL_AUDIO_DRIVER=dummy \
 LIBGL_ALWAYS_SOFTWARE=1 \
 xvfb-run -a -s '-screen 0 960x544x24' \
     timeout --signal=TERM --kill-after=5 30 \
