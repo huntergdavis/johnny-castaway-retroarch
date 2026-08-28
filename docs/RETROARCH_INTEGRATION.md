@@ -9,7 +9,10 @@ Menu integration is a release gate for every platform, not a post-port task.
 - **Quick Menu / Core Options / Story**: Initial Screen selects Intro, day/night
   island, office, Suzy beach, or ending. Chapter exposes Static Screen plus all 63
   audited PS1 scene-explorer records; selecting a chapter starts its original ADS/tag
-  and the first live-rendered frame acts as the graphical preview. Both apply immediately.
+  and the first live-rendered frame acts as the graphical preview. Holiday Overlay
+  provides Automatic (frontend device local date), Off, and 36 explicit force/preview
+  values. A forced or date-matched holiday immediately draws an asset-free title/date
+  band, opposite top-positioned captions. These options all apply immediately.
 - **Quick Menu / Core Options / Video**: Display Source switches between original
   user data and the built-in diagnostic frame and applies immediately.
 - **Quick Menu / Core Options / Audio**: master Enable/Volume and independent Ocean
@@ -23,9 +26,12 @@ Menu integration is a release gate for every platform, not a post-port task.
   bounded software renderer.
 - **Quick Menu / Controls / Port 1**: the port declares a RetroPad; Start restarts
   the current core timeline.
-- **Quick Menu / State**: serialize/unserialize covers the base timeline and mixer,
-  including ocean loop position. ADS/TTM runtime, loaded renderer resources, and caption
-  timing are not yet serialized; chapter-mode states are not release-complete.
+- **Quick Menu / State**: the versioned, pointer-free v2 envelope covers the base
+  timeline, mixer (including ocean loop position), selected chapter, deterministic
+  ADS/TTM runtime position, renderer output, and active caption/timing. Loading rebuilds
+  owned runtime resources from the indexed content archive and silently replays the
+  bounded timeline before atomically accepting the state. Same-build legacy base-plus-
+  mixer states remain loadable; they predate chapter/runtime/caption persistence.
 - Modern frontends receive categorized Core Options v2. Older frontends receive
   equivalent legacy variables, preserving menu support on console builds.
 
@@ -34,8 +40,9 @@ Menu integration is a release gate for every platform, not a post-port task.
 The following option groups are required before the story-runtime milestone is done,
 but they must not appear as nonfunctional menu entries:
 
-- **Story**: normal cycle, deterministic seed,
-  real/simulated calendar, holiday override, tide/raft stage, and playback speed.
+- **Story**: normal cycle, deterministic seed, simulated calendar override,
+  tide/raft stage, and playback speed. Automatic local-date and explicit holiday
+  override presentation are implemented.
 - **Audio**: original SFX sample extraction and voice policy after multiple authentic
   policies exist.
 - **Accessibility**: high contrast and reduced flashing after their rendering behavior

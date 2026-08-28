@@ -5,6 +5,7 @@
 #include "jc_caption_render.h"
 #include "jc_captions.h"
 #include "jc_chapters.h"
+#include "jc_holiday_overlay.h"
 #include "jc_ocean.h"
 #include "jc_palette.h"
 #include "jc_runtime.h"
@@ -18,11 +19,38 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #define AUDIO_FRAMES_PER_VIDEO_FRAME 882u
 #define LEGACY_CHAPTER_BYTES 1024u
+#define LEGACY_HOLIDAY_BYTES 1024u
 #define CHAPTER_OPTION_INDEX 1u
+#define HOLIDAY_OPTION_INDEX 2u
 #define LEGACY_CHAPTER_INDEX 1u
+#define LEGACY_HOLIDAY_INDEX 2u
+#define CHAPTER_RUNTIME_SEED 0x4a435241u
+
+#define JC_LIBRETRO_STATE_MAGIC 0x3253434au
+#define JC_LIBRETRO_STATE_VERSION 2u
+#define JC_LIBRETRO_STATE_HEADER_SIZE 64u
+#define JC_LIBRETRO_STATE_NO_INDEX UINT32_MAX
+#define JC_LIBRETRO_STATE_MAX_RUNTIME_TICKS 65536u
+
+#define JC_LIBRETRO_STATE_FLAG_CHAPTER (1u << 0)
+#define JC_LIBRETRO_STATE_FLAG_RUNTIME_SCENE (1u << 1)
+#define JC_LIBRETRO_STATE_FLAG_RUNTIME_FINISHED (1u << 2)
+#define JC_LIBRETRO_STATE_FLAG_CAPTIONS_ENABLED (1u << 3)
+#define JC_LIBRETRO_STATE_FLAG_CAPTION_ACTIVE (1u << 4)
+#define JC_LIBRETRO_STATE_FLAG_DIAGNOSTIC (1u << 5)
+#define JC_LIBRETRO_STATE_FLAG_RESET_PRESSED (1u << 6)
+#define JC_LIBRETRO_STATE_FLAGS_ALL \
+    (JC_LIBRETRO_STATE_FLAG_CHAPTER | \
+     JC_LIBRETRO_STATE_FLAG_RUNTIME_SCENE | \
+     JC_LIBRETRO_STATE_FLAG_RUNTIME_FINISHED | \
+     JC_LIBRETRO_STATE_FLAG_CAPTIONS_ENABLED | \
+     JC_LIBRETRO_STATE_FLAG_CAPTION_ACTIVE | \
+     JC_LIBRETRO_STATE_FLAG_DIAGNOSTIC | \
+     JC_LIBRETRO_STATE_FLAG_RESET_PRESSED)
 
 static retro_environment_t environment_cb;
 static retro_video_refresh_t video_cb;
@@ -42,9 +70,10 @@ static uint32_t video_output[JC_FRAME_WIDTH * JC_FRAME_HEIGHT];
 static bool diagnostic_display;
 static char selected_screen[JC_RESOURCE_NAME_BYTES + 1u] = "INTRO.SCR";
 static const jc_chapter_t *selected_chapter;
-static jc_runtime_t runtime;
+static jc_runtime_t *runtime;
 static bool runtime_ready;
 static bool runtime_failed;
+static bool runtime_replay_silent;
 static jc_captions_t captions;
 static jc_caption_render_options_t caption_render_options;
 static uint8_t *ocean_pcm;
@@ -53,6 +82,40 @@ static bool ocean_enabled = true;
 static unsigned ocean_volume = 56u;
 static bool chapter_options_populated;
 static char legacy_chapter_value[LEGACY_CHAPTER_BYTES];
+static bool holiday_options_populated;
+static char legacy_holiday_value[LEGACY_HOLIDAY_BYTES];
+static jc_holiday_overlay_selection_t holiday_selection;
+
+static const char *const serialized_screen_names[] = {
+    "INTRO.SCR", "ISLAND2.SCR", "NIGHT.SCR", "JOFFICE.SCR",
+    "SUZBEACH.SCR", "THEEND.SCR"
+};
+
+static void write_u32le(uint8_t *data, uint32_t value)
+{
+    data[0] = (uint8_t)value;
+    data[1] = (uint8_t)(value >> 8);
+    data[2] = (uint8_t)(value >> 16);
+    data[3] = (uint8_t)(value >> 24);
+}
+
+static void write_u64le(uint8_t *data, uint64_t value)
+{
+    write_u32le(data, (uint32_t)value);
+    write_u32le(data + 4u, (uint32_t)(value >> 32));
+}
+
+static uint32_t read_u32le(const uint8_t *data)
+{
+    return (uint32_t)data[0] | ((uint32_t)data[1] << 8) |
+           ((uint32_t)data[2] << 16) | ((uint32_t)data[3] << 24);
+}
+
+static uint64_t read_u64le(const uint8_t *data)
+{
+    return (uint64_t)read_u32le(data) |
+           ((uint64_t)read_u32le(data + 4u) << 32);
+}
 
 static struct retro_core_option_v2_category option_categories[] = {
     {"story", "Story", "Choose how the Johnny Castaway story begins and progresses."},
@@ -90,6 +153,16 @@ static struct retro_core_option_v2_definition option_definitions[] = {
         "story",
         {{NULL, NULL}},
         "screen"
+    },
+    {
+        "johnny_castaway_holiday_overlay",
+        "Holiday Overlay",
+        "Holiday Overlay",
+        "Automatic uses the frontend device's local calendar date. Off hides the overlay. Every named value forces a visible title/date preview without requiring proprietary holiday artwork. Changes apply immediately.",
+        NULL,
+        "story",
+        {{NULL, NULL}},
+        "auto"
     },
     {
         "johnny_castaway_display_source",
@@ -257,6 +330,7 @@ static struct retro_variable legacy_options[] = {
     {"johnny_castaway_initial_screen",
      "Story Initial Screen; intro|island_day|island_night|office|suzy_beach|ending"},
     {"johnny_castaway_chapter", NULL},
+    {"johnny_castaway_holiday_overlay", NULL},
     {"johnny_castaway_display_source",
      "Video Display Source; original|diagnostic"},
     {"johnny_castaway_audio_enabled",
@@ -291,6 +365,21 @@ static bool append_legacy_chapter(const char *text, size_t *length)
         text_length >= sizeof(legacy_chapter_value) - *length)
         return false;
     memcpy(legacy_chapter_value + *length, text, text_length + 1u);
+    *length += text_length;
+    return true;
+}
+
+static bool append_legacy_holiday(const char *text, size_t *length)
+{
+    size_t text_length;
+
+    if (text == NULL || length == NULL)
+        return false;
+    text_length = strlen(text);
+    if (*length >= sizeof(legacy_holiday_value) ||
+        text_length >= sizeof(legacy_holiday_value) - *length)
+        return false;
+    memcpy(legacy_holiday_value + *length, text, text_length + 1u);
     *length += text_length;
     return true;
 }
@@ -330,10 +419,46 @@ static void populate_chapter_options(void)
     chapter_options_populated = true;
 }
 
+static void populate_holiday_options(void)
+{
+    struct retro_core_option_value *values =
+        option_definitions[HOLIDAY_OPTION_INDEX].values;
+    size_t count = jc_holiday_overlay_choice_count();
+    size_t index;
+    size_t legacy_length = 0u;
+
+    if (holiday_options_populated ||
+        count + 1u > RETRO_NUM_CORE_OPTION_VALUES_MAX)
+        return;
+    for (index = 0u; index < count; ++index) {
+        jc_holiday_overlay_choice_t choice;
+        if (!jc_holiday_overlay_choice_at(index, &choice))
+            return;
+        values[index].value = choice.value;
+        values[index].label = choice.label;
+    }
+    values[count].value = NULL;
+    values[count].label = NULL;
+
+    legacy_holiday_value[0] = '\0';
+    if (!append_legacy_holiday("Holiday Overlay; auto", &legacy_length))
+        return;
+    for (index = 1u; index < count; ++index) {
+        jc_holiday_overlay_choice_t choice;
+        if (!jc_holiday_overlay_choice_at(index, &choice) ||
+            !append_legacy_holiday("|", &legacy_length) ||
+            !append_legacy_holiday(choice.value, &legacy_length))
+            return;
+    }
+    legacy_options[LEGACY_HOLIDAY_INDEX].value = legacy_holiday_value;
+    holiday_options_populated = true;
+}
+
 static void register_core_options(retro_environment_t cb)
 {
     unsigned version = 0u;
     populate_chapter_options();
+    populate_holiday_options();
     if (cb(RETRO_ENVIRONMENT_GET_CORE_OPTIONS_VERSION, &version) && version >= 2u)
         cb(RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2, &core_options);
     else
@@ -368,6 +493,15 @@ static void read_core_options(void)
     if (environment_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &variable) &&
         variable.value != NULL && strcmp(variable.value, "screen") != 0)
         selected_chapter = jc_chapter_lookup(variable.value);
+
+    variable.key = "johnny_castaway_holiday_overlay";
+    variable.value = NULL;
+    if (environment_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &variable) &&
+        variable.value != NULL) {
+        jc_holiday_overlay_selection_t selection;
+        if (jc_holiday_overlay_parse(variable.value, &selection))
+            holiday_selection = selection;
+    }
 
     variable.key = "johnny_castaway_display_source";
     variable.value = NULL;
@@ -484,7 +618,8 @@ static bool runtime_event(void *userdata, const jc_script_event_t *event,
 {
     (void)userdata;
     (void)error;
-    if (event != NULL && event->kind == JC_SCRIPT_EVENT_INSTRUCTION &&
+    if (!runtime_replay_silent && event != NULL &&
+        event->kind == JC_SCRIPT_EVENT_INSTRUCTION &&
         event->domain == JC_SCRIPT_DOMAIN_TTM_VM &&
         event->opcode == 0xc051u && event->arg_count >= 1u &&
         event->args[0] < JC_AUDIO_ORIGINAL_SAMPLE_COUNT)
@@ -566,7 +701,9 @@ static bool load_ocean_ambience(char *error, size_t error_size)
     return true;
 }
 
-static bool load_selected_frame(char *error, size_t error_size)
+static bool load_frame_into(jc_core_t *target, const char *screen_name,
+                            bool diagnostic, char *error,
+                            size_t error_size)
 {
     jc_resource_info_t palette_resource;
     jc_resource_info_t screen_resource;
@@ -577,13 +714,17 @@ static bool load_selected_frame(char *error, size_t error_size)
     uint8_t *pixels = NULL;
     bool success = false;
 
-    if (diagnostic_display) {
-        jc_core_clear_content_frame(&core);
+    if (target == NULL || screen_name == NULL) {
+        snprintf(error, error_size, "invalid frame target");
+        return false;
+    }
+    if (diagnostic) {
+        jc_core_clear_content_frame(target);
         return true;
     }
     if (!jc_content_find_resource(&content, "JOHNCAST.PAL", vfs,
                                   &palette_resource, error, error_size) ||
-        !jc_content_find_resource(&content, selected_screen, vfs,
+        !jc_content_find_resource(&content, screen_name, vfs,
                                   &screen_resource, error, error_size))
         goto cleanup;
     palette_data = (uint8_t *)malloc(palette_resource.body_size);
@@ -604,7 +745,7 @@ static bool load_selected_frame(char *error, size_t error_size)
         !jc_scr_decode(screen_data, screen_resource.body_size, pixels,
                        JC_FRAME_WIDTH * JC_FRAME_HEIGHT, &screen,
                        error, error_size) ||
-        !jc_core_set_content_frame(&core, &screen, &palette))
+        !jc_core_set_content_frame(target, &screen, &palette))
         goto cleanup;
     success = true;
 
@@ -615,13 +756,29 @@ cleanup:
     return success;
 }
 
+static bool load_selected_frame(char *error, size_t error_size)
+{
+    return load_frame_into(&core, selected_screen, diagnostic_display,
+                           error, error_size);
+}
+
 static bool initialize_story_runtime(char *error, size_t error_size)
 {
     jc_runtime_config_t config;
     jc_script_error_t script_error;
+    jc_runtime_t *candidate;
 
-    if (runtime_ready)
-        jc_runtime_destroy(&runtime);
+    if (runtime != NULL) {
+        jc_runtime_destroy(runtime);
+        free(runtime);
+        runtime = NULL;
+    }
+    runtime_ready = false;
+    candidate = (jc_runtime_t *)malloc(sizeof(*candidate));
+    if (candidate == NULL) {
+        snprintf(error, error_size, "not enough memory for story runtime");
+        return false;
+    }
     memset(&config, 0, sizeof(config));
     config.content = &content;
     config.vfs = vfs;
@@ -629,11 +786,12 @@ static bool initialize_story_runtime(char *error, size_t error_size)
     config.height = JC_FRAME_HEIGHT;
     config.transparent_source_index = -1;
     config.event_callback = runtime_event;
-    if (!jc_runtime_init(&runtime, &config, &script_error)) {
+    if (!jc_runtime_init(candidate, &config, &script_error)) {
         snprintf(error, error_size, "runtime init: %s", script_error.message);
-        runtime_ready = false;
+        free(candidate);
         return false;
     }
+    runtime = candidate;
     runtime_ready = true;
     runtime_failed = false;
     return true;
@@ -645,12 +803,12 @@ static bool start_selected_presentation(char *error, size_t error_size)
 
     runtime_failed = false;
     jc_captions_clear(&captions);
-    if (!runtime_ready) {
+    if (!runtime_ready || runtime == NULL) {
         snprintf(error, error_size, "story runtime is unavailable");
         return false;
     }
     if (diagnostic_display) {
-        if (!jc_runtime_reset(&runtime, &script_error)) {
+        if (!jc_runtime_reset(runtime, &script_error)) {
             snprintf(error, error_size, "runtime reset: %s",
                      script_error.message);
             return false;
@@ -666,9 +824,9 @@ static bool start_selected_presentation(char *error, size_t error_size)
             snprintf(error, error_size, "chapter ADS name is too long");
             return false;
         }
-        if (!jc_runtime_start_ads(&runtime, ads_name,
+        if (!jc_runtime_start_ads(runtime, ads_name,
                                   selected_chapter->ads_tag,
-                                  0x4a435241u, &script_error)) {
+                                  CHAPTER_RUNTIME_SEED, &script_error)) {
             snprintf(error, error_size, "chapter %s: %s",
                      selected_chapter->slug, script_error.message);
             return false;
@@ -680,7 +838,7 @@ static bool start_selected_presentation(char *error, size_t error_size)
                    selected_chapter->title);
         return true;
     }
-    if (!jc_runtime_reset(&runtime, &script_error)) {
+    if (!jc_runtime_reset(runtime, &script_error)) {
         snprintf(error, error_size, "runtime reset: %s",
                  script_error.message);
         return false;
@@ -693,13 +851,13 @@ static void tick_story_runtime(void)
     jc_script_error_t error;
     jc_script_tick_result_t result;
 
-    if (!runtime_ready || runtime_failed || diagnostic_display ||
+    if (!runtime_ready || runtime == NULL || runtime_failed || diagnostic_display ||
         selected_chapter == NULL)
         return;
-    result = jc_runtime_tick(&runtime, &error);
+    result = jc_runtime_tick(runtime, &error);
     if (result == JC_SCRIPT_TICK_FRAME) {
-        const jc_surface_t *surface = jc_runtime_output(&runtime);
-        const jc_palette_t *palette = jc_runtime_palette(&runtime);
+        const jc_surface_t *surface = jc_runtime_output(runtime);
+        const jc_palette_t *palette = jc_runtime_palette(runtime);
         if (surface != NULL && palette != NULL)
             (void)jc_core_update_content_frame(&core, surface, palette);
     } else if (result == JC_SCRIPT_TICK_ERROR) {
@@ -713,12 +871,33 @@ static void tick_story_runtime(void)
 static void present_video_frame(void)
 {
     const char *caption = jc_captions_current_text(&captions);
+    const jc_holiday_extra_t *holiday = NULL;
+    jc_caption_anchor_t holiday_anchor = JC_CAPTION_ANCHOR_TOP;
 
     memcpy(video_output, jc_core_framebuffer(&core), sizeof(video_output));
     if (caption != NULL) {
         (void)jc_caption_render(video_output, JC_FRAME_WIDTH, JC_FRAME_HEIGHT,
                                 JC_FRAME_WIDTH, caption, strlen(caption),
                                 &caption_render_options, NULL);
+    }
+    if (holiday_selection.mode == JC_HOLIDAY_OVERLAY_AUTO) {
+        time_t now = time(NULL);
+        struct tm *calendar = now == (time_t)-1 ? NULL : localtime(&now);
+        if (calendar != NULL) {
+            holiday = jc_holiday_overlay_resolve(
+                &holiday_selection, calendar->tm_year + 1900,
+                calendar->tm_mon + 1, calendar->tm_mday);
+        }
+    } else {
+        holiday = jc_holiday_overlay_resolve(&holiday_selection, 2000, 1, 1);
+    }
+    if (holiday != NULL) {
+        if (caption != NULL &&
+            caption_render_options.anchor == JC_CAPTION_ANCHOR_TOP)
+            holiday_anchor = JC_CAPTION_ANCHOR_BOTTOM;
+        (void)jc_holiday_overlay_render_anchored(
+            video_output, JC_FRAME_WIDTH, JC_FRAME_HEIGHT, JC_FRAME_WIDTH,
+            holiday, holiday_anchor, NULL);
     }
     video_cb(video_output, JC_FRAME_WIDTH, JC_FRAME_HEIGHT,
              JC_FRAME_WIDTH * sizeof(uint32_t));
@@ -817,12 +996,15 @@ void retro_init(void)
     input_state_cb = input_state_cb != NULL ? input_state_cb : null_input_state;
     memset(audio_output, 0, sizeof(audio_output));
     memset(video_output, 0, sizeof(video_output));
-    memset(&runtime, 0, sizeof(runtime));
+    runtime = NULL;
     memset(&ocean_info, 0, sizeof(ocean_info));
     ocean_pcm = NULL;
     runtime_ready = false;
     runtime_failed = false;
+    runtime_replay_silent = false;
     selected_chapter = NULL;
+    holiday_selection.mode = JC_HOLIDAY_OVERLAY_AUTO;
+    holiday_selection.holiday_id = 0;
     ocean_enabled = true;
     ocean_volume = 56u;
     jc_audio_init(&audio);
@@ -833,10 +1015,12 @@ void retro_init(void)
 
 void retro_deinit(void)
 {
-    if (runtime_ready) {
-        jc_runtime_destroy(&runtime);
-        runtime_ready = false;
+    if (runtime != NULL) {
+        jc_runtime_destroy(runtime);
+        free(runtime);
+        runtime = NULL;
     }
+    runtime_ready = false;
     unload_ocean_ambience();
     jc_audio_clear_samples(&audio);
     if (content.ready)
@@ -946,29 +1130,376 @@ void retro_run(void)
     audio_batch_cb(audio_output, AUDIO_FRAMES_PER_VIDEO_FRAME);
 }
 
+static uint32_t serialized_chapter_index(const jc_chapter_t *chapter)
+{
+    size_t index;
+
+    if (chapter == NULL)
+        return JC_LIBRETRO_STATE_NO_INDEX;
+    for (index = 0u; index < jc_chapter_count(); ++index) {
+        if (jc_chapter_at(index) == chapter)
+            return (uint32_t)index;
+    }
+    return JC_LIBRETRO_STATE_NO_INDEX;
+}
+
+static uint32_t serialized_caption_index(const jc_caption_entry_t *caption)
+{
+    size_t index;
+
+    if (caption == NULL)
+        return JC_LIBRETRO_STATE_NO_INDEX;
+    for (index = 0u; index < jc_caption_count(); ++index) {
+        if (jc_caption_at(index) == caption)
+            return (uint32_t)index;
+    }
+    return JC_LIBRETRO_STATE_NO_INDEX;
+}
+
+static uint32_t serialized_screen_index(const char *screen_name)
+{
+    size_t index;
+
+    for (index = 0u;
+         index < sizeof(serialized_screen_names) /
+                     sizeof(serialized_screen_names[0]);
+         ++index) {
+        if (strcmp(serialized_screen_names[index], screen_name) == 0)
+            return (uint32_t)index;
+    }
+    return JC_LIBRETRO_STATE_NO_INDEX;
+}
+
+static bool init_runtime_candidate(jc_runtime_t *candidate,
+                                   jc_script_error_t *error)
+{
+    jc_runtime_config_t config;
+
+    memset(candidate, 0, sizeof(*candidate));
+    memset(&config, 0, sizeof(config));
+    config.content = &content;
+    config.vfs = vfs;
+    config.width = JC_FRAME_WIDTH;
+    config.height = JC_FRAME_HEIGHT;
+    config.transparent_source_index = -1;
+    config.event_callback = runtime_event;
+    return jc_runtime_init(candidate, &config, error);
+}
+
+static bool restore_runtime_candidate(jc_runtime_t *candidate,
+                                      const jc_chapter_t *chapter,
+                                      bool diagnostic, bool has_scene,
+                                      bool finished, uint64_t ticks,
+                                      uint32_t seed)
+{
+    jc_script_error_t error;
+    char ads_name[JC_RESOURCE_NAME_BYTES + 1u];
+    uint64_t index;
+    bool success = false;
+    int written;
+
+    if (!init_runtime_candidate(candidate, &error))
+        return false;
+    if (chapter == NULL || diagnostic) {
+        return !has_scene && !finished && ticks == 0u;
+    }
+    if (!has_scene)
+        goto failed;
+    written = snprintf(ads_name, sizeof(ads_name), "%s.ADS",
+                       chapter->ads_name);
+    if (written < 0 || (size_t)written >= sizeof(ads_name))
+        goto failed;
+    runtime_replay_silent = true;
+    if (!jc_runtime_start_ads(candidate, ads_name, chapter->ads_tag,
+                              seed, &error))
+        goto failed;
+    for (index = 0u; index < ticks; ++index) {
+        if (jc_runtime_tick(candidate, &error) == JC_SCRIPT_TICK_ERROR)
+            goto failed;
+    }
+    if (candidate->vm.tick_count != ticks ||
+        candidate->scene_finished != finished)
+        goto failed;
+    success = true;
+
+failed:
+    runtime_replay_silent = false;
+    if (!success)
+        jc_runtime_destroy(candidate);
+    return success;
+}
+
+static bool restore_candidate_frame(jc_core_t *candidate_core,
+                                    const jc_runtime_t *candidate_runtime,
+                                    const jc_chapter_t *chapter,
+                                    const char *screen_name,
+                                    bool diagnostic)
+{
+    char error[256];
+
+    jc_core_init(candidate_core);
+    if (diagnostic)
+        return true;
+    if (chapter == NULL)
+        return load_frame_into(candidate_core, screen_name, false,
+                               error, sizeof(error));
+    {
+        const jc_surface_t *surface =
+            jc_runtime_output(candidate_runtime);
+        const jc_palette_t *palette =
+            jc_runtime_palette(candidate_runtime);
+        if (surface != NULL && palette != NULL)
+            return jc_core_update_content_frame(candidate_core, surface,
+                                                palette);
+    }
+    return true;
+}
+
+static bool retro_unserialize_legacy(const uint8_t *bytes, size_t size)
+{
+    size_t core_size = jc_core_serialize_size();
+    size_t audio_size = jc_audio_serialize_size();
+    jc_core_t *candidate_core;
+    jc_audio_t candidate_audio;
+    bool success;
+
+    if (size < core_size + audio_size)
+        return false;
+    candidate_core = (jc_core_t *)malloc(sizeof(*candidate_core));
+    if (candidate_core == NULL)
+        return false;
+    *candidate_core = core;
+    candidate_audio = audio;
+    success = jc_core_unserialize(candidate_core, bytes, core_size) &&
+              jc_audio_unserialize(&candidate_audio, bytes + core_size,
+                                   audio_size);
+    if (success) {
+        core = *candidate_core;
+        audio = candidate_audio;
+    }
+    free(candidate_core);
+    return success;
+}
+
 size_t retro_serialize_size(void)
 {
-    return jc_core_serialize_size() + jc_audio_serialize_size();
+    return JC_LIBRETRO_STATE_HEADER_SIZE + jc_core_serialize_size() +
+           jc_audio_serialize_size();
 }
 
 bool retro_serialize(void *data, size_t size)
 {
+    uint8_t *bytes = (uint8_t *)data;
     size_t core_size = jc_core_serialize_size();
-    if (data == NULL || size < retro_serialize_size())
+    size_t audio_size = jc_audio_serialize_size();
+    size_t total_size = retro_serialize_size();
+    uint32_t flags = 0u;
+    uint32_t chapter_index;
+    uint32_t caption_index = JC_LIBRETRO_STATE_NO_INDEX;
+    uint32_t screen_index;
+    uint64_t runtime_ticks = 0u;
+
+    if (data == NULL || size < total_size || !game_loaded ||
+        !runtime_ready || runtime == NULL || runtime_failed ||
+        core_size > UINT32_MAX || audio_size > UINT32_MAX ||
+        total_size > UINT32_MAX)
         return false;
-    return jc_core_serialize(&core, data, core_size) &&
-           jc_audio_serialize(&audio, (uint8_t *)data + core_size,
-                              size - core_size);
+    chapter_index = serialized_chapter_index(selected_chapter);
+    screen_index = serialized_screen_index(selected_screen);
+    if ((selected_chapter != NULL &&
+         chapter_index == JC_LIBRETRO_STATE_NO_INDEX) ||
+        screen_index == JC_LIBRETRO_STATE_NO_INDEX)
+        return false;
+    if (selected_chapter != NULL) {
+        flags |= JC_LIBRETRO_STATE_FLAG_CHAPTER;
+        if (!diagnostic_display) {
+            if (!runtime->scene_loaded)
+                return false;
+            flags |= JC_LIBRETRO_STATE_FLAG_RUNTIME_SCENE;
+            runtime_ticks = runtime->vm.tick_count;
+            if (runtime->scene_finished)
+                flags |= JC_LIBRETRO_STATE_FLAG_RUNTIME_FINISHED;
+        }
+    }
+    if (runtime_ticks > JC_LIBRETRO_STATE_MAX_RUNTIME_TICKS)
+        return false;
+    if (captions.enabled)
+        flags |= JC_LIBRETRO_STATE_FLAG_CAPTIONS_ENABLED;
+    if (captions.current != NULL && captions.remaining_ticks != 0u) {
+        caption_index = serialized_caption_index(captions.current);
+        if (!captions.enabled || caption_index == JC_LIBRETRO_STATE_NO_INDEX ||
+            captions.remaining_ticks > JC_CAPTION_DEFAULT_TICKS)
+            return false;
+        flags |= JC_LIBRETRO_STATE_FLAG_CAPTION_ACTIVE;
+    } else if (captions.remaining_ticks != 0u) {
+        return false;
+    }
+    if (diagnostic_display)
+        flags |= JC_LIBRETRO_STATE_FLAG_DIAGNOSTIC;
+    if (reset_pressed)
+        flags |= JC_LIBRETRO_STATE_FLAG_RESET_PRESSED;
+
+    memset(bytes, 0, total_size);
+    write_u32le(bytes, JC_LIBRETRO_STATE_MAGIC);
+    write_u32le(bytes + 4u, JC_LIBRETRO_STATE_VERSION);
+    write_u32le(bytes + 8u, JC_LIBRETRO_STATE_HEADER_SIZE);
+    write_u32le(bytes + 12u, (uint32_t)total_size);
+    write_u32le(bytes + 16u, (uint32_t)core_size);
+    write_u32le(bytes + 20u, (uint32_t)audio_size);
+    write_u32le(bytes + 24u, flags);
+    write_u32le(bytes + 28u, chapter_index);
+    write_u32le(bytes + 32u, caption_index);
+    write_u32le(bytes + 36u, screen_index);
+    write_u32le(bytes + 40u, CHAPTER_RUNTIME_SEED);
+    write_u32le(bytes + 44u, captions.remaining_ticks);
+    write_u64le(bytes + 48u, runtime_ticks);
+    return jc_core_serialize(&core,
+                             bytes + JC_LIBRETRO_STATE_HEADER_SIZE,
+                             core_size) &&
+           jc_audio_serialize(&audio,
+                              bytes + JC_LIBRETRO_STATE_HEADER_SIZE +
+                                  core_size,
+                              audio_size);
 }
 
 bool retro_unserialize(const void *data, size_t size)
 {
+    const uint8_t *bytes = (const uint8_t *)data;
     size_t core_size = jc_core_serialize_size();
-    if (data == NULL || size < retro_serialize_size())
+    size_t audio_size = jc_audio_serialize_size();
+    size_t expected_size = retro_serialize_size();
+    uint32_t flags;
+    uint32_t chapter_index;
+    uint32_t caption_index;
+    uint32_t screen_index;
+    uint32_t seed;
+    uint32_t caption_ticks;
+    uint64_t runtime_ticks;
+    const jc_chapter_t *candidate_chapter = NULL;
+    jc_captions_t candidate_captions;
+    jc_audio_t candidate_audio;
+    jc_core_t *candidate_core = NULL;
+    jc_runtime_t *candidate_runtime = NULL;
+    jc_runtime_t *old_runtime;
+    bool diagnostic;
+    bool has_scene;
+    bool finished;
+    bool success = false;
+
+    if (data == NULL)
         return false;
-    return jc_core_unserialize(&core, data, core_size) &&
-           jc_audio_unserialize(&audio, (const uint8_t *)data + core_size,
-                                size - core_size);
+    if (size < 4u || read_u32le(bytes) != JC_LIBRETRO_STATE_MAGIC)
+        return retro_unserialize_legacy(bytes, size);
+    if (!game_loaded || !content.ready ||
+        size < JC_LIBRETRO_STATE_HEADER_SIZE ||
+        read_u32le(bytes + 4u) != JC_LIBRETRO_STATE_VERSION ||
+        read_u32le(bytes + 8u) != JC_LIBRETRO_STATE_HEADER_SIZE ||
+        read_u32le(bytes + 12u) != expected_size ||
+        read_u32le(bytes + 16u) != core_size ||
+        read_u32le(bytes + 20u) != audio_size || size != expected_size ||
+        read_u32le(bytes + 56u) != 0u ||
+        read_u32le(bytes + 60u) != 0u)
+        return false;
+    flags = read_u32le(bytes + 24u);
+    chapter_index = read_u32le(bytes + 28u);
+    caption_index = read_u32le(bytes + 32u);
+    screen_index = read_u32le(bytes + 36u);
+    seed = read_u32le(bytes + 40u);
+    caption_ticks = read_u32le(bytes + 44u);
+    runtime_ticks = read_u64le(bytes + 48u);
+    diagnostic = (flags & JC_LIBRETRO_STATE_FLAG_DIAGNOSTIC) != 0u;
+    has_scene = (flags & JC_LIBRETRO_STATE_FLAG_RUNTIME_SCENE) != 0u;
+    finished = (flags & JC_LIBRETRO_STATE_FLAG_RUNTIME_FINISHED) != 0u;
+
+    if ((flags & ~JC_LIBRETRO_STATE_FLAGS_ALL) != 0u ||
+        seed != CHAPTER_RUNTIME_SEED ||
+        screen_index >= sizeof(serialized_screen_names) /
+                            sizeof(serialized_screen_names[0]) ||
+        runtime_ticks > JC_LIBRETRO_STATE_MAX_RUNTIME_TICKS)
+        return false;
+    if ((flags & JC_LIBRETRO_STATE_FLAG_CHAPTER) != 0u) {
+        if (chapter_index >= jc_chapter_count())
+            return false;
+        candidate_chapter = jc_chapter_at(chapter_index);
+    } else if (chapter_index != JC_LIBRETRO_STATE_NO_INDEX) {
+        return false;
+    }
+    if (candidate_chapter == NULL || diagnostic) {
+        if (has_scene || finished || runtime_ticks != 0u)
+            return false;
+    } else if (!has_scene) {
+        return false;
+    }
+
+    jc_captions_init(&candidate_captions);
+    candidate_captions.enabled =
+        (flags & JC_LIBRETRO_STATE_FLAG_CAPTIONS_ENABLED) != 0u;
+    if ((flags & JC_LIBRETRO_STATE_FLAG_CAPTION_ACTIVE) != 0u) {
+        if (!candidate_captions.enabled ||
+            caption_index >= jc_caption_count() || caption_ticks == 0u ||
+            caption_ticks > JC_CAPTION_DEFAULT_TICKS)
+            return false;
+        candidate_captions.current = jc_caption_at(caption_index);
+        candidate_captions.remaining_ticks = caption_ticks;
+    } else if (caption_index != JC_LIBRETRO_STATE_NO_INDEX ||
+               caption_ticks != 0u) {
+        return false;
+    }
+
+    candidate_core = (jc_core_t *)malloc(sizeof(*candidate_core));
+    candidate_runtime = (jc_runtime_t *)malloc(sizeof(*candidate_runtime));
+    if (candidate_core == NULL || candidate_runtime == NULL)
+        goto cleanup;
+    jc_core_init(candidate_core);
+    candidate_audio = audio;
+    if (!jc_core_unserialize(candidate_core,
+                             bytes + JC_LIBRETRO_STATE_HEADER_SIZE,
+                             core_size) ||
+        !jc_audio_unserialize(&candidate_audio,
+                              bytes + JC_LIBRETRO_STATE_HEADER_SIZE +
+                                  core_size,
+                              audio_size) ||
+        !restore_runtime_candidate(candidate_runtime, candidate_chapter,
+                                   diagnostic, has_scene, finished,
+                                   runtime_ticks, seed) ||
+        !restore_candidate_frame(candidate_core, candidate_runtime,
+                                 candidate_chapter,
+                                 serialized_screen_names[screen_index],
+                                 diagnostic) ||
+        !jc_core_unserialize(candidate_core,
+                             bytes + JC_LIBRETRO_STATE_HEADER_SIZE,
+                             core_size))
+        goto cleanup;
+
+    old_runtime = runtime;
+    runtime = candidate_runtime;
+    candidate_runtime = NULL;
+    runtime_ready = true;
+    runtime_failed = false;
+    core = *candidate_core;
+    audio = candidate_audio;
+    captions = candidate_captions;
+    selected_chapter = candidate_chapter;
+    snprintf(selected_screen, sizeof(selected_screen), "%s",
+             serialized_screen_names[screen_index]);
+    diagnostic_display = diagnostic;
+    reset_pressed =
+        (flags & JC_LIBRETRO_STATE_FLAG_RESET_PRESSED) != 0u;
+    if (old_runtime != NULL) {
+        jc_runtime_destroy(old_runtime);
+        free(old_runtime);
+    }
+    success = true;
+
+cleanup:
+    runtime_replay_silent = false;
+    if (candidate_runtime != NULL) {
+        if (candidate_runtime->initialized)
+            jc_runtime_destroy(candidate_runtime);
+        free(candidate_runtime);
+    }
+    free(candidate_core);
+    return success;
 }
 
 void retro_cheat_reset(void)
@@ -1019,10 +1550,12 @@ bool retro_load_game(const struct retro_game_info *game)
         !start_selected_presentation(error, sizeof(error))) {
         if (log_cb != NULL)
             log_cb(RETRO_LOG_ERROR, "Johnny Castaway: %s\n", error);
-        if (runtime_ready) {
-            jc_runtime_destroy(&runtime);
-            runtime_ready = false;
+        if (runtime != NULL) {
+            jc_runtime_destroy(runtime);
+            free(runtime);
+            runtime = NULL;
         }
+        runtime_ready = false;
         jc_content_unload(&content);
         return false;
     }
@@ -1047,10 +1580,12 @@ void retro_unload_game(void)
 {
     game_loaded = false;
     jc_captions_clear(&captions);
-    if (runtime_ready) {
-        jc_runtime_destroy(&runtime);
-        runtime_ready = false;
+    if (runtime != NULL) {
+        jc_runtime_destroy(runtime);
+        free(runtime);
+        runtime = NULL;
     }
+    runtime_ready = false;
     unload_ocean_ambience();
     jc_audio_clear_samples(&audio);
     jc_core_clear_content_frame(&core);

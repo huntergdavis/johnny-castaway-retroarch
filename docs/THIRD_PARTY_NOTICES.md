@@ -24,7 +24,9 @@ The caption catalog, scene-explorer metadata, expanded holiday table, and ocean 
 metadata are translated from Hunter Davis's GPLv3/GPL-3.0-or-later PlayStation port at
 revision `25c5d84593ac20cbee354eaab7779ab7397d6bbe`. That project states that its caption
 text was freshly authored from scene content. The original Sierra/Dynamix media is not
-included in these tables.
+included in these tables. The holiday overlay reuses that port's automatic/off/manual
+interaction policy, but its C99 renderer is new and uses only the embedded conventional
+5x7 font; the PS1 port's `HOLIDAY.BMP` sprite media is not included.
 
 ## CC0 ocean ambience source
 

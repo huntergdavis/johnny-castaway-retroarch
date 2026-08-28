@@ -17,13 +17,18 @@ static bool video_category_found;
 static bool audio_category_found;
 static bool accessibility_category_found;
 static bool chapter_option_found;
+static bool holiday_option_found;
 static unsigned ocean_options_found;
 static unsigned caption_options_found;
 static bool controller_registered;
 static bool frame_has_color;
+static size_t holiday_bar_pixels;
+static size_t holiday_bar_top_pixels;
+static size_t holiday_bar_bottom_pixels;
 static bool variable_updated;
 static const char *initial_screen_value = "intro";
 static const char *chapter_value = "screen";
+static const char *holiday_value = "off";
 static const char *display_source_value = "original";
 static const char *audio_enabled_value = "enabled";
 static const char *audio_volume_value = "100";
@@ -37,6 +42,7 @@ static const char *caption_position_value = "bottom";
 static uint64_t frame_hash;
 static bool last_audio_has_signal;
 static size_t chapter_value_count;
+static size_t holiday_value_count;
 
 typedef struct script_buffer {
     uint8_t data[1024];
@@ -55,6 +61,12 @@ static void write_u32le(uint8_t *data, uint32_t value)
     data[1] = (uint8_t)(value >> 8);
     data[2] = (uint8_t)(value >> 16);
     data[3] = (uint8_t)(value >> 24);
+}
+
+static uint32_t read_u32le(const uint8_t *data)
+{
+    return (uint32_t)data[0] | ((uint32_t)data[1] << 8) |
+           ((uint32_t)data[2] << 16) | ((uint32_t)data[3] << 24);
 }
 
 static void append_u8(script_buffer_t *buffer, uint8_t value)
@@ -301,6 +313,12 @@ static bool RETRO_CALLCONV environment(unsigned command, void *data)
                        definition->values[chapter_value_count].value != NULL)
                     ++chapter_value_count;
             } else if (strcmp(definition->key,
+                              "johnny_castaway_holiday_overlay") == 0) {
+                holiday_option_found = true;
+                while (holiday_value_count < RETRO_NUM_CORE_OPTION_VALUES_MAX &&
+                       definition->values[holiday_value_count].value != NULL)
+                    ++holiday_value_count;
+            } else if (strcmp(definition->key,
                               "johnny_castaway_ocean_enabled") == 0 ||
                        strcmp(definition->key,
                               "johnny_castaway_ocean_volume") == 0) {
@@ -333,6 +351,9 @@ static bool RETRO_CALLCONV environment(unsigned command, void *data)
             variable->value = initial_screen_value;
         else if (strcmp(variable->key, "johnny_castaway_chapter") == 0)
             variable->value = chapter_value;
+        else if (strcmp(variable->key,
+                        "johnny_castaway_holiday_overlay") == 0)
+            variable->value = holiday_value;
         else if (strcmp(variable->key, "johnny_castaway_display_source") == 0)
             variable->value = display_source_value;
         else if (strcmp(variable->key, "johnny_castaway_audio_enabled") == 0)
@@ -383,11 +404,21 @@ static void RETRO_CALLCONV video(const void *data, unsigned width,
     assert(data != NULL);
     assert(width == 640u && height == 480u);
     assert(pitch == width * sizeof(uint32_t));
+    holiday_bar_pixels = 0u;
+    holiday_bar_top_pixels = 0u;
+    holiday_bar_bottom_pixels = 0u;
     for (index = 0u; index < count; ++index) {
         hash ^= pixels[index];
         hash *= 1099511628211ull;
         if (pixels[index] != 0u)
             frame_has_color = true;
+        if (pixels[index] == 0x00132945u) {
+            ++holiday_bar_pixels;
+            if (index < count / 2u)
+                ++holiday_bar_top_pixels;
+            else
+                ++holiday_bar_bottom_pixels;
+        }
     }
     frame_hash = hash;
     ++video_calls;
@@ -426,15 +457,33 @@ static int16_t RETRO_CALLCONV input_state(unsigned port, unsigned device,
     return 0;
 }
 
+static void assert_serialized_state_unchanged(const uint8_t *expected,
+                                              size_t state_size)
+{
+    uint8_t *actual = (uint8_t *)malloc(state_size);
+
+    assert(actual != NULL);
+    assert(retro_serialize(actual, state_size));
+    assert(memcmp(actual, expected, state_size) == 0);
+    free(actual);
+}
+
 int main(int argc, char **argv)
 {
     struct retro_game_info game = {0};
     struct retro_system_info system_info;
-    void *state;
+    uint8_t *state;
+    uint8_t *roundtrip;
+    uint8_t *malformed;
+    uint8_t *oversized;
+    uint8_t *legacy;
     size_t state_size;
+    size_t legacy_size;
     uint64_t intro_hash;
     uint64_t diagnostic_hash;
     uint64_t chapter_hash;
+    uint64_t restored_hash;
+    bool restored_audio_signal;
 
     retro_set_environment(environment);
     retro_set_video_refresh(video);
@@ -448,6 +497,7 @@ int main(int argc, char **argv)
     assert(options_registered && story_category_found && video_category_found &&
            audio_category_found && accessibility_category_found);
     assert(chapter_option_found && chapter_value_count == 64u);
+    assert(holiday_option_found && holiday_value_count == 38u);
     assert(ocean_options_found == 2u && caption_options_found == 5u);
     assert(controller_registered);
 
@@ -464,6 +514,16 @@ int main(int argc, char **argv)
     retro_run();
     diagnostic_hash = frame_hash;
     assert(diagnostic_hash != intro_hash);
+
+    holiday_value = "valentines_day";
+    variable_updated = true;
+    retro_run();
+    assert(holiday_bar_pixels > 1000u);
+
+    holiday_value = "off";
+    variable_updated = true;
+    retro_run();
+    assert(holiday_bar_pixels == 0u);
 
     display_source_value = "original";
     initial_screen_value = "island_day";
@@ -493,18 +553,114 @@ int main(int argc, char **argv)
     retro_run();
     assert(frame_hash != chapter_hash);
 
+    holiday_value = "valentines_day";
+    variable_updated = true;
+    retro_run();
+    assert(holiday_bar_bottom_pixels > 1000u);
+    assert(holiday_bar_top_pixels == 0u);
+
+    holiday_value = "off";
+    variable_updated = true;
+    retro_run();
+
     audio_enabled_value = "disabled";
     audio_volume_value = "25";
     variable_updated = true;
     retro_run();
     assert(!last_audio_has_signal);
 
+    audio_enabled_value = "enabled";
+    variable_updated = true;
+    retro_run();
+    assert(last_audio_has_signal);
+
     state_size = retro_serialize_size();
-    state = malloc(state_size);
-    assert(state != NULL);
+    state = (uint8_t *)malloc(state_size);
+    roundtrip = (uint8_t *)malloc(state_size);
+    malformed = (uint8_t *)malloc(state_size);
+    oversized = (uint8_t *)malloc(state_size + 1u);
+    assert(state != NULL && roundtrip != NULL && malformed != NULL &&
+           oversized != NULL);
     assert(retro_serialize(state, state_size));
+    assert(state_size > 64u);
+    assert(read_u32le(state) == 0x3253434au);
+    assert(read_u32le(state + 4u) == 2u);
+    assert(read_u32le(state + 8u) == 64u);
+    assert(read_u32le(state + 12u) == state_size);
+
+    chapter_value = "screen";
+    captions_enabled_value = "disabled";
+    variable_updated = true;
     retro_run();
     assert(retro_unserialize(state, state_size));
+    assert(retro_serialize(roundtrip, state_size));
+    assert(memcmp(roundtrip, state, state_size) == 0);
+
+    retro_run();
+    restored_hash = frame_hash;
+    restored_audio_signal = last_audio_has_signal;
+    assert(retro_unserialize(state, state_size));
+    retro_run();
+    assert(frame_hash == restored_hash);
+    assert(last_audio_has_signal == restored_audio_signal);
+    assert(retro_unserialize(state, state_size));
+
+    assert(!retro_unserialize(state, state_size - 1u));
+    assert_serialized_state_unchanged(state, state_size);
+
+    memcpy(oversized, state, state_size);
+    oversized[state_size] = 0u;
+    assert(!retro_unserialize(oversized, state_size + 1u));
+    assert_serialized_state_unchanged(state, state_size);
+
+    memcpy(malformed, state, state_size);
+    write_u32le(malformed + 4u, 3u);
+    assert(!retro_unserialize(malformed, state_size));
+    assert_serialized_state_unchanged(state, state_size);
+
+    memcpy(malformed, state, state_size);
+    write_u32le(malformed + 12u, (uint32_t)state_size + 1u);
+    assert(!retro_unserialize(malformed, state_size));
+    assert_serialized_state_unchanged(state, state_size);
+
+    memcpy(malformed, state, state_size);
+    write_u32le(malformed + 24u,
+                read_u32le(malformed + 24u) | 0x80000000u);
+    assert(!retro_unserialize(malformed, state_size));
+    assert_serialized_state_unchanged(state, state_size);
+
+    memcpy(malformed, state, state_size);
+    write_u32le(malformed + 28u, 999u);
+    assert(!retro_unserialize(malformed, state_size));
+    assert_serialized_state_unchanged(state, state_size);
+
+    memcpy(malformed, state, state_size);
+    write_u32le(malformed + 32u, 999u);
+    assert(!retro_unserialize(malformed, state_size));
+    assert_serialized_state_unchanged(state, state_size);
+
+    memcpy(malformed, state, state_size);
+    write_u32le(malformed + 52u, 1u);
+    assert(!retro_unserialize(malformed, state_size));
+    assert_serialized_state_unchanged(state, state_size);
+
+    memcpy(malformed, state, state_size);
+    write_u32le(malformed + 56u, 1u);
+    assert(!retro_unserialize(malformed, state_size));
+    assert_serialized_state_unchanged(state, state_size);
+
+    legacy_size = state_size - 64u;
+    legacy = (uint8_t *)malloc(legacy_size);
+    assert(legacy != NULL);
+    memcpy(legacy, state + 64u, legacy_size);
+    retro_run();
+    assert(retro_unserialize(legacy, legacy_size));
+    assert(retro_unserialize(state, state_size));
+
+    free(legacy);
+    free(oversized);
+    free(malformed);
+    free(roundtrip);
     free(state);
 
     retro_unload_game();

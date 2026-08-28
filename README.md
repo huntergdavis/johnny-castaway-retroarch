@@ -9,21 +9,25 @@ Milestone 0 and the first content/rendering slice are complete: the repository b
 a loadable libretro core, validates the original resource pair, decodes palette and SCR
 resources, and displays selectable authentic screens or live ADS scenes through a
 deterministic 640x480 XRGB8888 software framebuffer. Categorized Core Options v2,
-legacy menu fallback, RetroPad input, audio, and base save-state round trips are working.
+legacy menu fallback, RetroPad input, audio, and versioned chapter-runtime save-state
+round trips are working.
 
 The repository now contains bounded ADS/TTM parsers and a resumable 50 Hz script VM,
 an indexed sprite compositor, the deterministic story/walking runtime, and an eight-voice
 sound mixer. It also includes the PS1 port's audited 79-caption/63-chapter catalogs,
-36-holiday calendar, and embedded CC0 ocean ambience. TTM events now
+36-holiday calendar with an asset-free automatic/forced preview overlay, and embedded
+CC0 ocean ambience. TTM events now
 drive a bounded indexed renderer for resources, layers, sprites,
 primitives, saved zones, and frame composition. A bounded content-backed runtime
 loads one ADS plus its declared TTM resources and drives the renderer at 50 Hz. That
 runtime is connected to the libretro adapter: all 63 chapters can be selected as live
 graphical previews, captions have complete presentation options, and the embedded ocean
-loop has enable/volume controls. High-level day/story cycling, island/walk integration,
-36-holiday sprite visuals, original sound-effect extraction, preview navigation controls,
-and whole-runtime save states remain. This is therefore not yet the complete screensaver
-experience.
+loop has enable/volume controls. A Holiday Overlay Core Option uses the local date or
+forces any of all 36 catalog entries, rendering its title/date without original artwork.
+High-level day/story cycling, island/walk integration, sprite-faithful holiday decorations,
+original sound-effect extraction, preview navigation controls, and save-state coverage
+for the future director/island runtime remain. This is therefore not yet the complete
+screensaver experience.
 
 ## Why C
 

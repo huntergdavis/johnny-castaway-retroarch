@@ -51,9 +51,10 @@ complete. Remaining work is fades and less-common/dump-only image operations.
 Status: the bounded ADS/TTM parsers, callback-driven multi-thread VM, deterministic
 director, corrected weighted path data, and nonblocking walk animation are complete.
 The VM-to-render callback bridge, authentic archive binding, one-ADS chapter starts,
-and live libretro framebuffer handoff are complete and tested with synthetic bytecode.
-Island/director assembly, original audio sample loading, whole-runtime save-state
-aggregation, and deterministic real-data trace comparison remain.
+live libretro framebuffer handoff, and deterministic pointer-free save states for the
+current one-ADS chapter mode are complete and tested with synthetic bytecode. Island/
+director assembly, original audio sample loading, save-state coverage for that future
+director state, and deterministic real-data trace comparison remain.
 
 - Port TTM, ADS, director/story selection, island state, pathfinding, and walking.
 - Compare deterministic scene traces with Wilson Reborn and the PS1 host harness.
@@ -67,8 +68,11 @@ Options v2 plus legacy variables, and mixer phase is saved. The audited PS1 capt
 chapter, 36-holiday, and CC0 ambience foundations are complete. The exact licensed VAG
 is embedded and decoded, the mixer loops it at independent gain, and TTM sample cues are
 dispatched. All 63 chapters start as live-rendered Core Option previews, and caption
-presentation has functional menu controls. Original sample loading/executable extraction,
-holiday sprite visuals, explorer controller navigation, and full engine state remain.
+presentation has functional menu controls. Automatic/off/36-force holiday menu values
+drive an asset-free title/date overlay. Versioned chapter-mode save states preserve and
+deterministically reconstruct runtime, renderer, caption, core, and audio state. Original
+sample loading/executable extraction, sprite-faithful holiday decorations, explorer
+controller navigation, and future director/island state remain.
 
 - Port sound triggers and deterministic multi-voice mixing.
 - Add core options, reset semantics, robust save states, controller descriptors, and
@@ -109,7 +113,8 @@ contract exists.
    **Done for selectable one-ADS chapters; director transitions and original SFX remain.**
 4. Port feasible PS1 additions: captions, 36-holiday calendar, scene explorer previews,
    and the CC0 ocean ambience loop with full attribution. **Captions, chapter previews,
-   calendar data, and ambience are done; holiday sprite presentation remains.**
+   calendar data, automatic/forced asset-free holiday presentation, and ambience are
+   done; original-art sprite presentation remains.**
 5. Browser RetroArch build/link/dist/HTTP harness. **Done; interactive lawful-data run
    remains.** Complete native RetroArch smoke, then expand targets one validated
    compiler/frontend at a time.

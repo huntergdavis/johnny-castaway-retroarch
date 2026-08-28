@@ -37,7 +37,9 @@ of their respective rights holders. This repository distributes none of that con
 - The PlayStation port's freshly authored closed-caption corpus, 63-scene explorer
   metadata, 36-holiday calendar, and ocean-ambience feature design were translated into
   portable catalogs for this core. Its centered, bottom-band caption presentation
-  informed this port's independently drawn 5x7 software renderer. The ocean loop
+  informed this port's independently drawn 5x7 software renderer. Its automatic/off/
+  manual holiday menu and title/date preview behavior informed this core's independently
+  written, asset-free holiday overlay; no `HOLIDAY.BMP` artwork was brought over. The ocean loop
   pipeline was introduced by Hunter
   Davis in PS1 commit `bb32de68aad33ecd1b8a7fbdc0a9278a35971238`, co-authored there
   with Claude Opus 4.7, and completed in commit
@@ -80,7 +82,8 @@ ship with the generated player and are recorded below.
   loop. The exact PS1-derived VAG is embedded in this core; its checksum and dedicated
   redistribution notice are in `docs/licenses/BigSoundBank-0266-CC0.md`.
 - The expanded holiday calendar uses the public Meeus/Jones/Butcher Gregorian Easter
-  calculation, following the attribution in the PlayStation port.
+  calculation, following the attribution in the PlayStation port. Hunter Davis authored
+  the referenced PS1 holiday work in commits `d45de0f08`, `cc2ef4d69`, and `0a3ef05ec`.
 
 Exact repository revisions and the distinction between copied data, translated code,
 behavioral references, and independently written code are recorded in

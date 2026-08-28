@@ -6,6 +6,7 @@ SOURCES := src/jc_ads.c src/jc_audio.c src/jc_bmp.c src/jc_caption_render.c \
            src/jc_captions.c \
            src/jc_chapters.c src/jc_compositor.c src/jc_content.c src/jc_core.c \
            src/jc_decompress.c src/jc_director.c src/jc_extras.c \
+           src/jc_holiday_overlay.c \
            src/jc_ocean.c src/jc_palette.c src/jc_path.c \
            src/jc_resource_map.c src/jc_rng.c src/jc_runtime.c \
            src/jc_scr.c src/jc_script_vm.c src/jc_surface.c src/jc_ttm.c \
@@ -247,6 +248,7 @@ AUDIO_TEST_TARGET := build/tests/test_audio
 SCRIPT_TEST_TARGET := build/tests/test_script_vm
 EXTRAS_TEST_TARGET := build/tests/test_extras
 CAPTION_RENDER_TEST_TARGET := build/tests/test_caption_render
+HOLIDAY_OVERLAY_TEST_TARGET := build/tests/test_holiday_overlay
 TTM_RENDERER_TEST_TARGET := build/tests/test_ttm_renderer
 VAG_TEST_TARGET := build/tests/test_vag
 OCEAN_TEST_TARGET := build/tests/test_ocean
@@ -314,6 +316,14 @@ $(CAPTION_RENDER_TEST_TARGET): src/jc_caption_render.c src/jc_captions.c \
 	$(HOST_CC) -std=c99 $(WARNINGS) -Iinclude -O2 -o $@ \
 		src/jc_caption_render.c src/jc_captions.c tests/test_caption_render.c
 
+$(HOLIDAY_OVERLAY_TEST_TARGET): src/jc_caption_render.c src/jc_extras.c \
+                                src/jc_holiday_overlay.c \
+                                tests/test_holiday_overlay.c
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c99 $(WARNINGS) -Iinclude -O2 -o $@ \
+		src/jc_caption_render.c src/jc_extras.c src/jc_holiday_overlay.c \
+		tests/test_holiday_overlay.c
+
 $(TTM_RENDERER_TEST_TARGET): src/jc_ads.c src/jc_bmp.c src/jc_compositor.c \
                              src/jc_decompress.c src/jc_palette.c \
                              src/jc_scr.c src/jc_script_vm.c src/jc_surface.c \
@@ -359,6 +369,7 @@ test: $(TEST_TARGET) $(MAP_TEST_TARGET) $(GRAPHICS_TEST_TARGET) \
       $(BMP_TEST_TARGET) $(DIRECTOR_TEST_TARGET) $(PATH_TEST_TARGET) \
       $(WALK_TEST_TARGET) $(AUDIO_TEST_TARGET) $(SCRIPT_TEST_TARGET) \
       $(EXTRAS_TEST_TARGET) $(CAPTION_RENDER_TEST_TARGET) \
+      $(HOLIDAY_OVERLAY_TEST_TARGET) \
       $(TTM_RENDERER_TEST_TARGET) \
       $(VAG_TEST_TARGET) $(OCEAN_TEST_TARGET) $(RUNTIME_TEST_TARGET) \
       $(LIBRETRO_TEST_TARGET)
@@ -373,6 +384,7 @@ test: $(TEST_TARGET) $(MAP_TEST_TARGET) $(GRAPHICS_TEST_TARGET) \
 	./$(SCRIPT_TEST_TARGET)
 	./$(EXTRAS_TEST_TARGET)
 	./$(CAPTION_RENDER_TEST_TARGET)
+	./$(HOLIDAY_OVERLAY_TEST_TARGET)
 	./$(TTM_RENDERER_TEST_TARGET)
 	./$(VAG_TEST_TARGET)
 	./$(OCEAN_TEST_TARGET)
