@@ -92,11 +92,11 @@ Each row advances independently through Build/Load/Run/Regress.
 | 0 | `linux_x86_64` | `.so` | build and mock-frontend validation pass; RetroArch load/run pending |
 | 1 | `mingw_x86_64` | `.dll` | cross-build and ABI exports validated; frontend run pending |
 | 1 | `mingw_x86` | `.dll` | build mapping added; compiler unavailable locally |
-| 1 | `osx`, `osx_x86_64`, `osx_arm64` | `.dylib` | per-architecture mappings and verified-`lipo` universal script added; real Xcode build/frontend run pending |
+| 1 | `osx`, `osx_x86_64`, `osx_arm64` | `.dylib` | real Xcode per-architecture builds, exact ABI exports, and verified-`lipo` universal output pass in GitHub `macos-15`; frontend run pending |
 | 1 | `linux_aarch64`, `linux_armv7` | `.so` | build mapping added |
 | 2 | Android arm64/armv7/x86_64/x86 | `.so` | NDK r22+ mappings and compiler dry-runs pass; real NDK builds/frontend runs pending |
-| 2 | iOS/tvOS arm64 device + arm64/x86_64 simulators | `.dylib` | Xcode SDK/deployment mappings and compiler dry-runs pass; real Xcode builds/frontend runs pending |
-| 2 | `emscripten` | `.bc` static core + RetroArch `.js/.wasm` | archive and pinned real-frontend link/dist/HTTP smoke pass; interactive lawful-data run pending |
+| 2 | iOS/tvOS arm64 device + arm64/x86_64 simulators | `.dylib` | real Xcode SDK builds and exact Mach-O ABI exports pass in GitHub `macos-15`; device/frontend runs pending |
+| 2 | `emscripten` | `.bc` static core + RetroArch `.js/.wasm` | archive, pinned real-frontend link/dist, HTTP checks, and real-Firefox synthetic-content run pass; interactive original-data run pending |
 | 3 | `psp1`, `vita`, `ctr`, `ps2` | static `.a` | initial compiler mapping added |
 | 3 | Switch, Wii, GameCube, Wii U | static `.a` | devkitPro mappings and compiler dry-runs pass; real toolchain/frontend runs pending |
 | 4 | PS3, Xbox-family, Haiku/BSD/webOS and other buildbot targets | varies | inventory pending |
@@ -115,8 +115,8 @@ contract exists.
    and the CC0 ocean ambience loop with full attribution. **Captions, chapter previews,
    calendar data, automatic/forced asset-free holiday presentation, and ambience are
    done; original-art sprite presentation remains.**
-5. Browser RetroArch build/link/dist/HTTP harness. **Done; interactive lawful-data run
-   remains.** Complete native RetroArch smoke, then expand targets one validated
+5. Browser RetroArch build/link/dist/HTTP and real-Firefox synthetic-content harness.
+   **Done; interactive original-data run remains.** Complete native RetroArch smoke, then expand targets one validated
    compiler/frontend at a time.
 
 The project intentionally adds targets sequentially. A giant untested Makefile is not
