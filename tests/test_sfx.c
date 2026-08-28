@@ -202,6 +202,71 @@ static void test_valid_stdio_load_and_mix(void)
     assert(!jc_audio_has_sample(&audio, 24u));
 }
 
+static void test_all_original_effects_load_and_mix(void)
+{
+    uint8_t wav[64];
+    char path[JC_SFX_PATH_MAX];
+    int16_t output[8];
+    uint32_t expected_ids = 0u;
+    unsigned sample_id;
+    jc_sfx_t sfx;
+    jc_audio_t audio;
+    jc_sfx_report_t report;
+
+    prepare_directory();
+    for (sample_id = 0u; sample_id < JC_AUDIO_ORIGINAL_SAMPLE_COUNT;
+         ++sample_id) {
+        uint8_t sample;
+        size_t size;
+
+        if (sample_id == 11u || sample_id == 13u)
+            continue;
+        sample = (uint8_t)(129u + sample_id);
+        size = make_wav(wav, sizeof(wav), &sample, 1u);
+        assert(jc_sfx_build_sample_path(path, sizeof(path), TEST_CONTENT,
+                                        sample_id) == JC_SFX_OK);
+        write_file(path, wav, size);
+        expected_ids |= (uint32_t)1u << sample_id;
+    }
+
+    jc_sfx_init(&sfx);
+    jc_audio_init(&audio);
+    assert(jc_sfx_load(&sfx, &audio, TEST_CONTENT, NULL, &report) == JC_SFX_OK);
+    assert(report.attempted_count == 23u);
+    assert(report.loaded_count == 23u);
+    assert(report.missing_count == 2u);
+    assert(report.invalid_count == 0u);
+    assert(report.loaded_ids == expected_ids);
+    assert(report.missing_ids == (((uint32_t)1u << 11u) |
+                                  ((uint32_t)1u << 13u)));
+
+    for (sample_id = 0u; sample_id < JC_AUDIO_ORIGINAL_SAMPLE_COUNT;
+         ++sample_id) {
+        unsigned frame;
+
+        if (sample_id == 11u || sample_id == 13u) {
+            assert(!jc_audio_has_sample(&audio, sample_id));
+            assert(jc_audio_trigger(&audio, sample_id) ==
+                   JC_AUDIO_INVALID_VOICE);
+            continue;
+        }
+        assert(jc_audio_has_sample(&audio, sample_id));
+        assert(jc_audio_trigger(&audio, sample_id) != JC_AUDIO_INVALID_VOICE);
+        assert(jc_audio_mix(&audio, output, 4u) == 4u);
+        for (frame = 0u; frame < 4u; ++frame) {
+            int16_t expected = (int16_t)((sample_id + 1u) * 256u);
+            assert(output[frame * 2u] == expected);
+            assert(output[frame * 2u + 1u] == expected);
+        }
+        assert(jc_audio_active_voice_count(&audio) == 0u);
+    }
+
+    jc_sfx_unload(&sfx, &audio);
+    for (sample_id = 0u; sample_id < JC_AUDIO_ORIGINAL_SAMPLE_COUNT;
+         ++sample_id)
+        assert(!jc_audio_has_sample(&audio, sample_id));
+}
+
 static void test_malformed_and_oversized_rejection(void)
 {
     static const uint8_t malformed[] = {'N', 'O', 'P', 'E'};
@@ -352,6 +417,7 @@ int main(void)
     test_path_safety_and_errors();
     test_all_missing_is_optional();
     test_valid_stdio_load_and_mix();
+    test_all_original_effects_load_and_mix();
     test_malformed_and_oversized_rejection();
     test_frontend_vfs_load();
     clean_directory();
