@@ -232,6 +232,17 @@ static int coordinate(uint16_t value, int offset)
     return signed_word(value) + offset;
 }
 
+static uint8_t primitive_color(const jc_ttm_renderer_t *renderer,
+                               uint8_t source_color)
+{
+    /* Authentic TTM drawing colors and BMP indices are 4-bit (0..15), so
+     * internal index 255 is unambiguous for a keyed thread-layer pixel. */
+    if (renderer->transparent_source_index >= 0 &&
+        source_color == (uint8_t)renderer->transparent_source_index)
+        return JC_TTM_RENDERER_TRANSPARENT;
+    return source_color;
+}
+
 static void put_unclipped(jc_surface_t *surface, int x, int y, uint8_t color)
 {
     if (x < 0 || y < 0 || x >= (int)surface->width ||
@@ -684,7 +695,7 @@ static bool handle_instruction(jc_ttm_renderer_t *renderer,
         put_unclipped(layer,
                       coordinate(event->args[0], renderer->offset_x),
                       coordinate(event->args[1], renderer->offset_y),
-                      event->foreground_color);
+                      primitive_color(renderer, event->foreground_color));
         break;
     case 0xa064u:
         jc_surface_clear(&renderer->saved_zones,
@@ -698,7 +709,7 @@ static bool handle_instruction(jc_ttm_renderer_t *renderer,
                   coordinate(event->args[1], renderer->offset_y),
                   coordinate(event->args[2], renderer->offset_x),
                   coordinate(event->args[3], renderer->offset_y),
-                  event->foreground_color);
+                  primitive_color(renderer, event->foreground_color));
         break;
     case 0xa104u:
         if (!require_args(event, 4u, error))
@@ -707,7 +718,8 @@ static bool handle_instruction(jc_ttm_renderer_t *renderer,
                              coordinate(event->args[0], renderer->offset_x),
                              coordinate(event->args[1], renderer->offset_y),
                              event->args[2], event->args[3],
-                             event->foreground_color);
+                             primitive_color(renderer,
+                                             event->foreground_color));
         break;
     case 0xa404u:
         if (!require_args(event, 4u, error))
@@ -720,7 +732,8 @@ static bool handle_instruction(jc_ttm_renderer_t *renderer,
                     coordinate(event->args[0], renderer->offset_x),
                     coordinate(event->args[1], renderer->offset_y),
                     event->args[2], event->args[3],
-                    event->foreground_color, event->background_color);
+                    primitive_color(renderer, event->foreground_color),
+                    primitive_color(renderer, event->background_color));
         break;
     case 0xa504u:
         return draw_sprite(renderer, event, layer, false, error);

@@ -420,6 +420,77 @@ static void test_primitives_offsets_and_saved_zones(void)
     jc_ttm_renderer_destroy(&renderer);
 }
 
+static void test_transparent_primitive_colors(void)
+{
+    jc_ttm_renderer_t renderer;
+    jc_script_error_t error;
+    jc_script_event_t lifecycle;
+    jc_surface_t background;
+    uint8_t background_pixels[64];
+    uint16_t args[4];
+
+    memset(background_pixels, 9, sizeof(background_pixels));
+    require(jc_surface_init(&background, background_pixels,
+                            sizeof(background_pixels), 8u, 8u, 8u),
+            "transparent primitive background init failed");
+    require(jc_ttm_renderer_init(&renderer, 8u, 8u, 0, NULL,
+                                 NULL, NULL, &error), error.message);
+    require(jc_ttm_renderer_set_background(&renderer, &background, &error),
+            error.message);
+    lifecycle = event_base(JC_SCRIPT_EVENT_SCENE_STARTED, 0u);
+    send_event(&renderer, &lifecycle);
+
+    args[0] = 1u; args[1] = 1u;
+    send_args(&renderer, 0xa002u, args, 2u, 7u, 0u);
+    send_args(&renderer, 0xa002u, args, 2u, 0u, 0u);
+    args[0] = 0u; args[1] = 0u;
+    send_args(&renderer, 0xa002u, args, 2u, 8u, 0u);
+    frame(&renderer);
+    require(output_at(&renderer, 1u, 1u) == 9u,
+            "transparent DRAW_PIXEL did not expose the background");
+    require(output_at(&renderer, 0u, 0u) == 8u,
+            "non-key DRAW_PIXEL became transparent");
+
+    clear_layer(&renderer);
+    full_clip(&renderer);
+    args[0] = 0u; args[1] = 2u; args[2] = 5u; args[3] = 2u;
+    send_args(&renderer, 0xa0a4u, args, 4u, 7u, 0u);
+    send_args(&renderer, 0xa0a4u, args, 4u, 0u, 0u);
+    frame(&renderer);
+    require(output_at(&renderer, 0u, 2u) == 9u &&
+                output_at(&renderer, 4u, 2u) == 9u,
+            "transparent DRAW_LINE did not expose the background");
+
+    clear_layer(&renderer);
+    full_clip(&renderer);
+    args[0] = 2u; args[1] = 2u; args[2] = 3u; args[3] = 3u;
+    send_args(&renderer, 0xa104u, args, 4u, 7u, 0u);
+    send_args(&renderer, 0xa104u, args, 4u, 0u, 0u);
+    frame(&renderer);
+    require(output_at(&renderer, 3u, 3u) == 9u,
+            "transparent DRAW_RECT did not expose the background");
+
+    clear_layer(&renderer);
+    full_clip(&renderer);
+    args[0] = 0u; args[1] = 0u; args[2] = 8u; args[3] = 8u;
+    send_args(&renderer, 0xa404u, args, 4u, 0u, 6u);
+    frame(&renderer);
+    require((output_at(&renderer, 3u, 0u) == 9u ||
+             output_at(&renderer, 4u, 0u) == 9u) &&
+                output_at(&renderer, 3u, 3u) == 6u,
+            "transparent circle outline did not expose its background");
+
+    clear_layer(&renderer);
+    full_clip(&renderer);
+    send_args(&renderer, 0xa404u, args, 4u, 7u, 0u);
+    frame(&renderer);
+    require((output_at(&renderer, 3u, 0u) == 7u ||
+             output_at(&renderer, 4u, 0u) == 7u) &&
+                output_at(&renderer, 3u, 3u) == 9u,
+            "transparent circle fill did not expose its background");
+    jc_ttm_renderer_destroy(&renderer);
+}
+
 static void test_partial_screen_replaces_saved_zones(void)
 {
     resources_t resources;
@@ -597,6 +668,7 @@ int main(void)
 {
     test_resources_sprites_and_palette();
     test_primitives_offsets_and_saved_zones();
+    test_transparent_primitive_colors();
     test_partial_screen_replaces_saved_zones();
     test_background_snapshot_and_errors();
     test_real_vm_event_bridge();

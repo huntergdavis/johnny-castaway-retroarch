@@ -455,6 +455,7 @@ $(INSPECT_TARGET): src/jc_content.c src/jc_resource_map.c tools/jc_inspect.c
 inspect: $(INSPECT_TARGET)
 
 AUTHENTIC_TEST_TARGET := build/tools/check_all_chapters
+AUTHENTIC_VISUAL_TEST_TARGET := build/tools/check_all_chapter_visuals
 $(AUTHENTIC_TEST_TARGET): src/jc_ads.c src/jc_bmp.c src/jc_chapters.c \
                             src/jc_compositor.c src/jc_content.c \
                             src/jc_decompress.c src/jc_palette.c \
@@ -470,10 +471,25 @@ $(AUTHENTIC_TEST_TARGET): src/jc_ads.c src/jc_bmp.c src/jc_chapters.c \
 		src/jc_script_vm.c src/jc_surface.c src/jc_ttm.c \
 		src/jc_ttm_renderer.c tools/check_all_chapters.c
 
-authentic-test: $(AUTHENTIC_TEST_TARGET)
+$(AUTHENTIC_VISUAL_TEST_TARGET): $(SOURCES) \
+                                    tools/check_all_chapter_visuals.c
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c99 $(WARNINGS) -DJC_LIBRETRO_TEST -Iinclude \
+		-Iexternal/libretro-common/include -O2 -o $@ $(SOURCES) \
+		tools/check_all_chapter_visuals.c
+
+authentic-visual-test: $(AUTHENTIC_VISUAL_TEST_TARGET)
+	@test -n "$(CONTENT)" || \
+		{ echo "Set CONTENT=/path/to/RESOURCE.MAP" >&2; exit 2; }
+	./$(AUTHENTIC_VISUAL_TEST_TARGET) "$(CONTENT)" --csv \
+		build/scene-visual-results.csv
+
+authentic-test: $(AUTHENTIC_TEST_TARGET) $(AUTHENTIC_VISUAL_TEST_TARGET)
 	@test -n "$(CONTENT)" || \
 		{ echo "Set CONTENT=/path/to/RESOURCE.MAP" >&2; exit 2; }
 	./$(AUTHENTIC_TEST_TARGET) "$(CONTENT)"
+	./$(AUTHENTIC_VISUAL_TEST_TARGET) "$(CONTENT)" --csv \
+		build/scene-visual-results.csv
 
 SOUND_BANK_TEST_TARGET := build/tools/check_sound_bank
 $(SOUND_BANK_TEST_TARGET): src/jc_audio.c src/jc_sfx.c src/jc_wav.c \
@@ -493,4 +509,4 @@ clean:
 
 -include $(OBJECTS:.o=.d)
 
-.PHONY: all authentic-test clean inspect sound-bank-test test
+.PHONY: all authentic-test authentic-visual-test clean inspect sound-bank-test test
