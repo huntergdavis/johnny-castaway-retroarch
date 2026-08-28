@@ -252,6 +252,7 @@ class WebDiagnosticProbeSourceTests(unittest.TestCase):
         player = (ROOT / "web/jc-web-player.js").read_text(encoding="utf-8")
         harness = (ROOT / "tools/web_smoke_test.py").read_text(encoding="utf-8")
         provenance = (ROOT / "docs/PROVENANCE.md").read_text(encoding="utf-8")
+        self.assertIn('audio_latency = "384"', player)
         for marker in ("audio-state", "audio-unlock-button", "Enable Audio"):
             self.assertIn(marker, html)
         for marker in (

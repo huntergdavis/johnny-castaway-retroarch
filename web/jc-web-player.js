@@ -591,7 +591,7 @@ function installContent(module, pair, mapData, archiveData, sounds, coreOptions)
       'menu_driver = "ozone"',
       'video_driver = "gl"',
       'audio_driver = "rwebaudio"',
-      'audio_latency = "256"',
+      'audio_latency = "384"',
       'menu_scroll_delay = "500"',
       "menu_show_load_core = false",
       "menu_show_load_content = false",
