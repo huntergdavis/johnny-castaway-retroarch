@@ -5,7 +5,7 @@ A portable libretro core for running Johnny Castaway from user-supplied original
 
 ## Status
 
-The `0.1.1` portable core is feature-complete: it builds as a loadable libretro core,
+The `0.1.2` portable core is feature-complete: it builds as a loadable libretro core,
 validates the original resource pair, decodes the original content, and runs the full
 automatic story or any of 63 selectable live chapter previews through a deterministic
 640x480 XRGB8888 software framebuffer. Categorized Core Options v2, legacy menu
@@ -130,11 +130,22 @@ Eight console cores can be reproduced with pinned official SDK containers:
 
 This builds and validates static RetroArch core archives for PSP, Vita, PlayStation 2,
 Nintendo 3DS, GameCube, Wii, Wii U, and Switch. Static `.a` files are frontend link
-inputs, not installable console applications. PSP additionally ships a full pinned
-RetroArch link as a Memory Stick-ready ZIP containing
-`PSP/GAME/JohnnyCastaway/EBOOT.PBP`; PPSSPP/device execution remains the external gate.
-See `docs/PSP_PACKAGE.md` for installation and `docs/CONSOLE_BUILDS.md` for exact image
-digests, outputs, validation, and the other frontend-link boundaries.
+inputs, not installable console applications. Build pinned Switch NRO, Nintendo
+3DSX/SMDH/CIA, GameCube DOL, Wii U RPX, Vita VPK, and PS2 ELF install packages with:
+
+```sh
+./scripts/build-installable-frontends.sh --all
+```
+
+The unified builder emits platform-native packages and SD-card layouts. It fixes
+platform identities, validates the embedded core and current Story/Core Options,
+normalizes package metadata, ships legal/provenance records, and rejects original
+content. PSP separately ships a Memory Stick-ready ZIP containing
+`PSP/GAME/JohnnyCastaway/EBOOT.PBP`; pinned PPSSPP boots it for 30 seconds and verifies
+module, GE, and framebuffer activity. Hardware rendering, input, audio, and gameplay
+remain the PSP device boundary. See `docs/INSTALLABLE_FRONTENDS.md`,
+`docs/PSP_PACKAGE.md`, and
+`docs/CONSOLE_BUILDS.md` for installation, exact image digests, and validation.
 
 ## Data and copyright
 
@@ -159,6 +170,7 @@ notices.
 - `tests/`: host-side deterministic tests
 - `scripts/build-target.sh`: native and cross-build entry point
 - `scripts/build-console-cores.sh`: pinned eight-platform console archive builder
+- `scripts/build-installable-frontends.sh`: pinned Switch/3DS/GameCube/Wii U/Vita/PS2 frontend packages
 - `scripts/build-psp-frontend.sh`: pinned PSP RetroArch EBOOT/install-package builder
 - `scripts/build-apple-universal.sh`: verified x86_64/arm64 macOS merger
 - `scripts/build-web-player.sh`, `scripts/serve-web.sh`: pinned local RetroArch Web test
@@ -171,6 +183,8 @@ notices.
 - `docs/RELEASING.md`: exact-SHA artifact assembly, audit, and publication boundary
 - `docs/OPTIONAL_ORIGINAL_AUDIO.md`: user-supplied SFX provenance and distribution boundary
 - `docs/CONSOLE_BUILDS.md`: reproducible console SDK images and packaging gates
+- `docs/INSTALLABLE_FRONTENDS.md`: Switch/3DS/GameCube/Wii U/Vita/PS2 installation and validation
+- `docs/FRONTEND_SDK_NOTICES.md`: runtime SDK/portlib source and license ledger
 - `docs/PSP_PACKAGE.md`: PSP Memory Stick installation and validation boundary
 - `docs/PLATFORM_MATRIX.md`: source-backed RetroArch platform inventory and coverage
 - `docs/PROVENANCE.md`: exact upstream revisions and file-by-file reuse record

@@ -12,9 +12,9 @@ concurrency:
 
 jobs:
   console-cores:
-    name: Validated console core archives
+    name: Validated console cores and installable frontends
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: 240
     steps:
       - name: Check out source and libretro-common
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -47,19 +47,53 @@ jobs:
           PSP_FRONTEND_BUILD_DIR: build/psp-frontend
         run: ./scripts/build-psp-frontend.sh
 
+      - name: Install PSP emulator smoke dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb xauth
+
+      - name: Boot PSP package in PPSSPP
+        timeout-minutes: 5
+        run: ./scripts/test-psp-ppsspp.sh
+
+      - name: Test deterministic ZIP timestamp normalization
+        run: |
+          python3 tools/test_deterministic_zip.py
+          python3 tools/test_installable_frontend_validator.py
+
+      - name: Build and validate Switch, 3DS, GameCube, Wii U, Vita, and PS2 frontend packages
+        env:
+          INSTALLABLE_FRONTEND_CORE_DIR: build/console
+          INSTALLABLE_FRONTEND_BUILD_DIR: build/installable-frontends
+          JOBS: 2
+        run: ./scripts/build-installable-frontends.sh --all
+
+      - name: Verify complete installable frontend set
+        shell: bash
+        run: |
+          set -euo pipefail
+          for target in switch 3ds gamecube wiiu vita ps2; do
+            test -s "build/installable-frontends/out/$target/johnny-castaway-$target-frontend.zip"
+            (cd "build/installable-frontends/out/$target" && sha256sum -c SHA256SUMS)
+          done
+
       - name: Upload validated console cores
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: johnny-castaway-console-cores
           path: |
             build/console/**/*.a
+            build/console/**/BUILD-PROVENANCE.txt
             johnny_castaway_libretro.info
             LICENSE
             CREDITS.md
             docs/CONSOLE_BUILDS.md
+            docs/FRONTEND_SDK_NOTICES.md
+            docs/INSTALLABLE_FRONTENDS.md
             docs/PROVENANCE.md
             docs/THIRD_PARTY_NOTICES.md
             docs/licenses/
+            build/installable-frontends/out/
           if-no-files-found: error
           retention-days: 14
 

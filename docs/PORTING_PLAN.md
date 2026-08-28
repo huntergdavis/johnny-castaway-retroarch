@@ -114,9 +114,9 @@ Each row advances independently through Build/Load/Run/Regress.
 | 2 | Android arm64/armv7/x86_64/x86 | `.so` | real NDK r29/API 21 strict builds, machine checks, and exact 25-symbol exports pass; Android frontend/device runs pending |
 | 2 | iOS/tvOS arm64 device + arm64/x86_64 simulators | `.dylib` | real Xcode SDK builds and exact Mach-O ABI exports pass in GitHub `macos-15`; device/frontend runs pending |
 | 2 | `emscripten` | `.bc` static core + RetroArch `.js/.wasm` | archive, pinned real-frontend link/dist, HTTP checks, and real-Firefox synthetic plus authentic 180-resource/23-sound auto-load runs pass; deterministic Core Options/Story/Simulated Calendar navigation is screenshot-validated |
-| 3 | `psp1` | static `.a` + RetroArch `.elf`/`EBOOT.PBP` | real official-SDK strict core archive and all 25 entry points pass; pinned RetroArch frontend link and Memory Stick-ready release package pass; PPSSPP/device run pending |
-| 3 | `vita`, `ctr`, `ps2` | static `.a` | real official-SDK strict core archives, target-machine checks, and all 25 required entry points pass; static frontend links/device runs pending |
-| 3 | Switch, Wii, GameCube, Wii U | static `.a` | real pinned devkitPro strict core archives, target-machine checks, and all 25 required entry points pass; static frontend links/device runs pending |
+| 3 | `psp1` | static `.a` + RetroArch `.elf`/`EBOOT.PBP` | real official-SDK archive/link/package checks pass; pinned PPSSPP v1.20.4 completes a 30-second boot with module, GE, and framebuffer activity; physical-hardware rendering, input, audio, gameplay, performance, and save states remain |
+| 3 | `vita`, `ctr`, `ps2` | static `.a` + VPK/3DSX/CIA/ELF frontends | strict archives and all 25 entry points pass; pinned RetroArch frontend builders validate formats, fixed identity, current Core Options, provenance, and no-data packaging; device/emulator runs pending |
+| 3 | Switch, Wii, GameCube, Wii U | static `.a` (Switch NRO, GameCube DOL, Wii U RPX) | all strict archives pass; Switch, GameCube, and Wii U have pinned frontend/install-package builders and validators; Wii frontend compatibility and all device runs remain |
 | 4 | Dingux, webOS, UWP, Haiku/BSD, PSL1GHT PS3, DOS | varies | official live/source inventory complete; add in this priority order with a real public toolchain and artifact contract |
 
 Dreamcast and original PlayStation ports remain architectural and regression references.

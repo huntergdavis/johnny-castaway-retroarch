@@ -94,10 +94,14 @@ the in-browser filesystem used by the official frontend. Exact revisions and not
 ship with the generated player and are recorded below.
 
 The reproducible console builds use the public toolchain work of the devkitPro,
-PSPDEV/PSPSDK, VitaSDK, and PS2DEV contributors. Their pinned build-only container
-sources and immutable image digests are recorded in `docs/PROVENANCE.md` and
-`docs/CONSOLE_BUILDS.md`; those SDKs and Docker images are not copied into this
-repository or distributed as part of the core.
+PSPDEV/PSPSDK, VitaSDK, PS2DEV/PS2SDK, gsKit, libnx, libctru, wut, vitaGL, and
+vitaShaRK
+contributors. Their pinned container sources, immutable image digests, and generated
+frontend runtime-license boundary are recorded in `docs/PROVENANCE.md`,
+`docs/CONSOLE_BUILDS.md`, and `docs/FRONTEND_SDK_NOTICES.md`. SDK images and sources
+are not copied into this repository; generated installable frontends carry the
+available upstream license notices for libraries selected by the official platform
+makefiles.
 
 ## Additional open media and algorithms
 

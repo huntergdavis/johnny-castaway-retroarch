@@ -7,7 +7,9 @@ build_base=${CONSOLE_BUILD_DIR:-build/console}
 jobs=${JOBS:-}
 warnings=${WARNINGS:--Wall -Wextra -Wpedantic -Werror}
 pull=0
+offline=0
 targets=
+allow_dirty=${ALLOW_DIRTY:-0}
 
 devkita64_image='devkitpro/devkita64@sha256:82575ea78651b530b2e232bb3799cfd1fe331514e053d5f724bb4b28191fb79d'
 devkitarm_image='devkitpro/devkitarm@sha256:15b79ce75822c289538d8153da5fa7aafe5e6adc32ad8a575a197beca0f0761b'
@@ -18,12 +20,13 @@ ps2dev_image='ps2dev/ps2dev@sha256:29f42ffaadc62d2615db4a8c22df933579e31e8f80045
 
 usage()
 {
-    printf 'usage: %s [--pull] [--all|switch|3ds|gamecube|wii|wiiu|psp|vita|ps2 ...]\n' "$0"
+    printf 'usage: %s [--pull|--offline] [--all|switch|3ds|gamecube|wii|wiiu|psp|vita|ps2 ...]\n' "$0"
 }
 
 for argument in "$@"; do
     case "$argument" in
         --pull) pull=1 ;;
+        --offline) offline=1 ;;
         --all) targets='switch 3ds gamecube wii wiiu psp vita ps2' ;;
         --list)
             printf '%s\n' switch 3ds gamecube wii wiiu psp vita ps2
@@ -36,6 +39,10 @@ done
 
 if [ -z "$targets" ]; then
     targets='switch 3ds gamecube wii wiiu psp vita ps2'
+fi
+if [ "$pull" -eq 1 ] && [ "$offline" -eq 1 ]; then
+    printf '%s\n' '--pull and --offline are mutually exclusive' >&2
+    exit 2
 fi
 if [ -z "$jobs" ]; then
     jobs=$(getconf _NPROCESSORS_ONLN 2>/dev/null || printf '1')
@@ -57,10 +64,45 @@ docker info >/dev/null 2>&1 || {
     exit 1
 }
 
+case "$allow_dirty" in 0|1) ;; *) printf 'ALLOW_DIRTY must be 0 or 1\n' >&2; exit 2 ;; esac
+project_commit=$(git -C "$root" rev-parse HEAD)
+project_version=$(sed -n 's/^display_version = "\(.*\)"$/\1/p' \
+    "$root/johnny_castaway_libretro.info")
+case "$project_version" in
+    [0-9]*.[0-9]*.[0-9]*) ;;
+    *) printf 'display_version must be a numeric three-part version\n' >&2; exit 1 ;;
+esac
+info_sha=$(sha256sum "$root/johnny_castaway_libretro.info" | sed 's/[[:space:]].*$//')
+tree_status=$(git -C "$root" status --porcelain --untracked-files=all)
+tree_state=clean
+if [ -n "$tree_status" ]; then
+    if [ "$allow_dirty" -ne 1 ]; then
+        printf 'refusing publishable console build from a dirty tree; use ALLOW_DIRTY=1 only for local development\n' >&2
+        exit 1
+    fi
+    tree_state=dirty-developer-mode
+fi
+project_fingerprint()
+{
+    {
+        git -C "$root" status --porcelain --untracked-files=all
+        git -C "$root" ls-files --cached --others --exclude-standard |
+        while IFS= read -r path; do
+            if [ -f "$root/$path" ]; then sha256sum "$root/$path"; else printf 'missing %s\n' "$path"; fi
+        done
+    } | sha256sum | sed 's/[[:space:]].*$//'
+}
+source_fingerprint=$(project_fingerprint)
+
 ensure_image()
 {
     image=$1
-    if [ "$pull" -eq 1 ] || ! docker image inspect "$image" >/dev/null 2>&1; then
+    if docker image inspect "$image" >/dev/null 2>&1; then
+        if [ "$pull" -eq 1 ]; then docker pull "$image"; fi
+    elif [ "$offline" -eq 1 ]; then
+        printf 'required image is absent in offline mode: %s\n' "$image" >&2
+        exit 1
+    else
         docker pull "$image"
     fi
 }
@@ -126,29 +168,55 @@ build_target()
 
     ensure_image "$image"
     output_dir="$build_base/$platform"
+    case "$output_dir" in
+        build/*) ;;
+        *) printf 'resolved console output must stay below build/: %s\n' "$output_dir" >&2; exit 2 ;;
+    esac
+    target_build_dir="$root/${output_dir:?}"
+    rm -rf -- "${target_build_dir:?}"
     printf 'Building %s with %s\n' "$target" "$image"
     if [ "$target" = ps2 ]; then
-        docker run --rm \
-            -e JC_BUILD_DIR="$output_dir" -e JC_GID="$(id -g)" \
+        ps2_make=$(OFFLINE="$offline" "$root/scripts/prepare-pinned-ps2-make.sh")
+        docker run --rm --read-only --network none --security-opt no-new-privileges \
+            --cap-drop ALL --tmpfs /tmp --user "$(id -u):$(id -g)" \
+            -e JC_BUILD_DIR="$output_dir" \
             -e JC_JOBS="$jobs" -e JC_PLATFORM="$platform" \
-            -e JC_UID="$(id -u)" -e JC_WARNINGS="$warnings" \
-            -v "$root:/src" -w /src "$image" sh -lc '
-                apk add --no-cache make >/dev/null
-                export PATH="/usr/local/ps2dev/ee/bin:/usr/local/ps2dev/bin:$PATH"
+            -e JC_WARNINGS="$warnings" \
+            -v "$ps2_make:/tool/make:ro" -v "$root:/src" -w /src "$image" sh -lc '
+                export PATH="/tool:/usr/local/ps2dev/ee/bin:/usr/local/ps2dev/bin:$PATH"
                 make -j"$JC_JOBS" platform="$JC_PLATFORM" \
                     ARFLAGS=rcsD BUILD_DIR="$JC_BUILD_DIR" \
                     WARNINGS="$JC_WARNINGS"
-                chown -R "$JC_UID:$JC_GID" "$JC_BUILD_DIR"
             '
     else
-        docker run --rm --user "$(id -u):$(id -g)" \
+        docker run --rm --read-only --network none --security-opt no-new-privileges \
+            --cap-drop ALL --tmpfs /tmp --user "$(id -u):$(id -g)" \
+            -e JC_BUILD_DIR="$output_dir" -e JC_JOBS="$jobs" \
+            -e JC_PLATFORM="$platform" -e JC_WARNINGS="$warnings" \
             -v "$root:/src" -w /src "$image" \
-            make -j"$jobs" platform="$platform" ARFLAGS=rcsD \
-            BUILD_DIR="$output_dir" \
-            WARNINGS="$warnings"
+            sh -lc '
+                make -j"$JC_JOBS" platform="$JC_PLATFORM" ARFLAGS=rcsD \
+                    BUILD_DIR="$JC_BUILD_DIR" WARNINGS="$JC_WARNINGS"
+            '
     fi
     python3 "$root/tools/check_console_archive.py" \
         --machine "$machine" "$root/$output_dir/$archive"
+    if [ "$(project_fingerprint)" != "$source_fingerprint" ] || \
+       [ "$(sha256sum "$root/johnny_castaway_libretro.info" | sed 's/[[:space:]].*$//')" != "$info_sha" ] || \
+       [ "$(git -C "$root" rev-parse HEAD)" != "$project_commit" ]; then
+        printf 'project source changed during console build\n' >&2
+        exit 1
+    fi
+    archive_sha=$(sha256sum "$root/$output_dir/$archive" | sed 's/[[:space:]].*$//')
+    {
+        printf 'Johnny Castaway console core provenance\n'
+        printf 'Target: %s\nPlatform: %s\nArchive: %s\n' "$target" "$platform" "$archive"
+        printf 'Johnny Castaway commit: %s\n' "$project_commit"
+        printf 'Frontend version: %s\nTree state: %s\n' "$project_version" "$tree_state"
+        printf 'Core metadata SHA-256: %s\n' "$info_sha"
+        printf 'SDK image: %s\nArchive SHA-256: %s\n' "$image" "$archive_sha"
+        printf 'Archive metadata: deterministic ar rcsD timestamp=0 uid=0 gid=0\n'
+    } >"$root/$output_dir/BUILD-PROVENANCE.txt"
 }
 
 for target in $targets; do

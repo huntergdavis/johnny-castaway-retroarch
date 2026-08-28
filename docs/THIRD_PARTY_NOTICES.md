@@ -83,16 +83,21 @@ The reviewed snapshot of `deckarep/Johnny-Castaway-2026-Public` contained no det
 license file. It was used only to evaluate language/runtime suitability; no source was
 copied, translated, or linked. The project is therefore not a dependency of this core.
 
-## Build-only toolchains
+## Console toolchains and generated frontend runtimes
 
 Optional reproducible console builds invoke official public container images from
-devkitPro, PSPDEV, VitaSDK, and PS2DEV. These images and SDKs remain external build
-tools: they are neither copied into this repository nor included in core artifacts.
+devkitPro, PSPDEV, VitaSDK, and PS2DEV. These images and SDK sources remain external
+build tools: they are neither copied into this repository nor included in core
+artifacts.
 Their source repositories, revisions, immutable image digests, and tested compiler
 versions are recorded in `PROVENANCE.md` and `CONSOLE_BUILDS.md`. Distributors who
 rebuild with those environments are responsible for the respective upstream SDK and
-container terms; this repository's binary artifact bundles contain the Johnny core,
-its GPL source record, and the notices for material actually embedded by the core.
+container terms. The generated Switch, 3DS, GameCube, Wii U, Vita, and PS2 RetroArch
+frontends also statically link target SDK/port libraries selected by the official
+pinned makefiles.
+Those install packages carry the available license trees from the exact SDK image and
+the source/license ledger in `FRONTEND_SDK_NOTICES.md`; libnx, libctru, VitaSDK,
+vitaGL, vitaShaRK, PS2SDK, gsKit, and wut contributors retain their respective rights.
 
 Other optional builds invoke an external Android NDK, Emscripten SDK, Apple Xcode SDK,
 MinGW-w64 toolchain, or distribution cross compiler. Those tools are not copied into
