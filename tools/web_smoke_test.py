@@ -813,6 +813,145 @@ def frame_has_color_key_failure(quality: dict[str, float | int]) -> bool:
     )
 
 
+def evaluate_strict_audio_window(
+    audio: Any, description: str, *, allow_paused: bool = False
+) -> tuple[dict[str, Any], list[str]]:
+    """Evaluate one idle five-second WebAudio window for audible underruns."""
+    failures: list[str] = []
+    if not isinstance(audio, dict) or not audio.get("installed"):
+        failures.append(f"{description} Web Audio probe disappeared: {audio!r}")
+        audio = {}
+    contexts = audio.get("contexts") or []
+    running_contexts = [
+        context
+        for context in contexts
+        if context.get("state") == "running" and context.get("sampleRate", 0) > 0
+    ]
+    if not running_contexts:
+        failures.append(
+            f"{description} Web AudioContext is not running: {contexts!r}"
+        )
+    sample_rate = running_contexts[0]["sampleRate"] if running_contexts else 0
+    queued = int(audio.get("windowQueuedBuffers", 0))
+    ended = int(audio.get("windowEndedBuffers", 0))
+    frames = int(audio.get("windowFramesQueued", 0))
+    scheduled_seconds = float(audio.get("windowScheduledSeconds", 0.0))
+    elapsed = float(audio.get("observedWindowElapsedMs", 0.0)) / 1000.0
+    cadence_ratio = scheduled_seconds / elapsed if elapsed > 0 else 0.0
+    positive_gaps = int(audio.get("windowPositiveGapCount", 0))
+    maximum_gap_ms = float(audio.get("windowMaxPositiveGapMs", 0.0))
+    if allow_paused and queued == 0:
+        if ended != 0 or frames != 0 or scheduled_seconds != 0.0:
+            failures.append(
+                f"{description} Web Audio pause is partial: "
+                f"queued={queued}, ended={ended}, frames={frames}, "
+                f"scheduled={scheduled_seconds:.3f}s"
+            )
+        if positive_gaps != 0 or maximum_gap_ms != 0.0:
+            failures.append(
+                f"{description} Web Audio pause recorded scheduler gaps: "
+                f"{positive_gaps}, max {maximum_gap_ms:.3f} ms"
+            )
+        return (
+            {
+                "mode": "paused",
+                "sample_rate": sample_rate,
+                "observation_elapsed_seconds": elapsed,
+                "queued_buffers": 0,
+                "ended_buffers": ended,
+                "queued_frames": 0,
+                "scheduled_seconds": 0.0,
+                "scheduled_to_wall_ratio": 0.0,
+                "buffer_frames_min": 0,
+                "buffer_frames_max": 0,
+                "positive_gap_count": positive_gaps,
+                "maximum_positive_gap_ms": maximum_gap_ms,
+                "maximum_queue_interval_ms": audio.get(
+                    "windowMaxQueueIntervalMs"
+                ),
+            },
+            failures,
+        )
+    minimum_buffers = max(100, round(elapsed * 95))
+    if queued < minimum_buffers:
+        failures.append(
+            f"{description} Web Audio queued only {queued} buffers "
+            f"over {elapsed:.2f}s (need {minimum_buffers})"
+        )
+    if not 0.98 <= cadence_ratio <= 1.02:
+        failures.append(
+            f"{description} Web Audio scheduled duration is inconsistent "
+            f"with wall time: {scheduled_seconds:.3f}s over {elapsed:.3f}s"
+        )
+    if ended < queued * 0.90:
+        failures.append(
+            f"{description} Web Audio ended only {ended}/{queued} "
+            "scheduled buffers"
+        )
+    buffer_min = int(audio.get("windowBufferFramesMin") or 0)
+    buffer_max = int(audio.get("windowBufferFramesMax") or 0)
+    minimum_expected = sample_rate * 0.008
+    maximum_expected = sample_rate * 0.012
+    if not (
+        minimum_expected <= buffer_min <= maximum_expected
+        and minimum_expected <= buffer_max <= maximum_expected
+    ):
+        failures.append(
+            f"{description} Web Audio buffer cadence is not the pinned "
+            f"10 ms block size: {buffer_min}..{buffer_max} frames at "
+            f"{sample_rate} Hz"
+        )
+    if positive_gaps != 0:
+        failures.append(
+            f"{description} Web Audio scheduling is not gap-free: "
+            f"{positive_gaps}/{queued}, max {maximum_gap_ms:.3f} ms"
+        )
+    return (
+        {
+            "mode": "continuous",
+            "sample_rate": sample_rate,
+            "observation_elapsed_seconds": elapsed,
+            "queued_buffers": queued,
+            "ended_buffers": ended,
+            "queued_frames": frames,
+            "scheduled_seconds": scheduled_seconds,
+            "scheduled_to_wall_ratio": cadence_ratio,
+            "buffer_frames_min": buffer_min,
+            "buffer_frames_max": buffer_max,
+            "positive_gap_count": positive_gaps,
+            "maximum_positive_gap_ms": maximum_gap_ms,
+            "maximum_queue_interval_ms": audio.get("windowMaxQueueIntervalMs"),
+        },
+        failures,
+    )
+
+
+def capture_strict_audio_window(
+    driver: WebDriver, description: str, *, allow_paused: bool = False
+) -> tuple[dict[str, Any], list[str]]:
+    probe = driver.execute(
+        """
+        return typeof window.__jcResetAudioProbe === 'function'
+          ? window.__jcResetAudioProbe() : null;
+        """
+    )
+    if not isinstance(probe, dict) or not probe.get("installed"):
+        return {}, [f"{description} Web Audio probe is unavailable: {probe!r}"]
+    time.sleep(5.0)
+    snapshot = driver.execute(
+        """
+        if (!window.__jcAudioProbe) return null;
+        const copy = JSON.parse(JSON.stringify(window.__jcAudioProbe));
+        copy.observedWindowElapsedMs =
+          performance.now() - window.__jcAudioProbe.windowStartedAtMs;
+        return copy;
+        """
+    )
+    return evaluate_strict_audio_window(
+        snapshot, description, allow_paused=allow_paused
+    )
+
+
 def capture_temporal_gameplay(
     driver: WebDriver,
     canvas_element: str,
@@ -931,57 +1070,10 @@ def capture_temporal_gameplay(
             "settled gameplay lacks a material lower water-band transition"
         )
 
-    if not isinstance(audio, dict) or not audio.get("installed"):
-        failures.append(f"Web Audio scheduling probe disappeared: {audio!r}")
-        audio = {}
-    contexts = audio.get("contexts") or []
-    running_contexts = [
-        context
-        for context in contexts
-        if context.get("state") == "running" and context.get("sampleRate", 0) > 0
-    ]
-    if not running_contexts:
-        failures.append(f"Web AudioContext is not running: {contexts!r}")
-    sample_rate = running_contexts[0]["sampleRate"] if running_contexts else 0
-    queued = int(audio.get("windowQueuedBuffers", 0))
-    ended = int(audio.get("windowEndedBuffers", 0))
-    frames = int(audio.get("windowFramesQueued", 0))
-    scheduled_seconds = float(audio.get("windowScheduledSeconds", 0.0))
-    audio_elapsed = float(audio.get("observedWindowElapsedMs", 0.0)) / 1000.0
-    cadence_ratio = scheduled_seconds / audio_elapsed if audio_elapsed > 0 else 0.0
-    minimum_buffers = max(100, round(audio_elapsed * 50))
-    if queued < minimum_buffers:
-        failures.append(
-            f"Web Audio queued only {queued} buffers over {audio_elapsed:.2f}s"
-        )
-    if not 0.75 <= cadence_ratio <= 1.25:
-        failures.append(
-            "Web Audio scheduled duration is inconsistent with wall time: "
-            f"{scheduled_seconds:.3f}s over {audio_elapsed:.3f}s"
-        )
-    if ended < queued * 0.7:
-        failures.append(
-            f"Web Audio ended only {ended}/{queued} scheduled buffers"
-        )
-    buffer_min = int(audio.get("windowBufferFramesMin") or 0)
-    buffer_max = int(audio.get("windowBufferFramesMax") or 0)
-    minimum_expected = sample_rate * 0.008
-    maximum_expected = sample_rate * 0.012
-    if not (
-        minimum_expected <= buffer_min <= maximum_expected
-        and minimum_expected <= buffer_max <= maximum_expected
-    ):
-        failures.append(
-            "Web Audio buffer cadence is not the pinned 10 ms block size: "
-            f"{buffer_min}..{buffer_max} frames at {sample_rate} Hz"
-        )
-    positive_gaps = int(audio.get("windowPositiveGapCount", 0))
-    maximum_gap_ms = float(audio.get("windowMaxPositiveGapMs", 0.0))
-    if positive_gaps > max(2, round(queued * 0.02)) or maximum_gap_ms > 64.0:
-        failures.append(
-            "Web Audio scheduling shows underrun gaps: "
-            f"{positive_gaps}/{queued}, max {maximum_gap_ms:.3f} ms"
-        )
+    audio_metrics, audio_failures = evaluate_strict_audio_window(
+        audio, "gameplay"
+    )
+    failures.extend(audio_failures)
 
     if not isinstance(webgl, dict) or not webgl.get("installed"):
         failures.append(f"WebGL diagnostic probe disappeared: {webgl!r}")
@@ -1047,20 +1139,7 @@ def capture_temporal_gameplay(
         "water_region": water_region,
         "playfield_change_ratios": playfield_ratios,
         "water_change_ratios": water_ratios,
-        "audio": {
-            "sample_rate": sample_rate,
-            "observation_elapsed_seconds": audio_elapsed,
-            "queued_buffers": queued,
-            "ended_buffers": ended,
-            "queued_frames": frames,
-            "scheduled_seconds": scheduled_seconds,
-            "scheduled_to_wall_ratio": cadence_ratio,
-            "buffer_frames_min": buffer_min,
-            "buffer_frames_max": buffer_max,
-            "positive_gap_count": positive_gaps,
-            "maximum_positive_gap_ms": maximum_gap_ms,
-            "maximum_queue_interval_ms": audio.get("windowMaxQueueIntervalMs"),
-        },
+        "audio": audio_metrics,
         "webgl": webgl_metrics,
         "acceptance_failures": failures,
         "passed": not failures,
@@ -1567,6 +1646,16 @@ def run_smoke(args: argparse.Namespace, firefox: str, geckodriver: str) -> int:
                 "Tide",
                 "Raft Stage",
             ]
+        menu_audio, menu_audio_failures = capture_strict_audio_window(
+            driver, "stable menu", allow_paused=True
+        )
+        result["menu_audio"] = {
+            **menu_audio,
+            "acceptance_failures": menu_audio_failures,
+            "passed": not menu_audio_failures,
+        }
+        if menu_audio_failures:
+            raise SmokeFailure("; ".join(menu_audio_failures))
         final_state = diagnostics(driver)
         if final_state.get("pageErrors") or final_state.get("rejections"):
             raise SmokeFailure(

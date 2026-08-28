@@ -14,6 +14,7 @@ import zipfile
 from web_smoke_test import (
     SmokeFailure,
     complete_scene_visual_only_result,
+    evaluate_strict_audio_window,
     frame_has_color_key_failure,
     frame_quality,
     validate_scene_visual_only_args,
@@ -330,6 +331,86 @@ class WebSmokeFrameQualityTests(unittest.TestCase):
         self.assertEqual(quality["renderer_key_component_pixels"], 1)
         self.assertFalse(frame_has_color_key_failure(quality))
 
+
+class WebSmokeStrictAudioTests(unittest.TestCase):
+    @staticmethod
+    def audio_window(**overrides: object) -> dict[str, object]:
+        window: dict[str, object] = {
+            "installed": True,
+            "contexts": [{"state": "running", "sampleRate": 48000}],
+            "observedWindowElapsedMs": 5000.0,
+            "windowQueuedBuffers": 500,
+            "windowEndedBuffers": 450,
+            "windowFramesQueued": 240000,
+            "windowScheduledSeconds": 5.0,
+            "windowBufferFramesMin": 480,
+            "windowBufferFramesMax": 480,
+            "windowPositiveGapCount": 0,
+            "windowMaxPositiveGapMs": 0.0,
+            "windowMaxQueueIntervalMs": 60.0,
+        }
+        window.update(overrides)
+        return window
+
+    def test_continuous_window_requires_strict_cadence_and_zero_gaps(self) -> None:
+        metrics, failures = evaluate_strict_audio_window(
+            self.audio_window(), "gameplay"
+        )
+        self.assertEqual(failures, [])
+        self.assertEqual(metrics["mode"], "continuous")
+        self.assertEqual(metrics["scheduled_to_wall_ratio"], 1.0)
+        self.assertEqual(metrics["positive_gap_count"], 0)
+
+        _, failures = evaluate_strict_audio_window(
+            self.audio_window(
+                windowScheduledSeconds=5.11,
+                windowEndedBuffers=449,
+                windowPositiveGapCount=1,
+                windowMaxPositiveGapMs=0.25,
+            ),
+            "gameplay",
+        )
+        self.assertTrue(
+            any("scheduled duration is inconsistent" in failure for failure in failures)
+        )
+        self.assertTrue(any("ended only 449/500" in failure for failure in failures))
+        self.assertTrue(any("is not gap-free" in failure for failure in failures))
+
+    def test_menu_accepts_exact_silence_and_rejects_partial_scheduling(self) -> None:
+        silence = self.audio_window(
+            windowQueuedBuffers=0,
+            windowEndedBuffers=0,
+            windowFramesQueued=0,
+            windowScheduledSeconds=0.0,
+            windowBufferFramesMin=None,
+            windowBufferFramesMax=None,
+            windowMaxQueueIntervalMs=0.0,
+        )
+        metrics, failures = evaluate_strict_audio_window(
+            silence, "stable menu", allow_paused=True
+        )
+        self.assertEqual(failures, [])
+        self.assertEqual(metrics["mode"], "paused")
+
+        partial = dict(silence)
+        partial["windowEndedBuffers"] = 1
+        _, failures = evaluate_strict_audio_window(
+            partial, "stable menu", allow_paused=True
+        )
+        self.assertTrue(any("pause is partial" in failure for failure in failures))
+
+        partial = dict(silence)
+        partial["windowPositiveGapCount"] = 1
+        partial["windowMaxPositiveGapMs"] = 0.5
+        _, failures = evaluate_strict_audio_window(
+            partial, "stable menu", allow_paused=True
+        )
+        self.assertTrue(
+            any("pause recorded scheduler gaps" in failure for failure in failures)
+        )
+
+
+class WebSmokeFrameQualityComponentTests(unittest.TestCase):
     def test_residual_renderer_key_rectangle_fails_below_half_frame(self) -> None:
         width = 100
         height = 80
