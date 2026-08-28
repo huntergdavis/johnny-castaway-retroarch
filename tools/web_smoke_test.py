@@ -620,6 +620,7 @@ def capture_temporal_gameplay(
     driver: WebDriver,
     canvas_element: str,
     artifacts: pathlib.Path,
+    evidence: dict[str, Any],
     *,
     require_playfield_motion: bool,
     require_water_motion: bool,
@@ -664,30 +665,34 @@ def capture_temporal_gameplay(
 
     decoded_frames = [png_pixels(path) for path in paths]
     geometry = decoded_frames[0][:3]
-    if any(frame[:3] != geometry for frame in decoded_frames[1:]):
-        raise SmokeFailure("gameplay canvas geometry changed or disappeared")
+    failures: list[str] = []
+    geometry_changed = any(
+        frame[:3] != geometry for frame in decoded_frames[1:]
+    )
+    if geometry_changed:
+        failures.append("gameplay canvas geometry changed or disappeared")
     frame_qualities = [frame_quality(frame) for frame in decoded_frames]
     for path, quality in zip(paths, frame_qualities):
         if quality["magenta_ratio"] > 0.20:
-            raise SmokeFailure(
+            failures.append(
                 f"settled gameplay frame is dominated by color-key magenta: "
                 f"{path.name} ({quality['magenta_ratio']:.3%})"
             )
         if quality["meaningful_ratio"] < 0.05:
-            raise SmokeFailure(
+            failures.append(
                 f"settled gameplay frame is blank or lost: {path.name} "
                 f"({quality['meaningful_ratio']:.3%} meaningful pixels)"
             )
 
     playfield_region = (0.05, 0.14, 0.95, 0.84)
     water_region = (0.05, 0.56, 0.95, 0.82)
-    playfield_ratios = [
+    playfield_ratios = [] if geometry_changed else [
         region_change_ratio(
             decoded_frames[index - 1], decoded_frames[index], playfield_region
         )
         for index in range(1, len(decoded_frames))
     ]
-    water_ratios = [
+    water_ratios = [] if geometry_changed else [
         region_change_ratio(
             decoded_frames[index - 1], decoded_frames[index], water_region
         )
@@ -695,20 +700,21 @@ def capture_temporal_gameplay(
     ]
     distinct_frames = len(set(hashes))
     if distinct_frames < 3:
-        raise SmokeFailure(
+        failures.append(
             f"settled gameplay produced only {distinct_frames} distinct frames"
         )
     if require_playfield_motion and max(playfield_ratios, default=0.0) < 0.0005:
-        raise SmokeFailure(
+        failures.append(
             "settled gameplay lacks a material playfield pixel transition"
         )
     if require_water_motion and max(water_ratios, default=0.0) < 0.0002:
-        raise SmokeFailure(
+        failures.append(
             "settled gameplay lacks a material lower water-band transition"
         )
 
     if not isinstance(audio, dict) or not audio.get("installed"):
-        raise SmokeFailure(f"Web Audio scheduling probe disappeared: {audio!r}")
+        failures.append(f"Web Audio scheduling probe disappeared: {audio!r}")
+        audio = {}
     contexts = audio.get("contexts") or []
     running_contexts = [
         context
@@ -716,8 +722,8 @@ def capture_temporal_gameplay(
         if context.get("state") == "running" and context.get("sampleRate", 0) > 0
     ]
     if not running_contexts:
-        raise SmokeFailure(f"Web AudioContext is not running: {contexts!r}")
-    sample_rate = running_contexts[0]["sampleRate"]
+        failures.append(f"Web AudioContext is not running: {contexts!r}")
+    sample_rate = running_contexts[0]["sampleRate"] if running_contexts else 0
     queued = int(audio.get("windowQueuedBuffers", 0))
     ended = int(audio.get("windowEndedBuffers", 0))
     frames = int(audio.get("windowFramesQueued", 0))
@@ -726,16 +732,16 @@ def capture_temporal_gameplay(
     cadence_ratio = scheduled_seconds / audio_elapsed if audio_elapsed > 0 else 0.0
     minimum_buffers = max(100, round(audio_elapsed * 50))
     if queued < minimum_buffers:
-        raise SmokeFailure(
+        failures.append(
             f"Web Audio queued only {queued} buffers over {audio_elapsed:.2f}s"
         )
     if not 0.75 <= cadence_ratio <= 1.25:
-        raise SmokeFailure(
+        failures.append(
             "Web Audio scheduled duration is inconsistent with wall time: "
             f"{scheduled_seconds:.3f}s over {audio_elapsed:.3f}s"
         )
     if ended < queued * 0.7:
-        raise SmokeFailure(
+        failures.append(
             f"Web Audio ended only {ended}/{queued} scheduled buffers"
         )
     buffer_min = int(audio.get("windowBufferFramesMin") or 0)
@@ -746,14 +752,14 @@ def capture_temporal_gameplay(
         minimum_expected <= buffer_min <= maximum_expected
         and minimum_expected <= buffer_max <= maximum_expected
     ):
-        raise SmokeFailure(
+        failures.append(
             "Web Audio buffer cadence is not the pinned 10 ms block size: "
             f"{buffer_min}..{buffer_max} frames at {sample_rate} Hz"
         )
     positive_gaps = int(audio.get("windowPositiveGapCount", 0))
     maximum_gap_ms = float(audio.get("windowMaxPositiveGapMs", 0.0))
     if positive_gaps > max(2, round(queued * 0.02)) or maximum_gap_ms > 64.0:
-        raise SmokeFailure(
+        failures.append(
             "Web Audio scheduling shows underrun gaps: "
             f"{positive_gaps}/{queued}, max {maximum_gap_ms:.3f} ms"
         )
@@ -762,6 +768,9 @@ def capture_temporal_gameplay(
         "settle_seconds": 6.0,
         "sample_elapsed_seconds": elapsed,
         "distinct_frames": distinct_frames,
+        "frame_sha256": {
+            path.name: digest for path, digest in zip(paths, hashes)
+        },
         "frame_quality": {
             path.name: quality for path, quality in zip(paths, frame_qualities)
         },
@@ -785,7 +794,12 @@ def capture_temporal_gameplay(
             "maximum_positive_gap_ms": maximum_gap_ms,
             "maximum_queue_interval_ms": audio.get("windowMaxQueueIntervalMs"),
         },
+        "acceptance_failures": failures,
+        "passed": not failures,
     }
+    evidence["temporal_gameplay"] = temporal
+    if failures:
+        raise SmokeFailure("; ".join(failures))
     return paths, hashes, temporal
 
 
@@ -984,6 +998,7 @@ def run_smoke(args: argparse.Namespace, firefox: str, geckodriver: str) -> int:
                 driver,
                 canvas_element,
                 artifacts,
+                result,
                 require_playfield_motion=bool(args.chapter),
                 require_water_motion=not bool(args.chapter),
             )
