@@ -65,6 +65,23 @@ for command_name in emcc emmake git make python3 sha256sum zip; do
     require_command "${command_name}"
 done
 
+libretro_common_dir="${project_root}/external/libretro-common"
+libretro_common_revision="$(git -C "${project_root}" \
+    rev-parse HEAD:external/libretro-common)"
+echo "[0/5] Initializing libretro-common ${libretro_common_revision}"
+git -C "${project_root}" submodule update --init --recursive -- \
+    external/libretro-common
+if [[ "$(git -C "${libretro_common_dir}" rev-parse HEAD)" != \
+      "${libretro_common_revision}" ]]; then
+    echo "error: external/libretro-common is not at the repository gitlink" >&2
+    exit 1
+fi
+if [[ -n "$(git -C "${libretro_common_dir}" \
+      status --porcelain --untracked-files=all)" ]]; then
+    echo "error: external/libretro-common has local modifications" >&2
+    exit 1
+fi
+
 mkdir -p "${web_build_root}"
 
 echo "[1/5] Building the Johnny Castaway Emscripten core archive"

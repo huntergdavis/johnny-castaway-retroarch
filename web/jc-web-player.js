@@ -32,6 +32,157 @@ const originalSoundIds = Array.from({ length: 25 }, (_, id) => id).filter(
 let moduleInstance = null;
 let running = false;
 
+function installAudioSmokeProbe() {
+  if (!new URLSearchParams(window.location.search).has("smoke")) return;
+
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextClass) {
+    window.__jcAudioProbe = {
+      installed: false,
+      error: "Web AudioContext is unavailable",
+    };
+    return;
+  }
+
+  const prototype = AudioContextClass.prototype;
+  if (prototype.__jcAudioSmokeProbeInstalled) return;
+
+  const probe = {
+    installed: true,
+    version: 1,
+    installedAtMs: performance.now(),
+    queuedBuffers: 0,
+    endedBuffers: 0,
+    framesQueued: 0,
+    scheduledSeconds: 0,
+    windowGeneration: 0,
+    contexts: [],
+  };
+  const contextRecords = new WeakMap();
+  const originalCreateBufferSource = prototype.createBufferSource;
+
+  function contextRecord(context) {
+    let record = contextRecords.get(context);
+    if (!record) {
+      record = {
+        id: probe.contexts.length + 1,
+        state: context.state,
+        sampleRate: context.sampleRate,
+        baseLatencySeconds: context.baseLatency ?? null,
+        outputLatencySeconds: context.outputLatency ?? null,
+        lastScheduledEndSeconds: null,
+        lastQueueWallMs: null,
+      };
+      contextRecords.set(context, record);
+      probe.contexts.push(record);
+    }
+    record.state = context.state;
+    record.sampleRate = context.sampleRate;
+    return record;
+  }
+
+  window.__jcResetAudioProbe = () => {
+    probe.windowGeneration += 1;
+    probe.windowStartedAtMs = performance.now();
+    probe.windowQueuedBuffers = 0;
+    probe.windowEndedBuffers = 0;
+    probe.windowFramesQueued = 0;
+    probe.windowScheduledSeconds = 0;
+    probe.windowPositiveGapCount = 0;
+    probe.windowMaxPositiveGapMs = 0;
+    probe.windowQueueIntervalCount = 0;
+    probe.windowQueueIntervalTotalMs = 0;
+    probe.windowMaxQueueIntervalMs = 0;
+    probe.windowBufferFramesMin = null;
+    probe.windowBufferFramesMax = null;
+    probe.contexts.forEach((record) => {
+      record.lastScheduledEndSeconds = null;
+      record.lastQueueWallMs = null;
+    });
+    return probe;
+  };
+
+  prototype.createBufferSource = function (...createArguments) {
+    const context = this;
+    const source = originalCreateBufferSource.apply(context, createArguments);
+    const originalStart = source.start;
+    source.start = function (when = 0, ...startArguments) {
+      const record = contextRecord(context);
+      const buffer = source.buffer;
+      const frames = buffer?.length || 0;
+      const sampleRate = buffer?.sampleRate || context.sampleRate || 0;
+      const durationSeconds = sampleRate > 0 ? frames / sampleRate : 0;
+      const scheduledStartSeconds = Number(when) || context.currentTime;
+      const scheduledEndSeconds = scheduledStartSeconds + durationSeconds;
+      const wallMs = performance.now();
+      const generation = probe.windowGeneration;
+      let countedAsEnded = false;
+      source.addEventListener(
+        "ended",
+        () => {
+          if (countedAsEnded) {
+            probe.endedBuffers += 1;
+            if (generation === probe.windowGeneration) {
+              probe.windowEndedBuffers += 1;
+            }
+          }
+        },
+        { once: true },
+      );
+      const result = originalStart.call(source, when, ...startArguments);
+      countedAsEnded = true;
+
+      probe.queuedBuffers += 1;
+      probe.framesQueued += frames;
+      probe.scheduledSeconds += durationSeconds;
+      probe.windowQueuedBuffers += 1;
+      probe.windowFramesQueued += frames;
+      probe.windowScheduledSeconds += durationSeconds;
+      probe.windowBufferFramesMin =
+        probe.windowBufferFramesMin === null
+          ? frames
+          : Math.min(probe.windowBufferFramesMin, frames);
+      probe.windowBufferFramesMax =
+        probe.windowBufferFramesMax === null
+          ? frames
+          : Math.max(probe.windowBufferFramesMax, frames);
+
+      if (record.lastScheduledEndSeconds !== null) {
+        const gapMs =
+          (scheduledStartSeconds - record.lastScheduledEndSeconds) * 1000;
+        if (gapMs > 0.5) {
+          probe.windowPositiveGapCount += 1;
+          probe.windowMaxPositiveGapMs = Math.max(
+            probe.windowMaxPositiveGapMs,
+            gapMs,
+          );
+        }
+      }
+      if (record.lastQueueWallMs !== null) {
+        const intervalMs = wallMs - record.lastQueueWallMs;
+        probe.windowQueueIntervalCount += 1;
+        probe.windowQueueIntervalTotalMs += intervalMs;
+        probe.windowMaxQueueIntervalMs = Math.max(
+          probe.windowMaxQueueIntervalMs,
+          intervalMs,
+        );
+      }
+      record.lastScheduledEndSeconds = scheduledEndSeconds;
+      record.lastQueueWallMs = wallMs;
+      return result;
+    };
+    return source;
+  };
+
+  Object.defineProperty(prototype, "__jcAudioSmokeProbeInstalled", {
+    value: true,
+  });
+  window.__jcAudioProbe = probe;
+  window.__jcResetAudioProbe();
+}
+
+installAudioSmokeProbe();
+
 function setStatus(message, isError = false) {
   statusElement.textContent = message;
   statusElement.classList.toggle("error", isError);

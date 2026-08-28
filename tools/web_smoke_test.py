@@ -250,6 +250,13 @@ def parse_args() -> argparse.Namespace:
             "file upload; local files are excluded from the pristine distribution check"
         ),
     )
+    parser.add_argument(
+        "--chapter",
+        help=(
+            "runner-only fixed chapter for --content-dir scripted-motion acceptance; "
+            "the value must be present in src/jc_chapters.c"
+        ),
+    )
     parser.add_argument("--timeout", type=float, default=45.0)
     parser.add_argument(
         "--require-browser",
@@ -437,6 +444,7 @@ def diagnostics(driver: WebDriver) -> dict[str, Any]:
           pageErrors: smoke.pageErrors || [],
           rejections: smoke.rejections || [],
           consoleErrors: smoke.consoleErrors || [],
+          audioProbe: window.__jcAudioProbe || null,
         };
         """
     )
@@ -558,6 +566,229 @@ def assert_content_changed(
     return ratio
 
 
+def region_change_ratio(
+    before: tuple[int, int, int, bytes],
+    after: tuple[int, int, int, bytes],
+    region: tuple[float, float, float, float],
+) -> float:
+    """Measure material RGB pixel changes inside a normalized canvas region."""
+    width, height, channels, first = before
+    next_width, next_height, next_channels, second = after
+    if (next_width, next_height, next_channels) != (width, height, channels):
+        raise SmokeFailure("gameplay screenshot geometry changed during sampling")
+    left, top, right, bottom = region
+    x_start = max(0, min(width, round(left * width)))
+    x_end = max(x_start, min(width, round(right * width)))
+    y_start = max(0, min(height, round(top * height)))
+    y_end = max(y_start, min(height, round(bottom * height)))
+    changed = total = 0
+    for y_position in range(y_start, y_end):
+        row_start = y_position * width * channels
+        for x_position in range(x_start, x_end):
+            pixel = row_start + x_position * channels
+            total += 1
+            if (
+                abs(first[pixel] - second[pixel]) > 12
+                or abs(first[pixel + 1] - second[pixel + 1]) > 12
+                or abs(first[pixel + 2] - second[pixel + 2]) > 12
+            ):
+                changed += 1
+    return changed / total if total else 0.0
+
+
+def frame_quality(frame: tuple[int, int, int, bytes]) -> dict[str, float]:
+    """Reject blank/lost canvas and the renderer's magenta color-key frame."""
+    _, _, channels, pixels = frame
+    total = len(pixels) // channels
+    non_black = magenta = meaningful = 0
+    for pixel in range(0, len(pixels), channels):
+        red, green, blue = pixels[pixel : pixel + 3]
+        opaque = channels == 3 or pixels[pixel + 3] > 16
+        is_non_black = opaque and max(red, green, blue) > 12
+        is_magenta = opaque and red > 224 and green < 48 and blue > 224
+        non_black += int(is_non_black)
+        magenta += int(is_magenta)
+        meaningful += int(is_non_black and not is_magenta)
+    return {
+        "non_black_ratio": non_black / total if total else 0.0,
+        "magenta_ratio": magenta / total if total else 0.0,
+        "meaningful_ratio": meaningful / total if total else 0.0,
+    }
+
+
+def capture_temporal_gameplay(
+    driver: WebDriver,
+    canvas_element: str,
+    artifacts: pathlib.Path,
+    *,
+    require_playfield_motion: bool,
+    require_water_motion: bool,
+) -> tuple[list[pathlib.Path], list[str], dict[str, Any]]:
+    """Capture settled gameplay and require authentic playfield/water motion."""
+    # RetroArch's content and configuration notifications obscure the center
+    # and bottom of the first frame. Let both expire before evidence capture.
+    time.sleep(6.0)
+    paths: list[pathlib.Path] = []
+    hashes: list[str] = []
+    started = time.monotonic()
+    for index in range(5):
+        name = "game.png" if index == 0 else f"game-{index:02d}.png"
+        path = artifacts / name
+        paths.append(path)
+        hashes.append(driver.screenshot(canvas_element, path))
+        if index != 4:
+            time.sleep(1.0)
+    elapsed = time.monotonic() - started
+
+    # Screenshot readback can stall the browser's main thread. Measure audio
+    # independently during an idle interval, then freeze a deep copy before
+    # the comparatively expensive PNG decoding below.
+    probe = driver.execute(
+        """
+        if (typeof window.__jcResetAudioProbe !== 'function') return null;
+        return window.__jcResetAudioProbe();
+        """
+    )
+    if not isinstance(probe, dict) or not probe.get("installed"):
+        raise SmokeFailure(f"Web Audio scheduling probe is unavailable: {probe!r}")
+    time.sleep(5.0)
+    audio = driver.execute(
+        """
+        const probe = window.__jcAudioProbe;
+        if (!probe) return null;
+        const snapshot = JSON.parse(JSON.stringify(probe));
+        snapshot.observedWindowElapsedMs = performance.now() - probe.windowStartedAtMs;
+        return snapshot;
+        """
+    )
+
+    decoded_frames = [png_pixels(path) for path in paths]
+    geometry = decoded_frames[0][:3]
+    if any(frame[:3] != geometry for frame in decoded_frames[1:]):
+        raise SmokeFailure("gameplay canvas geometry changed or disappeared")
+    frame_qualities = [frame_quality(frame) for frame in decoded_frames]
+    for path, quality in zip(paths, frame_qualities):
+        if quality["magenta_ratio"] > 0.20:
+            raise SmokeFailure(
+                f"settled gameplay frame is dominated by color-key magenta: "
+                f"{path.name} ({quality['magenta_ratio']:.3%})"
+            )
+        if quality["meaningful_ratio"] < 0.05:
+            raise SmokeFailure(
+                f"settled gameplay frame is blank or lost: {path.name} "
+                f"({quality['meaningful_ratio']:.3%} meaningful pixels)"
+            )
+
+    playfield_region = (0.05, 0.14, 0.95, 0.84)
+    water_region = (0.05, 0.56, 0.95, 0.82)
+    playfield_ratios = [
+        region_change_ratio(
+            decoded_frames[index - 1], decoded_frames[index], playfield_region
+        )
+        for index in range(1, len(decoded_frames))
+    ]
+    water_ratios = [
+        region_change_ratio(
+            decoded_frames[index - 1], decoded_frames[index], water_region
+        )
+        for index in range(1, len(decoded_frames))
+    ]
+    distinct_frames = len(set(hashes))
+    if distinct_frames < 3:
+        raise SmokeFailure(
+            f"settled gameplay produced only {distinct_frames} distinct frames"
+        )
+    if require_playfield_motion and max(playfield_ratios, default=0.0) < 0.0005:
+        raise SmokeFailure(
+            "settled gameplay lacks a material playfield pixel transition"
+        )
+    if require_water_motion and max(water_ratios, default=0.0) < 0.0002:
+        raise SmokeFailure(
+            "settled gameplay lacks a material lower water-band transition"
+        )
+
+    if not isinstance(audio, dict) or not audio.get("installed"):
+        raise SmokeFailure(f"Web Audio scheduling probe disappeared: {audio!r}")
+    contexts = audio.get("contexts") or []
+    running_contexts = [
+        context
+        for context in contexts
+        if context.get("state") == "running" and context.get("sampleRate", 0) > 0
+    ]
+    if not running_contexts:
+        raise SmokeFailure(f"Web AudioContext is not running: {contexts!r}")
+    sample_rate = running_contexts[0]["sampleRate"]
+    queued = int(audio.get("windowQueuedBuffers", 0))
+    ended = int(audio.get("windowEndedBuffers", 0))
+    frames = int(audio.get("windowFramesQueued", 0))
+    scheduled_seconds = float(audio.get("windowScheduledSeconds", 0.0))
+    audio_elapsed = float(audio.get("observedWindowElapsedMs", 0.0)) / 1000.0
+    cadence_ratio = scheduled_seconds / audio_elapsed if audio_elapsed > 0 else 0.0
+    minimum_buffers = max(100, round(audio_elapsed * 50))
+    if queued < minimum_buffers:
+        raise SmokeFailure(
+            f"Web Audio queued only {queued} buffers over {audio_elapsed:.2f}s"
+        )
+    if not 0.75 <= cadence_ratio <= 1.25:
+        raise SmokeFailure(
+            "Web Audio scheduled duration is inconsistent with wall time: "
+            f"{scheduled_seconds:.3f}s over {audio_elapsed:.3f}s"
+        )
+    if ended < queued * 0.7:
+        raise SmokeFailure(
+            f"Web Audio ended only {ended}/{queued} scheduled buffers"
+        )
+    buffer_min = int(audio.get("windowBufferFramesMin") or 0)
+    buffer_max = int(audio.get("windowBufferFramesMax") or 0)
+    minimum_expected = sample_rate * 0.008
+    maximum_expected = sample_rate * 0.012
+    if not (
+        minimum_expected <= buffer_min <= maximum_expected
+        and minimum_expected <= buffer_max <= maximum_expected
+    ):
+        raise SmokeFailure(
+            "Web Audio buffer cadence is not the pinned 10 ms block size: "
+            f"{buffer_min}..{buffer_max} frames at {sample_rate} Hz"
+        )
+    positive_gaps = int(audio.get("windowPositiveGapCount", 0))
+    maximum_gap_ms = float(audio.get("windowMaxPositiveGapMs", 0.0))
+    if positive_gaps > max(2, round(queued * 0.02)) or maximum_gap_ms > 64.0:
+        raise SmokeFailure(
+            "Web Audio scheduling shows underrun gaps: "
+            f"{positive_gaps}/{queued}, max {maximum_gap_ms:.3f} ms"
+        )
+
+    temporal = {
+        "settle_seconds": 6.0,
+        "sample_elapsed_seconds": elapsed,
+        "distinct_frames": distinct_frames,
+        "frame_quality": {
+            path.name: quality for path, quality in zip(paths, frame_qualities)
+        },
+        "required_playfield_motion": require_playfield_motion,
+        "required_water_motion": require_water_motion,
+        "playfield_region": playfield_region,
+        "water_region": water_region,
+        "playfield_change_ratios": playfield_ratios,
+        "water_change_ratios": water_ratios,
+        "audio": {
+            "sample_rate": sample_rate,
+            "observation_elapsed_seconds": audio_elapsed,
+            "queued_buffers": queued,
+            "ended_buffers": ended,
+            "queued_frames": frames,
+            "scheduled_seconds": scheduled_seconds,
+            "scheduled_to_wall_ratio": cadence_ratio,
+            "buffer_frames_min": buffer_min,
+            "buffer_frames_max": buffer_max,
+            "positive_gap_count": positive_gaps,
+            "maximum_positive_gap_ms": maximum_gap_ms,
+            "maximum_queue_interval_ms": audio.get("windowMaxQueueIntervalMs"),
+        },
+    }
+    return paths, hashes, temporal
+
+
 def run_smoke(args: argparse.Namespace, firefox: str, geckodriver: str) -> int:
     dist = args.dist.resolve()
     artifacts = args.artifacts.resolve()
@@ -570,6 +801,15 @@ def run_smoke(args: argparse.Namespace, firefox: str, geckodriver: str) -> int:
     missing = [str(path) for path in required if not path.is_file()]
     if missing:
         raise SmokeFailure("generated Web distribution is incomplete: " + ", ".join(missing))
+    if args.chapter and args.content_dir is None:
+        raise SmokeFailure("--chapter requires --content-dir")
+    if args.chapter:
+        chapter_source = (ROOT / "src/jc_chapters.c").read_text(encoding="utf-8")
+        chapter_marker = f'CHAPTER("{args.chapter}",'
+        if chapter_marker not in chapter_source:
+            raise SmokeFailure(
+                f"--chapter value is not in src/jc_chapters.c: {args.chapter}"
+            )
 
     if args.staged_local_content:
         staged_files = validate_staged_local_content(dist)
@@ -603,9 +843,16 @@ def run_smoke(args: argparse.Namespace, firefox: str, geckodriver: str) -> int:
                 + ", ".join(missing_content)
             )
         expected_index_log = "Johnny Castaway: indexed "
-        core_options = None
+        core_options = (
+            f'johnny_castaway_chapter = "{args.chapter}"\n'
+            if args.chapter
+            else None
+        )
         content_description = "user-owned local data"
+        if args.chapter:
+            content_description += f" (fixed {args.chapter} chapter)"
     server, url = start_web_server(dist)
+    url += "?smoke=1"
     port = available_port()
     gecko_log = artifacts / "geckodriver.log"
     gecko_environment = os.environ.copy()
@@ -623,6 +870,8 @@ def run_smoke(args: argparse.Namespace, firefox: str, geckodriver: str) -> int:
     result: dict[str, Any] = {
         "url": url,
         "content": content_description,
+        "smoke_probe_enabled": True,
+        "chapter": args.chapter or "automatic",
     }
     if args.staged_local_content:
         result["staged_local_content"] = [path.name for path in staged_files]
@@ -729,7 +978,21 @@ def run_smoke(args: argparse.Namespace, firefox: str, geckodriver: str) -> int:
                 )
 
         canvas_element = driver.find("#canvas")
-        game_hash = driver.screenshot(canvas_element, artifacts / "game.png")
+        authentic_content = args.content_dir is not None or args.staged_local_content
+        if authentic_content:
+            game_paths, game_hashes, temporal = capture_temporal_gameplay(
+                driver,
+                canvas_element,
+                artifacts,
+                require_playfield_motion=bool(args.chapter),
+                require_water_motion=not bool(args.chapter),
+            )
+            result["temporal_gameplay"] = temporal
+        else:
+            time.sleep(6.0)
+            game_paths = [artifacts / "game.png"]
+            game_hashes = [driver.screenshot(canvas_element, game_paths[0])]
+        game_hash = game_hashes[0]
         driver.click(driver.find("#menu"))
         menu_hash = wait_until(
             "RetroArch menu to change the canvas",
@@ -795,8 +1058,8 @@ def run_smoke(args: argparse.Namespace, firefox: str, geckodriver: str) -> int:
         )
 
         simulated_hashes: dict[str, str] = {}
-        authentic_content = args.content_dir is not None or args.staged_local_content
-        if authentic_content:
+        automatic_story_content = authentic_content and not args.chapter
+        if automatic_story_content:
             # Automatic Story category ordering is declared by the core:
             # Playback/Chapter, Holiday, Seed, Calendar. Select Calendar,
             # choose its second value (Simulated), then capture the options
@@ -848,6 +1111,9 @@ def run_smoke(args: argparse.Namespace, firefox: str, geckodriver: str) -> int:
 
         result["screenshots"] = {
             "game_sha256": game_hash,
+            "gameplay_sequence_sha256": {
+                path.name: digest for path, digest in zip(game_paths, game_hashes)
+            },
             "menu_sha256": menu_hash,
             "core_options_selected_sha256": core_row_hash,
             "core_options_sha256": core_options_hash,
@@ -858,14 +1124,14 @@ def run_smoke(args: argparse.Namespace, firefox: str, geckodriver: str) -> int:
         result["menu_navigation"] = {
             "route": (
                 "Quick Menu/Home/Down*4/Core Options/Home/Down*1/Story"
-                + ("/Calendar/Simulated" if authentic_content else "")
+                + ("/Calendar/Simulated" if automatic_story_content else "")
                 + "/End"
             ),
             "stable_frames": True,
             "visual_change_ratios": visual_changes,
-            "automatic_story_controls": authentic_content,
+            "automatic_story_controls": automatic_story_content,
         }
-        if authentic_content:
+        if automatic_story_content:
             result["menu_navigation"]["expected_story_controls"] = [
                 "Story Seed",
                 "Story Calendar",

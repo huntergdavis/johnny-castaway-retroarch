@@ -147,7 +147,7 @@ chapter, and asserts that RetroArch:
   navigation.
 
 Evidence is written to `build/web-smoke/`: `result.json`,
-`geckodriver.log`, `game.png`, `menu.png`, `core-options-selected.png`,
+`geckodriver.log`, `game.png`, `game-01.png` through `game-04.png`, `menu.png`, `core-options-selected.png`,
 `core-options.png`, `story-options-top.png`, and `story-options-bottom.png`.
 The embedded 61-byte MAP and 1,126-byte archive are exact, checksum-verified outputs of
 `make_synthetic_content()` in `tests/test_libretro.c`. They contain only the
@@ -168,6 +168,30 @@ This leaves Automatic Story active, navigates to its Calendar control, selects
 Simulated Calendar, and captures the expanded Story menu at its top and bottom.
 The source files are uploaded only to the test browser’s in-memory filesystem;
 all screenshots, logs, and result metadata remain in ignored `build/` output.
+After startup notifications clear, authentic-data modes also require at least
+three distinct timed gameplay frames. Every settled frame must retain meaningful
+playfield pixels; a blank/lost canvas or dominant renderer color-key magenta frame
+fails independently. Automatic mode requires material lower water-band pixel
+changes; a fixed chapter requires material scripted-playfield changes. Both
+continuously queue and complete the pinned RetroArch Web Audio
+driver's 10 ms blocks during a separate idle five-second interval, with scheduled
+duration matching observed browser time and no material post-warmup underrun gap.
+The probe is enabled only for the runner's `?smoke=1` URL and records scheduling
+counts/timing, never audio samples or user-owned resource contents.
+
+For a separate deterministic scripted-motion gate, use a chapter ID present in
+`src/jc_chapters.c` with explicit local content:
+
+```sh
+python3 tools/web_smoke_test.py \
+  --content-dir /path/to/johnny-data --chapter fishing1 \
+  --artifacts build/web-smoke-authentic-fishing1 \
+  --require-browser --timeout 180
+```
+
+`--chapter` is runner-only, is rejected with staged or synthetic content, and is
+recorded in `result.json`; it does not alter the production page's automatic-load
+behavior.
 
 After using `scripts/stage-local-web-content.sh`, test the page's automatic
 server-local path without a browser file upload:
