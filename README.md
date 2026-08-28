@@ -78,6 +78,22 @@ ANDROID_NDK_HOME=/path/to/android-ndk ./scripts/build-target.sh android-x86
 `ANDROID_API` defaults to 21. `ANDROID_NDK_HOST_TAG` is inferred for Linux and macOS
 and can be overridden for another NDK host package.
 
+Apple builds require macOS with Xcode command-line tools. The device and simulator
+aliases each produce the dynamically loaded `.dylib` module expected by current
+RetroArch Apple packaging:
+
+```sh
+./scripts/build-target.sh macos-universal
+./scripts/build-target.sh ios-arm64
+./scripts/build-target.sh ios-sim-arm64       # or ios-sim-x86_64
+./scripts/build-target.sh tvos-arm64
+./scripts/build-target.sh tvos-sim-arm64      # or tvos-sim-x86_64
+```
+
+`IOS_DEPLOYMENT_TARGET` and `TVOS_DEPLOYMENT_TARGET` default to 12.0 and can be
+overridden. The universal macOS command builds separate x86_64 and arm64 slices and
+verifies the merged binary with Xcode's `lipo`.
+
 The `switch`, `wii`, `gamecube`, and `wiiu` aliases use devkitPro and produce static
 core archives for the corresponding statically linked RetroArch frontend. Run them from
 a configured devkitPro shell (`DEVKITPRO`/`DEVKITA64` for Switch or `DEVKITPPC` for the
@@ -104,6 +120,7 @@ notices.
 - `external/libretro-common`: pinned official libretro headers
 - `tests/`: host-side deterministic tests
 - `scripts/build-target.sh`: native and cross-build entry point
+- `scripts/build-apple-universal.sh`: verified x86_64/arm64 macOS merger
 - `scripts/build-web-player.sh`, `scripts/serve-web.sh`: pinned local RetroArch Web test
 - `web/`: local two-file launcher and Web-specific license notice
 - `docs/`: architecture decisions and staged port plan

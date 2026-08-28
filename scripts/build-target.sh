@@ -11,7 +11,9 @@ fi
 case "$target" in
     --list)
         printf '%s\n' native linux-x86_64 linux-aarch64 linux-armv7 \
-            windows-x64 windows-x86 macos web android-arm64 \
+            windows-x64 windows-x86 macos macos-x86_64 macos-arm64 \
+            macos-universal ios-arm64 ios-sim-arm64 ios-sim-x86_64 \
+            tvos-arm64 tvos-sim-arm64 tvos-sim-x86_64 web android-arm64 \
             android-armv7 android-x86_64 android-x86 switch wii gamecube \
             wiiu psp vita 3ds ps2
         exit 0
@@ -23,6 +25,17 @@ case "$target" in
     windows-x64) platform=mingw_x86_64 ;;
     windows-x86) platform=mingw_x86 ;;
     macos) platform=osx ;;
+    macos-x86_64) platform=osx_x86_64 ;;
+    macos-arm64) platform=osx_arm64 ;;
+    macos-universal)
+        exec "$(dirname "$0")/build-apple-universal.sh"
+        ;;
+    ios-arm64) platform=ios_arm64 ;;
+    ios-sim-arm64) platform=ios_sim_arm64 ;;
+    ios-sim-x86_64) platform=ios_sim_x86_64 ;;
+    tvos-arm64) platform=tvos_arm64 ;;
+    tvos-sim-arm64) platform=tvos_sim_arm64 ;;
+    tvos-sim-x86_64) platform=tvos_sim_x86_64 ;;
     web) platform=emscripten ;;
     android-arm64) platform=android_arm64 ;;
     android-armv7) platform=android_armv7 ;;

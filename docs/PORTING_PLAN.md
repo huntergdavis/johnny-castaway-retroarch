@@ -88,10 +88,10 @@ Each row advances independently through Build/Load/Run/Regress.
 | 0 | `linux_x86_64` | `.so` | build and mock-frontend validation pass; RetroArch load/run pending |
 | 1 | `mingw_x86_64` | `.dll` | cross-build and ABI exports validated; frontend run pending |
 | 1 | `mingw_x86` | `.dll` | build mapping added; compiler unavailable locally |
-| 1 | `osx` (x86_64/arm64) | `.dylib` | build mapping added; universal script pending |
+| 1 | `osx`, `osx_x86_64`, `osx_arm64` | `.dylib` | per-architecture mappings and verified-`lipo` universal script added; real Xcode build/frontend run pending |
 | 1 | `linux_aarch64`, `linux_armv7` | `.so` | build mapping added |
 | 2 | Android arm64/armv7/x86_64/x86 | `.so` | NDK r22+ mappings and compiler dry-runs pass; real NDK builds/frontend runs pending |
-| 2 | iOS/tvOS | static `.a` | toolchain mapping pending |
+| 2 | iOS/tvOS arm64 device + arm64/x86_64 simulators | `.dylib` | Xcode SDK/deployment mappings and compiler dry-runs pass; real Xcode builds/frontend runs pending |
 | 2 | `emscripten` | `.bc` static core + RetroArch `.js/.wasm` | archive and pinned real-frontend link/dist/HTTP smoke pass; interactive lawful-data run pending |
 | 3 | `psp1`, `vita`, `ctr`, `ps2` | static `.a` | initial compiler mapping added |
 | 3 | Switch, Wii, GameCube, Wii U | static `.a` | devkitPro mappings and compiler dry-runs pass; real toolchain/frontend runs pending |

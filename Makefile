@@ -54,10 +54,79 @@ else ifeq ($(platform),mingw_x86)
   TARGET := $(BUILD_DIR)/$(TARGET_NAME)_libretro.dll
   PLATFORM_CFLAGS := -D_WIN32_WINNT=0x0601
   SHARED := -shared -static-libgcc
-else ifeq ($(platform),osx)
+else ifneq (,$(filter $(platform),osx osx_x86_64 osx_arm64))
   CC := clang
   TARGET := $(BUILD_DIR)/$(TARGET_NAME)_libretro.dylib
   PLATFORM_CFLAGS := -fPIC
+  SHARED := -dynamiclib
+  ifeq ($(platform),osx_x86_64)
+    APPLE_SDKROOT ?= $(shell xcrun --sdk macosx --show-sdk-path 2>/dev/null)
+    ifeq ($(strip $(APPLE_SDKROOT)),)
+      $(error xcrun could not locate the macOS SDK; build osx_x86_64 on macOS with Xcode command-line tools)
+    endif
+    CC := xcrun --sdk macosx clang
+    PLATFORM_CFLAGS += -arch x86_64 -isysroot $(APPLE_SDKROOT)
+    LDFLAGS += -arch x86_64 -isysroot $(APPLE_SDKROOT)
+  else ifeq ($(platform),osx_arm64)
+    APPLE_SDKROOT ?= $(shell xcrun --sdk macosx --show-sdk-path 2>/dev/null)
+    ifeq ($(strip $(APPLE_SDKROOT)),)
+      $(error xcrun could not locate the macOS SDK; build osx_arm64 on macOS with Xcode command-line tools)
+    endif
+    CC := xcrun --sdk macosx clang
+    PLATFORM_CFLAGS += -arch arm64 -isysroot $(APPLE_SDKROOT)
+    LDFLAGS += -arch arm64 -isysroot $(APPLE_SDKROOT)
+  endif
+else ifneq (,$(filter $(platform),ios_arm64 ios_sim_arm64 ios_sim_x86_64))
+  IOS_DEPLOYMENT_TARGET ?= 12.0
+  ifeq ($(platform),ios_arm64)
+    APPLE_SDK := iphoneos
+    APPLE_ARCH := arm64
+    APPLE_MIN_FLAG := -miphoneos-version-min=$(IOS_DEPLOYMENT_TARGET)
+    TARGET := $(BUILD_DIR)/$(TARGET_NAME)_libretro_ios.dylib
+  else
+    APPLE_SDK := iphonesimulator
+    APPLE_MIN_FLAG := -mios-simulator-version-min=$(IOS_DEPLOYMENT_TARGET)
+    ifeq ($(platform),ios_sim_arm64)
+      APPLE_ARCH := arm64
+    else
+      APPLE_ARCH := x86_64
+    endif
+    TARGET := $(BUILD_DIR)/$(TARGET_NAME)_libretro_ios_sim_$(APPLE_ARCH).dylib
+  endif
+  APPLE_SDKROOT ?= $(shell xcrun --sdk $(APPLE_SDK) --show-sdk-path 2>/dev/null)
+  ifeq ($(strip $(APPLE_SDKROOT)),)
+    $(error xcrun could not locate the $(APPLE_SDK) SDK; build $(platform) on macOS with Xcode)
+  endif
+  CC := xcrun --sdk $(APPLE_SDK) clang
+  TARGET_FLAGS := -arch $(APPLE_ARCH) -isysroot $(APPLE_SDKROOT) $(APPLE_MIN_FLAG)
+  PLATFORM_CFLAGS := -fPIC -DIOS=1 $(TARGET_FLAGS)
+  LDFLAGS += $(TARGET_FLAGS)
+  SHARED := -dynamiclib
+else ifneq (,$(filter $(platform),tvos_arm64 tvos_sim_arm64 tvos_sim_x86_64))
+  TVOS_DEPLOYMENT_TARGET ?= 12.0
+  ifeq ($(platform),tvos_arm64)
+    APPLE_SDK := appletvos
+    APPLE_ARCH := arm64
+    APPLE_MIN_FLAG := -mappletvos-version-min=$(TVOS_DEPLOYMENT_TARGET)
+    TARGET := $(BUILD_DIR)/$(TARGET_NAME)_libretro_tvos.dylib
+  else
+    APPLE_SDK := appletvsimulator
+    APPLE_MIN_FLAG := -mtvos-simulator-version-min=$(TVOS_DEPLOYMENT_TARGET)
+    ifeq ($(platform),tvos_sim_arm64)
+      APPLE_ARCH := arm64
+    else
+      APPLE_ARCH := x86_64
+    endif
+    TARGET := $(BUILD_DIR)/$(TARGET_NAME)_libretro_tvos_sim_$(APPLE_ARCH).dylib
+  endif
+  APPLE_SDKROOT ?= $(shell xcrun --sdk $(APPLE_SDK) --show-sdk-path 2>/dev/null)
+  ifeq ($(strip $(APPLE_SDKROOT)),)
+    $(error xcrun could not locate the $(APPLE_SDK) SDK; build $(platform) on macOS with Xcode)
+  endif
+  CC := xcrun --sdk $(APPLE_SDK) clang
+  TARGET_FLAGS := -arch $(APPLE_ARCH) -isysroot $(APPLE_SDKROOT) $(APPLE_MIN_FLAG)
+  PLATFORM_CFLAGS := -fPIC -DIOS=1 -DTVOS=1 $(TARGET_FLAGS)
+  LDFLAGS += $(TARGET_FLAGS)
   SHARED := -dynamiclib
 else ifeq ($(platform),emscripten)
   CC := emcc
