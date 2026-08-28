@@ -296,6 +296,14 @@ def parse_args() -> argparse.Namespace:
             "gameplay, frame-quality, WebGL, and audio acceptance"
         ),
     )
+    parser.add_argument(
+        "--test-late-ending",
+        action="store_true",
+        help=(
+            "with --chapter johnny1 and --content-dir, wait for the final "
+            "The End replacement and require clean stable title frames"
+        ),
+    )
     return parser.parse_args()
 
 
@@ -303,6 +311,15 @@ def validate_scene_visual_only_args(args: argparse.Namespace) -> None:
     if args.scene_visual_only and (not args.chapter or args.content_dir is None):
         raise SmokeFailure(
             "--scene-visual-only requires --chapter and --content-dir"
+        )
+
+
+def validate_late_ending_args(args: argparse.Namespace) -> None:
+    if not args.test_late_ending:
+        return
+    if args.chapter != "johnny1" or args.content_dir is None:
+        raise SmokeFailure(
+            "--test-late-ending requires --chapter johnny1 and --content-dir"
         )
 
 
@@ -321,6 +338,11 @@ def complete_scene_visual_only_result(
             path.name: digest for path, digest in zip(game_paths, game_hashes)
         },
     }
+    late_ending = result.get("late_ending")
+    if isinstance(late_ending, dict):
+        result["screenshots"]["late_ending_sequence_sha256"] = (
+            late_ending.get("frame_sha256", {})
+        )
     result["menu_navigation"] = {
         "performed": False,
         "reason": "scene-visual-only",
@@ -952,6 +974,198 @@ def capture_strict_audio_window(
     )
 
 
+LATE_ENDING_CLOCK_REGION = (0.38, 0.17, 0.56, 0.43)
+LATE_ENDING_LOWER_BAND_TOP = 0.72
+
+
+def late_ending_color_metrics(
+    frame: tuple[int, int, int, bytes]
+) -> dict[str, float]:
+    """Measure the authentic THEEND signature and stale-clock/key regions."""
+    width, height, channels, pixels = frame
+    total = width * height
+    if total <= 0 or channels not in (3, 4) or len(pixels) != total * channels:
+        raise SmokeFailure("late-ending frame has invalid pixel geometry")
+
+    clock_left, clock_top, clock_right, clock_bottom = LATE_ENDING_CLOCK_REGION
+    clock_x_start = round(clock_left * width)
+    clock_x_end = round(clock_right * width)
+    clock_y_start = round(clock_top * height)
+    clock_y_end = round(clock_bottom * height)
+    lower_y_start = round(LATE_ENDING_LOWER_BAND_TOP * height)
+    clock_total = max(
+        1, (clock_x_end - clock_x_start) * (clock_y_end - clock_y_start)
+    )
+    lower_total = max(1, width * (height - lower_y_start))
+
+    black = bright_red = meaningful = clock_green = lower_color_key = 0
+    for y_position in range(height):
+        row_start = y_position * width * channels
+        for x_position in range(width):
+            pixel = row_start + x_position * channels
+            red, green, blue = pixels[pixel : pixel + 3]
+            opaque = channels == 3 or pixels[pixel + 3] > 16
+            is_color_key = (
+                opaque
+                and min(red, blue) >= 144
+                and green <= 48
+                and abs(red - blue) <= 24
+                and min(red, blue) - green >= 112
+            )
+            is_non_black = opaque and max(red, green, blue) > 12
+            black += int(not opaque or max(red, green, blue) <= 20)
+            bright_red += int(
+                opaque and red >= 192 and green <= 80 and blue <= 80
+            )
+            meaningful += int(is_non_black and not is_color_key)
+            if (
+                clock_x_start <= x_position < clock_x_end
+                and clock_y_start <= y_position < clock_y_end
+            ):
+                clock_green += int(
+                    opaque
+                    and green >= 96
+                    and green >= red * 1.20
+                    and green >= blue * 1.20
+                )
+            if y_position >= lower_y_start:
+                lower_color_key += int(is_color_key)
+
+    return {
+        "black_ratio": black / total,
+        "bright_red_ratio": bright_red / total,
+        "meaningful_ratio": meaningful / total,
+        "clock_green_ratio": clock_green / clock_total,
+        "lower_color_key_ratio": lower_color_key / lower_total,
+    }
+
+
+def late_ending_signature_failures(metrics: dict[str, float]) -> list[str]:
+    failures: list[str] = []
+    if metrics["meaningful_ratio"] < 0.05:
+        failures.append("blank or lost canvas")
+    if metrics["black_ratio"] < 0.70:
+        failures.append("ending is not black-backed")
+    if metrics["bright_red_ratio"] < 0.05:
+        failures.append("ending lacks the bright-red title signature")
+    if metrics["clock_green_ratio"] >= 0.012:
+        failures.append("frog clock/saved overlay persists over the ending")
+    if metrics["lower_color_key_ratio"] >= 0.02:
+        failures.append("lower band leaks purple/color-key pixels")
+    return failures
+
+
+def analyze_late_ending_frames(
+    paths: list[pathlib.Path], hashes: list[str]
+) -> dict[str, Any]:
+    frames = [png_pixels(path) for path in paths]
+    return analyze_late_ending_decoded_frames(
+        frames, [path.name for path in paths], hashes
+    )
+
+
+def analyze_late_ending_decoded_frames(
+    frames: list[tuple[int, int, int, bytes]],
+    names: list[str],
+    hashes: list[str],
+) -> dict[str, Any]:
+    if len(frames) < 4 or len(frames) != len(names) or len(frames) != len(hashes):
+        raise SmokeFailure("late-ending acceptance requires four captured frames")
+    geometry = frames[0][:3]
+    failures: list[str] = []
+    geometry_consistent = all(frame[:3] == geometry for frame in frames[1:])
+    if not geometry_consistent:
+        failures.append("late-ending canvas geometry changed or disappeared")
+
+    qualities = [frame_quality(frame) for frame in frames]
+    metrics = [late_ending_color_metrics(frame) for frame in frames]
+    for name, quality, color_metrics in zip(names, qualities, metrics):
+        for failure in late_ending_signature_failures(color_metrics):
+            failures.append(f"{name}: {failure}")
+        if frame_has_color_key_failure(quality):
+            failures.append(
+                f"{name}: renderer color-key leak "
+                f"({quality['renderer_key_component_pixels']} px/"
+                f"{quality['renderer_key_component_width']}x"
+                f"{quality['renderer_key_component_height']})"
+            )
+
+    full_change_ratios: list[float] = []
+    clock_change_ratios: list[float] = []
+    if geometry_consistent:
+        full_change_ratios = [
+            region_change_ratio(frames[index - 1], frames[index], (0, 0, 1, 1))
+            for index in range(1, len(frames))
+        ]
+        clock_change_ratios = [
+            region_change_ratio(
+                frames[index - 1], frames[index], LATE_ENDING_CLOCK_REGION
+            )
+            for index in range(1, len(frames))
+        ]
+        if max(full_change_ratios, default=1.0) > 0.02:
+            failures.append("late-ending frames are not stable across the full canvas")
+        if max(clock_change_ratios, default=1.0) > 0.02:
+            failures.append("late-ending clock region is not stable")
+
+    evidence = {
+        "frame_sha256": {
+            name: digest for name, digest in zip(names, hashes)
+        },
+        "frame_quality": {
+            name: quality for name, quality in zip(names, qualities)
+        },
+        "color_metrics": {
+            name: color_metrics for name, color_metrics in zip(names, metrics)
+        },
+        "clock_region": LATE_ENDING_CLOCK_REGION,
+        "lower_band_top": LATE_ENDING_LOWER_BAND_TOP,
+        "full_frame_change_ratios": full_change_ratios,
+        "clock_region_change_ratios": clock_change_ratios,
+        "acceptance_failures": failures,
+        "passed": not failures,
+    }
+    if failures:
+        raise SmokeFailure("; ".join(failures))
+    return evidence
+
+
+def capture_late_ending(
+    driver: WebDriver,
+    canvas_element: str,
+    artifacts: pathlib.Path,
+    timeout: float,
+) -> tuple[list[pathlib.Path], list[str], dict[str, Any]]:
+    """Wait for Johnny1's THEEND replacement, then prove it stays clean."""
+    paths = [artifacts / f"late-ending-{index:02d}.png" for index in range(4)]
+    hashes: list[str] = []
+    deadline = time.monotonic() + timeout
+    started = time.monotonic()
+    polls = 0
+    last_metrics: dict[str, float] | None = None
+    while time.monotonic() < deadline:
+        candidate_hash = driver.screenshot(canvas_element, paths[0])
+        polls += 1
+        last_metrics = late_ending_color_metrics(png_pixels(paths[0]))
+        if not late_ending_signature_failures(last_metrics):
+            hashes.append(candidate_hash)
+            break
+        time.sleep(0.5)
+    if not hashes:
+        raise SmokeFailure(
+            "timed out waiting for clean Johnny1 The End replacement; "
+            f"last metrics: {last_metrics!r}"
+        )
+
+    for path in paths[1:]:
+        time.sleep(1.0)
+        hashes.append(driver.screenshot(canvas_element, path))
+    evidence = analyze_late_ending_frames(paths, hashes)
+    evidence["wait_elapsed_seconds"] = time.monotonic() - started
+    evidence["poll_count"] = polls
+    return paths, hashes, evidence
+
+
 def capture_temporal_gameplay(
     driver: WebDriver,
     canvas_element: str,
@@ -1163,6 +1377,7 @@ def run_smoke(args: argparse.Namespace, firefox: str, geckodriver: str) -> int:
     if missing:
         raise SmokeFailure("generated Web distribution is incomplete: " + ", ".join(missing))
     validate_scene_visual_only_args(args)
+    validate_late_ending_args(args)
     if args.chapter and args.content_dir is None:
         raise SmokeFailure("--chapter requires --content-dir")
     if args.test_audio_unlock and not args.staged_local_content:
@@ -1238,6 +1453,7 @@ def run_smoke(args: argparse.Namespace, firefox: str, geckodriver: str) -> int:
         "chapter": args.chapter or "automatic",
         "autoplay_blocked": args.test_audio_unlock,
         "scene_visual_only": args.scene_visual_only,
+        "test_late_ending": args.test_late_ending,
     }
     if args.staged_local_content:
         result["staged_local_content"] = [path.name for path in staged_files]
@@ -1470,6 +1686,11 @@ def run_smoke(args: argparse.Namespace, firefox: str, geckodriver: str) -> int:
             time.sleep(6.0)
             game_paths = [artifacts / "game.png"]
             game_hashes = [driver.screenshot(canvas_element, game_paths[0])]
+        if args.test_late_ending:
+            _, _, late_ending = capture_late_ending(
+                driver, canvas_element, artifacts, args.timeout
+            )
+            result["late_ending"] = late_ending
         game_hash = game_hashes[0]
         if args.scene_visual_only:
             final_state = diagnostics(driver)

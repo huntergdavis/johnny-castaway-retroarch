@@ -13,10 +13,14 @@ import zipfile
 
 from web_smoke_test import (
     SmokeFailure,
+    analyze_late_ending_decoded_frames,
     complete_scene_visual_only_result,
     evaluate_strict_audio_window,
     frame_has_color_key_failure,
     frame_quality,
+    late_ending_color_metrics,
+    late_ending_signature_failures,
+    validate_late_ending_args,
     validate_scene_visual_only_args,
 )
 
@@ -170,6 +174,30 @@ class WebDistributionValidatorTests(unittest.TestCase):
 
 
 class WebDiagnosticProbeSourceTests(unittest.TestCase):
+    def test_late_ending_requires_authentic_johnny1(self) -> None:
+        import argparse
+
+        valid = argparse.Namespace(
+            test_late_ending=True,
+            chapter="johnny1",
+            content_dir=pathlib.Path("fixture"),
+        )
+        validate_late_ending_args(valid)
+        for chapter, content_dir in (
+            (None, pathlib.Path("fixture")),
+            ("fishing1", pathlib.Path("fixture")),
+            ("johnny1", None),
+        ):
+            invalid = argparse.Namespace(
+                test_late_ending=True,
+                chapter=chapter,
+                content_dir=content_dir,
+            )
+            with self.assertRaisesRegex(
+                SmokeFailure, "requires --chapter johnny1 and --content-dir"
+            ):
+                validate_late_ending_args(invalid)
+
     def test_scene_visual_only_requires_fixed_authentic_content(self) -> None:
         import argparse
 
@@ -443,6 +471,77 @@ class WebSmokeFrameQualityComponentTests(unittest.TestCase):
         self.assertEqual(quality["renderer_key_component_pixels"], 0)
         self.assertFalse(frame_has_color_key_failure(quality))
 
+
+class WebSmokeLateEndingTests(unittest.TestCase):
+    @staticmethod
+    def clean_frame() -> tuple[int, int, int, bytes]:
+        width = height = 100
+        pixels = bytearray(width * height * 3)
+        for y_position in range(20):
+            for x_position in range(30):
+                pixel = (y_position * width + x_position) * 3
+                pixels[pixel : pixel + 3] = bytes((224, 24, 24))
+        return width, height, 3, bytes(pixels)
+
+    def test_clean_stable_title_sequence_passes(self) -> None:
+        frame = self.clean_frame()
+        evidence = analyze_late_ending_decoded_frames(
+            [frame] * 4,
+            [f"late-ending-{index:02d}.png" for index in range(4)],
+            [str(index) * 64 for index in range(4)],
+        )
+        self.assertTrue(evidence["passed"])
+        self.assertEqual(evidence["acceptance_failures"], [])
+        metrics = late_ending_color_metrics(frame)
+        self.assertGreaterEqual(metrics["black_ratio"], 0.70)
+        self.assertGreaterEqual(metrics["bright_red_ratio"], 0.05)
+        self.assertEqual(late_ending_signature_failures(metrics), [])
+
+    def test_persistent_frog_clock_is_rejected(self) -> None:
+        width, height, channels, source = self.clean_frame()
+        pixels = bytearray(source)
+        for x_position in range(38, 58):
+            pixel = (20 * width + x_position) * channels
+            pixels[pixel : pixel + 3] = bytes((16, 192, 32))
+        failures = late_ending_signature_failures(
+            late_ending_color_metrics((width, height, channels, bytes(pixels)))
+        )
+        self.assertIn("frog clock/saved overlay persists over the ending", failures)
+
+    def test_purple_lower_band_is_rejected(self) -> None:
+        width, height, channels, source = self.clean_frame()
+        pixels = bytearray(source)
+        for y_position in range(72, 74):
+            for x_position in range(100):
+                pixel = (y_position * width + x_position) * channels
+                pixels[pixel : pixel + 3] = bytes((0xAD, 0, 0xAD))
+        failures = late_ending_signature_failures(
+            late_ending_color_metrics((width, height, channels, bytes(pixels)))
+        )
+        self.assertIn("lower band leaks purple/color-key pixels", failures)
+
+    def test_blank_canvas_is_rejected(self) -> None:
+        failures = late_ending_signature_failures(
+            late_ending_color_metrics((100, 100, 3, bytes(100 * 100 * 3)))
+        )
+        self.assertIn("blank or lost canvas", failures)
+        self.assertIn("ending lacks the bright-red title signature", failures)
+
+    def test_materially_changing_title_sequence_is_rejected(self) -> None:
+        width, height, channels, source = self.clean_frame()
+        changed = bytearray(source)
+        for y_position in range(50, 60):
+            for x_position in range(50, 80):
+                pixel = (y_position * width + x_position) * channels
+                changed[pixel : pixel + 3] = bytes((24, 96, 192))
+        frames = [self.clean_frame(), (width, height, channels, bytes(changed))]
+        frames.extend([frames[-1], frames[-1]])
+        with self.assertRaisesRegex(SmokeFailure, "not stable across the full canvas"):
+            analyze_late_ending_decoded_frames(
+                frames,
+                [f"late-ending-{index:02d}.png" for index in range(4)],
+                [str(index) * 64 for index in range(4)],
+            )
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

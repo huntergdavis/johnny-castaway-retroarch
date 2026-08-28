@@ -217,6 +217,33 @@ python3 tools/web_smoke_test.py \
 recorded in `result.json`; it does not alter the production page's automatic-load
 behavior.
 
+Johnny1 needs an additional late-phase gate because its early frog-clock, sunset,
+plane, and parachute motion do not prove that the final partial-height
+`THEEND.SCR` replacement is clean. Run the ordinary strict temporal/audio/WebGL
+gate and then wait for the final title card with:
+
+```sh
+python3 tools/web_smoke_test.py \
+  --content-dir /path/to/johnny-data --chapter johnny1 \
+  --test-late-ending --scene-visual-only \
+  --artifacts build/web-smoke-authentic-johnny1-ending \
+  --require-browser --timeout 180
+```
+
+`--test-late-ending` is rejected unless both authentic content and the exact
+`johnny1` slug are selected. After the unchanged temporal gameplay, Web Audio,
+and WebGL gates pass, it waits for the documented black-backed, bright-red “The
+End” signature and captures four one-second-spaced ending frames. Every frame
+must remain meaningful, retain at least 70% black and 5% bright red, contain no
+material renderer-key component, keep broad color-key pixels below 2% of the
+lower 28% of the canvas, and keep the frog-clock region's green signature below
+1.2%. Consecutive full-frame and clock-region material changes must each stay at
+or below 2%. These independent checks fail a blank/lost canvas, a persistent
+saved clock overlay, the previously observed purple lower band, or an ending
+that never settles. `late-ending-00.png` through `late-ending-03.png` and the
+`late_ending` metrics/hashes in `result.json` remain in the selected ignored
+`build/` artifact directory; no original pixels are committed.
+
 ### All 63 authentic chapters
 
 `tools/web_chapter_matrix.py` applies that same strict real-Firefox gate to the
@@ -226,6 +253,9 @@ the visual-only mode still requires authentic content and still enforces tempora
 playfield motion, frame quality and color-key rejection, WebGL activity, and audio
 cadence. It skips only the repeated Quick Menu/Core Options navigation, which the
 normal smoke command above continues to cover once.
+The matrix deliberately retains its early temporal-motion acceptance for
+`johnny1`; run the late-ending command above once per candidate Web build to bind
+the separate final replacement phase.
 
 Run the full catalog sequentially with:
 

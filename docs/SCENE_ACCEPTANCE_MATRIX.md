@@ -154,6 +154,14 @@ phase oracle should bind the frog-clock, sunset, plane, parachute, and title
 beats independently rather than treating a final THEEND frame as the whole
 scene.
 
+The Web release gate binds the last of those phases explicitly:
+`tools/web_smoke_test.py --chapter johnny1 --test-late-ending` waits for the
+black/red title signature and requires four clean stable frames without a
+persistent frog-clock region, blank canvas, renderer-key block, or purple lower
+band. It complements rather than replaces the all-scene temporal-motion matrix;
+the intermediate sunset/plane/parachute beats still need a future golden phase
+oracle.
+
 `johnny6` is the office-desk/daydream inverse-castaway gag. The PS1 oracle
 explicitly says no ocean/island background is painted. Its acceptance class
 is black/gray office, multiple phases, no generic waves, clean transition,
