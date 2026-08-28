@@ -1222,6 +1222,92 @@ static const char *chapter_location_screen(const jc_chapter_t *chapter)
     return "ISLAND2.SCR";
 }
 
+static int story_transparent_index(void)
+{
+    size_t index;
+
+    if (walk_palette_ready) {
+        for (index = 0u; index < JC_PALETTE_COLORS; ++index) {
+            if (walk_palette.xrgb[index] == 0x00a800a8u)
+                return (int)index;
+        }
+    }
+    return 5;
+}
+
+static uint8_t story_background_fill_index(void)
+{
+    size_t index;
+
+    if (walk_palette_ready) {
+        for (index = 0u; index < JC_PALETTE_COLORS; ++index) {
+            if (walk_palette.xrgb[index] == 0x00000000u)
+                return (uint8_t)index;
+        }
+    }
+    return 0u;
+}
+
+static bool load_runtime_chapter_background(
+    jc_runtime_t *target_runtime, const jc_chapter_t *chapter,
+    char *error, size_t error_size)
+{
+    jc_resource_info_t screen_resource;
+    jc_surface_t screen;
+    jc_script_error_t script_error;
+    uint8_t *screen_data = NULL;
+    uint8_t *pixels = NULL;
+    bool success = false;
+    const char *screen_name;
+
+    if (target_runtime == NULL || chapter == NULL) {
+        snprintf(error, error_size, "invalid runtime background target");
+        return false;
+    }
+    screen_name = chapter_location_screen(chapter);
+    if (!jc_content_find_resource(&content, screen_name, vfs,
+                                  &screen_resource, error, error_size))
+        return false;
+    screen_data = (uint8_t *)malloc(screen_resource.body_size);
+    pixels = (uint8_t *)malloc(JC_FRAME_WIDTH * JC_FRAME_HEIGHT);
+    if (screen_data == NULL || pixels == NULL) {
+        snprintf(error, error_size,
+                 "not enough memory to decode the runtime background");
+        goto cleanup;
+    }
+    if (!jc_content_read_resource(&content, &screen_resource, vfs,
+                                  screen_data, screen_resource.body_size,
+                                  error, error_size) ||
+        !jc_scr_decode(screen_data, screen_resource.body_size, pixels,
+                       JC_FRAME_WIDTH * JC_FRAME_HEIGHT, &screen,
+                       error, error_size))
+        goto cleanup;
+    target_runtime->transparent_source_index = story_transparent_index();
+    target_runtime->renderer.transparent_source_index =
+        target_runtime->transparent_source_index;
+    jc_surface_clear(&target_runtime->renderer.scratch,
+                     story_background_fill_index());
+    jc_surface_blit(
+        &target_runtime->renderer.scratch,
+        ((int)JC_FRAME_WIDTH - (int)screen.width) / 2,
+        ((int)JC_FRAME_HEIGHT - (int)screen.height) / 2,
+        &screen, -1, false);
+    if (!jc_ttm_renderer_set_background(&target_runtime->renderer,
+                                        &target_runtime->renderer.scratch,
+                                        &script_error) ||
+        !jc_ttm_renderer_compose(&target_runtime->renderer, &script_error)) {
+        snprintf(error, error_size, "runtime background %s: %s",
+                 screen_name, script_error.message);
+        goto cleanup;
+    }
+    success = true;
+
+cleanup:
+    free(pixels);
+    free(screen_data);
+    return success;
+}
+
 static bool load_chapter_location(const jc_chapter_t *chapter,
                                   char *error, size_t error_size)
 {
@@ -1957,6 +2043,8 @@ static bool start_automatic_scene(char *error, size_t error_size)
                  script_error.message);
         return false;
     }
+    if (!load_runtime_chapter_background(runtime, chapter, error, error_size))
+        return false;
     if ((play->scene.flags & JC_SCENE_ISLAND) != 0u) {
         offset_x = story_player.run.island.x +
                    (play->left_island ? 272 : 0);
@@ -2049,6 +2137,9 @@ static bool start_selected_presentation(char *error, size_t error_size)
                      selected_chapter->slug, script_error.message);
             return false;
         }
+        if (!load_runtime_chapter_background(runtime, selected_chapter,
+                                             error, error_size))
+            return false;
         (void)jc_captions_show(&captions, selected_chapter->caption_id,
                                JC_CAPTION_DEFAULT_TICKS);
         if (log_cb != NULL)
@@ -2692,6 +2783,13 @@ static bool restore_runtime_candidate(jc_runtime_t *candidate,
     if (!jc_runtime_start_ads(candidate, ads_name, chapter->ads_tag,
                               seed, &error))
         goto failed;
+    {
+        char background_error[256];
+        if (!load_runtime_chapter_background(candidate, chapter,
+                                             background_error,
+                                             sizeof(background_error)))
+            goto failed;
+    }
     if (!jc_ttm_renderer_set_offset(&candidate->renderer, offset_x, offset_y,
                                     &error))
         goto failed;

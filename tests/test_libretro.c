@@ -52,6 +52,7 @@ static const char *caption_background_value = "bar";
 static const char *caption_opacity_value = "63";
 static const char *caption_position_value = "bottom";
 static uint64_t frame_hash;
+static size_t magenta_pixels;
 static bool last_audio_has_signal;
 static size_t chapter_value_count;
 static size_t holiday_value_count;
@@ -618,7 +619,13 @@ static void RETRO_CALLCONV video(const void *data, unsigned width,
     holiday_bar_pixels = 0u;
     holiday_bar_top_pixels = 0u;
     holiday_bar_bottom_pixels = 0u;
+    magenta_pixels = 0u;
     for (index = 0u; index < count; ++index) {
+        unsigned red = (pixels[index] >> 16) & 0xffu;
+        unsigned green = (pixels[index] >> 8) & 0xffu;
+        unsigned blue = pixels[index] & 0xffu;
+        unsigned minimum = red < blue ? red : blue;
+        unsigned maximum = red > blue ? red : blue;
         hash ^= pixels[index];
         hash *= 1099511628211ull;
         if (pixels[index] != 0u)
@@ -630,6 +637,9 @@ static void RETRO_CALLCONV video(const void *data, unsigned width,
             else
                 ++holiday_bar_bottom_pixels;
         }
+        if (minimum >= 144u && green <= 48u && maximum - minimum <= 24u &&
+            minimum - green >= 112u)
+            ++magenta_pixels;
     }
     frame_hash = hash;
     ++video_calls;
@@ -836,6 +846,10 @@ int main(int argc, char **argv)
              ++preview_startup_frames)
             retro_run();
         assert(frame_hash != chapter_hash);
+        assert(magenta_pixels < (size_t)640u * 480u / 2u);
+        assert(retro_unserialize(animation_state, animation_state_size));
+        retro_run();
+        assert(magenta_pixels < (size_t)640u * 480u / 2u);
         assert(retro_unserialize(animation_state, animation_state_size));
         free(animation_state);
     }
