@@ -208,6 +208,34 @@ static void test_voices_volume_mute_and_stop(void)
     assert(jc_audio_mix(&audio, NULL, 1u) == 0u);
 }
 
+static void test_looping_sample_gain(void)
+{
+    static const uint8_t samples[] = { 255u, 0u };
+    uint8_t wav[128];
+    int16_t output[24];
+    jc_audio_t audio;
+    size_t size = make_wav(wav, sizeof(wav), samples, sizeof(samples), 0);
+    size_t frame;
+
+    jc_audio_init(&audio);
+    assert(jc_audio_load_wav_ex(&audio, JC_AUDIO_AMBIENCE_SAMPLE_ID,
+                                wav, size, true, 50u) == JC_WAV_OK);
+    assert(jc_audio_trigger(&audio, JC_AUDIO_AMBIENCE_SAMPLE_ID) == 0);
+    assert(jc_audio_mix(&audio, output, 12u) == 12u);
+    for (frame = 0u; frame < 4u; ++frame)
+        assert_frame(output, frame, 16256);
+    for (; frame < 8u; ++frame)
+        assert_frame(output, frame, -16384);
+    for (; frame < 12u; ++frame)
+        assert_frame(output, frame, 16256);
+    assert(jc_audio_active_voice_count(&audio) == 1u);
+    assert(audio.voices[0].position == 1u);
+    assert(audio.voices[0].source_phase == 0u);
+    assert(!jc_audio_set_sample_ex(&audio, JC_AUDIO_AMBIENCE_SAMPLE_ID,
+                                   &(jc_wav_pcm_t){samples, 2u, 11025u, 1u, 8u},
+                                   true, 101u));
+}
+
 static void test_serialization(void)
 {
     static const uint8_t samples[] = { 128u, 255u, 0u, 64u };
@@ -297,6 +325,7 @@ int main(void)
     test_wav_parser();
     test_resampling_and_batch_determinism();
     test_voices_volume_mute_and_stop();
+    test_looping_sample_gain();
     test_serialization();
     test_real_wavs_if_requested();
     puts("audio tests passed");

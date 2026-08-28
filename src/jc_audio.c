@@ -77,32 +77,52 @@ void jc_audio_clear_samples(jc_audio_t *audio)
 bool jc_audio_set_sample(jc_audio_t *audio, unsigned sample_id,
                          const jc_wav_pcm_t *pcm)
 {
+    return jc_audio_set_sample_ex(audio, sample_id, pcm, false,
+                                  JC_AUDIO_VOLUME_MAX);
+}
+
+bool jc_audio_set_sample_ex(jc_audio_t *audio, unsigned sample_id,
+                            const jc_wav_pcm_t *pcm, bool loop,
+                            unsigned gain)
+{
     if (audio == NULL || pcm == NULL || sample_id >= JC_AUDIO_SAMPLE_COUNT ||
         pcm->samples == NULL || pcm->sample_count == 0u ||
         pcm->sample_count > UINT32_MAX ||
         pcm->sample_rate != JC_WAV_SOURCE_RATE ||
         pcm->channels != JC_WAV_SOURCE_CHANNELS ||
-        pcm->bits_per_sample != JC_WAV_SOURCE_BITS)
+        pcm->bits_per_sample != JC_WAV_SOURCE_BITS ||
+        gain > JC_AUDIO_VOLUME_MAX)
         return false;
 
     jc_audio_stop_sample(audio, sample_id);
     audio->samples[sample_id].data = pcm->samples;
     audio->samples[sample_id].length = (uint32_t)pcm->sample_count;
+    audio->samples[sample_id].gain = (uint8_t)gain;
+    audio->samples[sample_id].loop = loop;
     return true;
 }
 
 jc_wav_status_t jc_audio_load_wav(jc_audio_t *audio, unsigned sample_id,
                                   const void *data, size_t size)
 {
+    return jc_audio_load_wav_ex(audio, sample_id, data, size, false,
+                                JC_AUDIO_VOLUME_MAX);
+}
+
+jc_wav_status_t jc_audio_load_wav_ex(jc_audio_t *audio, unsigned sample_id,
+                                     const void *data, size_t size, bool loop,
+                                     unsigned gain)
+{
     jc_wav_pcm_t pcm;
     jc_wav_status_t status;
 
-    if (audio == NULL || sample_id >= JC_AUDIO_SAMPLE_COUNT)
+    if (audio == NULL || sample_id >= JC_AUDIO_SAMPLE_COUNT ||
+        gain > JC_AUDIO_VOLUME_MAX)
         return JC_WAV_ERR_INVALID_ARGUMENT;
     status = jc_wav_parse(data, size, &pcm);
     if (status != JC_WAV_OK)
         return status;
-    if (!jc_audio_set_sample(audio, sample_id, &pcm))
+    if (!jc_audio_set_sample_ex(audio, sample_id, &pcm, loop, gain))
         return JC_WAV_ERR_UNSUPPORTED_FORMAT;
     return JC_WAV_OK;
 }
@@ -252,13 +272,19 @@ size_t jc_audio_mix(jc_audio_t *audio, int16_t *stereo, size_t frames)
                 continue;
             }
 
-            mixed += ((int32_t)sample->data[voice->position] - 128) * 256;
+            mixed += (((int32_t)sample->data[voice->position] - 128) * 256 *
+                      (int32_t)sample->gain) /
+                     (int32_t)JC_AUDIO_VOLUME_MAX;
             ++voice->source_phase;
             if (voice->source_phase == 4u) {
                 voice->source_phase = 0u;
                 ++voice->position;
-                if (voice->position == sample->length)
-                    clear_voice(voice);
+                if (voice->position == sample->length) {
+                    if (sample->loop)
+                        voice->position = 0u;
+                    else
+                        clear_voice(voice);
+                }
             }
         }
 

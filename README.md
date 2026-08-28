@@ -18,8 +18,10 @@ sound mixer. It also includes the PS1 port's audited 79-caption/63-chapter catal
 drive a bounded indexed renderer for resources, layers, sprites,
 primitives, saved zones, and frame composition. The content-backed loader, ADS scene
 orchestration, preview controls, caption presentation, audio event dispatch, and
-ambience sample playback are still being connected to the libretro adapter, so this is
-not yet the complete screensaver experience.
+ambience sample loading are still being connected to the libretro adapter. The mixer
+already supports the reserved ambience ID, 56% per-sample gain, and deterministic
+seamless looping, but no CC0 audio binary is distributed yet. This is therefore not yet
+the complete screensaver experience.
 
 ## Why C
 

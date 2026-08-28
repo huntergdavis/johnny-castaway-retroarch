@@ -8,7 +8,9 @@
 
 #include "jc_wav.h"
 
-#define JC_AUDIO_SAMPLE_COUNT 25u
+#define JC_AUDIO_ORIGINAL_SAMPLE_COUNT 25u
+#define JC_AUDIO_AMBIENCE_SAMPLE_ID 25u
+#define JC_AUDIO_SAMPLE_COUNT 26u
 #define JC_AUDIO_MAX_VOICES 8u
 #define JC_AUDIO_OUTPUT_RATE 44100u
 #define JC_AUDIO_OUTPUT_CHANNELS 2u
@@ -18,6 +20,8 @@
 typedef struct jc_audio_sample {
     const uint8_t *data;
     uint32_t length;
+    uint8_t gain;
+    bool loop;
 } jc_audio_sample_t;
 
 typedef struct jc_audio_voice {
@@ -45,8 +49,16 @@ void jc_audio_clear_samples(jc_audio_t *audio);
 
 bool jc_audio_set_sample(jc_audio_t *audio, unsigned sample_id,
                          const jc_wav_pcm_t *pcm);
+/* Extended registration used by ambience: gain is 0..100, loop wraps at EOF. */
+bool jc_audio_set_sample_ex(jc_audio_t *audio, unsigned sample_id,
+                            const jc_wav_pcm_t *pcm, bool loop,
+                            unsigned gain);
 jc_wav_status_t jc_audio_load_wav(jc_audio_t *audio, unsigned sample_id,
                                   const void *data, size_t size);
+/* Parse and register a WAV with the same extended playback policy. */
+jc_wav_status_t jc_audio_load_wav_ex(jc_audio_t *audio, unsigned sample_id,
+                                     const void *data, size_t size, bool loop,
+                                     unsigned gain);
 bool jc_audio_has_sample(const jc_audio_t *audio, unsigned sample_id);
 void jc_audio_unload_sample(jc_audio_t *audio, unsigned sample_id);
 
