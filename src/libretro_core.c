@@ -27,7 +27,16 @@
 #include <string.h>
 #include <time.h>
 
+#ifdef EMSCRIPTEN
+#define PRESENTATION_FRAME_RATE (JC_FRAME_RATE / 3.0)
+#define LOGIC_TICKS_PER_PRESENTATION_FRAME 3u
+#define AUDIO_FRAMES_PER_VIDEO_FRAME 3000u
+#define WEB_VIDEO_SUBMISSION_INTERVAL 2u
+#else
+#define PRESENTATION_FRAME_RATE JC_FRAME_RATE
+#define LOGIC_TICKS_PER_PRESENTATION_FRAME 1u
 #define AUDIO_FRAMES_PER_VIDEO_FRAME 882u
+#endif
 #define LEGACY_CHAPTER_BYTES 1024u
 #define LEGACY_HOLIDAY_BYTES 1024u
 #define CHAPTER_OPTION_INDEX 1u
@@ -2403,13 +2412,19 @@ static void present_video_frame(void)
         if (jc_fade_is_active(&scene_fade))
             (void)jc_fade_apply(&scene_fade, video_output, JC_FRAME_WIDTH,
                                 JC_FRAME_HEIGHT, JC_FRAME_WIDTH, 0x00000000u);
-        for (tick = 0u; tick < playback_speed &&
+        for (tick = 0u;
+             tick < playback_speed * LOGIC_TICKS_PER_PRESENTATION_FRAME &&
                         jc_fade_is_active(&scene_fade); ++tick) {
             jc_fade_advance(&scene_fade);
             ++automatic_transition_ticks;
         }
     }
 #ifdef EMSCRIPTEN
+    if (game_loaded && core.frame_number > 1u &&
+        core.frame_number % WEB_VIDEO_SUBMISSION_INTERVAL != 0u) {
+        video_cb(NULL, JC_FRAME_WIDTH, JC_FRAME_HEIGHT, 0u);
+        return;
+    }
     {
         size_t index;
 
@@ -2616,7 +2631,7 @@ void retro_get_system_av_info(struct retro_system_av_info *info)
     info->geometry.max_width = JC_FRAME_WIDTH;
     info->geometry.max_height = JC_FRAME_HEIGHT;
     info->geometry.aspect_ratio = 4.0f / 3.0f;
-    info->timing.fps = JC_FRAME_RATE;
+    info->timing.fps = PRESENTATION_FRAME_RATE;
     info->timing.sample_rate = JC_AUDIO_RATE;
 }
 
@@ -2706,14 +2721,21 @@ void retro_run(void)
     reset_pressed = pressed;
 
     if (game_loaded) {
-        jc_core_step(&core);
-        for (story_tick = 0u; story_tick < playback_speed; ++story_tick)
+        for (story_tick = 0u;
+             story_tick < LOGIC_TICKS_PER_PRESENTATION_FRAME; ++story_tick)
+            jc_core_step(&core);
+        for (story_tick = 0u;
+             story_tick <
+                 playback_speed * LOGIC_TICKS_PER_PRESENTATION_FRAME;
+             ++story_tick)
             tick_story_runtime();
         refresh_story_island_animation(previous_story_ticks);
     }
 
     present_video_frame();
-    for (story_tick = 0u; story_tick < playback_speed; ++story_tick)
+    for (story_tick = 0u;
+         story_tick < playback_speed * LOGIC_TICKS_PER_PRESENTATION_FRAME;
+         ++story_tick)
         jc_captions_tick(&captions);
     jc_audio_mix(&audio, audio_output, AUDIO_FRAMES_PER_VIDEO_FRAME);
     audio_batch_cb(audio_output, AUDIO_FRAMES_PER_VIDEO_FRAME);
