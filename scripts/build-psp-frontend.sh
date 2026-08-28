@@ -9,7 +9,7 @@ jobs=${JOBS:-}
 allow_dirty=${ALLOW_DIRTY:-0}
 pull=0
 offline=0
-expected_release_version=0.1.2
+expected_release_version=0.1.3
 source_date_epoch=${SOURCE_DATE_EPOCH:-}
 
 retroarch_url=https://github.com/libretro/RetroArch.git

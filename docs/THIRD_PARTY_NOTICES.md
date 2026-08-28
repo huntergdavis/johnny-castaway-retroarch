@@ -92,12 +92,15 @@ artifacts.
 Their source repositories, revisions, immutable image digests, and tested compiler
 versions are recorded in `PROVENANCE.md` and `CONSOLE_BUILDS.md`. Distributors who
 rebuild with those environments are responsible for the respective upstream SDK and
-container terms. The generated Switch, 3DS, GameCube, Wii U, Vita, and PS2 RetroArch
+container terms. The generated Switch, 3DS, GameCube, Wii, Wii U, Vita, and PS2 RetroArch
 frontends also statically link target SDK/port libraries selected by the official
 pinned makefiles.
 Those install packages carry the available license trees from the exact SDK image and
 the source/license ledger in `FRONTEND_SDK_NOTICES.md`; libnx, libctru, VitaSDK,
 vitaGL, vitaShaRK, PS2SDK, gsKit, and wut contributors retain their respective rights.
+The Wii package applies the included GPLv3-or-later single-core patch to pinned
+RetroArch and deliberately excludes its GPLv2-only `wii/app_booter`; package
+provenance binds the exact patch hash and no-reexec flags.
 
 Other optional builds invoke an external Android NDK, Emscripten SDK, Apple Xcode SDK,
 MinGW-w64 toolchain, or distribution cross compiler. Those tools are not copied into

@@ -113,10 +113,10 @@ Each row advances independently through Build/Load/Run/Regress.
 | 1 | `linux_aarch64`, `linux_armv7`, `linux_armv7_neon` | `.so` | real GCC cross-builds and exact 25-symbol ELF export checks pass; ARMv7 variants are verified VFPv3-D16 or NEONv1 hard-float; frontend runs pending |
 | 2 | Android arm64/armv7/x86_64/x86 | `.so` | real NDK r29/API 21 strict builds, machine checks, and exact 25-symbol exports pass; Android frontend/device runs pending |
 | 2 | iOS/tvOS arm64 device + arm64/x86_64 simulators | `.dylib` | real Xcode SDK builds and exact Mach-O ABI exports pass in GitHub `macos-15`; device/frontend runs pending |
-| 2 | `emscripten` | `.bc` static core + RetroArch `.js/.wasm` | archive, pinned real-frontend link/dist, HTTP checks, and real-Firefox synthetic plus authentic 180-resource/23-sound auto-load runs pass; deterministic Core Options/Story/Simulated Calendar navigation is screenshot-validated |
+| 2 | `emscripten` | `.bc` static core + RetroArch `.js/.wasm` | archive, pinned real-frontend link/dist, HTTP checks, synthetic frames, authentic 180-resource/23-sound auto-load, and deterministic menu navigation pass; authentic waves/full animation are currently missing and audio is choppy, so rendering/audio acceptance remains blocked |
 | 3 | `psp1` | static `.a` + RetroArch `.elf`/`EBOOT.PBP` | real official-SDK archive/link/package checks pass; pinned PPSSPP v1.20.4 completes a 30-second boot with module, GE, and framebuffer activity; physical-hardware rendering, input, audio, gameplay, performance, and save states remain |
 | 3 | `vita`, `ctr`, `ps2` | static `.a` + VPK/3DSX/CIA/ELF frontends | strict archives and all 25 entry points pass; pinned RetroArch frontend builders validate formats, fixed identity, current Core Options, provenance, and no-data packaging; device/emulator runs pending |
-| 3 | Switch, Wii, GameCube, Wii U | static `.a` (Switch NRO, GameCube DOL, Wii U RPX) | all strict archives pass; Switch, GameCube, and Wii U have pinned frontend/install-package builders and validators; Wii frontend compatibility and all device runs remain |
+| 3 | Switch, Wii, GameCube, Wii U | static `.a` + Switch NRO, GameCube/Wii DOL, Wii U RPX | all strict archives and pinned frontend/install-package validators pass; Wii uses a tracked GPLv3 single-core/no-reexec compatibility patch; device runs remain |
 | 4 | Dingux, webOS, UWP, Haiku/BSD, PSL1GHT PS3, DOS | varies | official live/source inventory complete; add in this priority order with a real public toolchain and artifact contract |
 
 Dreamcast and original PlayStation ports remain architectural and regression references.
@@ -137,8 +137,8 @@ contract exists.
    tide/raft island composition, ambience, and playback controls are done. Proprietary
    holiday sprite presentation is deliberately not distributed.**
 5. Browser RetroArch build/link/dist/HTTP and real-Firefox synthetic-content harness.
-   **Done; local original-data auto-loading and real RetroArch Core Options navigation
-   are release gates for the final rebuilt distribution.** Continue expanding targets
+   **Infrastructure, local original-data auto-loading, and Core Options navigation pass;
+   authentic animation and stable-audio acceptance remain release-blocking.** Continue expanding targets
    one validated compiler/frontend at a time without weakening existing gates.
 
 The project intentionally adds targets sequentially. A giant untested Makefile is not

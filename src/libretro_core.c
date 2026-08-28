@@ -2061,7 +2061,7 @@ void retro_get_system_info(struct retro_system_info *info)
 {
     memset(info, 0, sizeof(*info));
     info->library_name = "Johnny Castaway";
-    info->library_version = "0.1.2";
+    info->library_version = "0.1.3";
     info->valid_extensions = "map|001";
     info->need_fullpath = true;
     info->block_extract = false;

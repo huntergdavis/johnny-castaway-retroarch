@@ -63,7 +63,7 @@ jobs:
           python3 tools/test_deterministic_zip.py
           python3 tools/test_installable_frontend_validator.py
 
-      - name: Build and validate Switch, 3DS, GameCube, Wii U, Vita, and PS2 frontend packages
+      - name: Build and validate Switch, 3DS, GameCube, Wii, Wii U, Vita, and PS2 frontend packages
         env:
           INSTALLABLE_FRONTEND_CORE_DIR: build/console
           INSTALLABLE_FRONTEND_BUILD_DIR: build/installable-frontends
@@ -74,10 +74,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for target in switch 3ds gamecube wiiu vita ps2; do
+          for target in switch 3ds gamecube wii wiiu vita ps2; do
             test -s "build/installable-frontends/out/$target/johnny-castaway-$target-frontend.zip"
             (cd "build/installable-frontends/out/$target" && sha256sum -c SHA256SUMS)
           done
+          test -s build/installable-frontends/out/wii/JohnnyCastaway.dol
+          test -s build/installable-frontends/out/wii/meta.xml
+          test -s build/installable-frontends/out/wii/retroarch_wii.elf
 
       - name: Upload validated console cores
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

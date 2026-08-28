@@ -29,6 +29,18 @@ terms still apply to the resulting executable:
   pinned frontend's supported external-libogc mode. `/opt/devkitpro/libogc/LICENSE`
   and the `portlibs/gamecube/licenses`, `portlibs/gamecube/share/licenses`, and
   `portlibs/ppc/licenses` trees are copied under distinct `sdk/` subdirectories.
+- Wii uses the same immutable devkitPPC image and current
+  [devkitPro/libogc](https://github.com/devkitPro/libogc). The pinned RetroArch
+  revision is altered by the packaged `retroarch-wii-single-core.patch`: re-exec and
+  the GPLv2-only `wii/app_booter` are omitted, while the statically linked Johnny core,
+  RGUI, content browser, and GX runtime remain. The patch is GPLv3-or-later, its exact
+  SHA-256 is recorded in build provenance, and its bytes ship under `docs/patches/`.
+  `/opt/devkitpro/libogc/LICENSE`, `portlibs/wii/licenses`, and
+  `portlibs/ppc/licenses` are copied under distinct `sdk/` subdirectories. The pinned
+  image has no `portlibs/wii/share/licenses` directory.
+  Networking, RetroAchievements, and thread-dependent Wii USB HID are explicitly
+  disabled to avoid legacy newlib/libogc interfaces; these optional exclusions are
+  recorded verbatim in package provenance.
 - Wii U uses the same immutable devkitPPC image and the public
   [devkitPro/wut](https://github.com/devkitPro/wut/tree/2016e429c16dab366d902455b43f21ccb520e23d)
   v1.9.1 (Zlib) runtime and `elf2rpl` selected by

@@ -18,7 +18,7 @@ from unittest import mock
 import check_installable_frontend as validator
 
 
-VERSION = "0.1.2"
+VERSION = "0.1.3"
 PROGRAM_ID = 0x0004000004A43000
 
 
@@ -171,6 +171,61 @@ def cia_fixture() -> bytearray:
     return payload
 
 
+def dol_fixture(target: str = "gamecube", include_markers: bool = True) -> bytearray:
+    loaded = marker_blob() if include_markers else b"no-linked-core-markers"
+    if target == "wii":
+        loaded += b"\0" + validator.WII_IDENTITY
+    payload = bytearray(0x100 + len(loaded))
+    struct.pack_into(">I", payload, 0x00, 0x100)
+    struct.pack_into(">I", payload, 0x48, 0x80004000)
+    struct.pack_into(">I", payload, 0x90, len(loaded))
+    struct.pack_into(">II", payload, 0xD8, 0x80020000, 0x100)
+    struct.pack_into(">I", payload, 0xE0, 0x80004000)
+    payload[0x100:] = loaded
+    return payload
+
+
+def powerpc_elf_fixture(target: str = "GameCube", include_markers: bool = True) -> bytearray:
+    loaded = marker_blob() if include_markers else b"no-linked-core-markers"
+    if target == "Wii":
+        loaded += b"\0" + validator.WII_IDENTITY
+    segment_offset = 52 + 32
+    payload = bytearray(segment_offset + len(loaded))
+    payload[:7] = b"\x7fELF\x01\x02\x01"
+    struct.pack_into(">HHI", payload, 16, 2, 20, 1)
+    struct.pack_into(">III", payload, 24, 0x80004000, 52, 0)
+    struct.pack_into(">IHHHHHH", payload, 36, 0, 52, 32, 1, 0, 0, 0)
+    struct.pack_into(
+        ">8I",
+        payload,
+        52,
+        1,
+        segment_offset,
+        0x80004000,
+        0x80004000,
+        len(loaded),
+        len(loaded),
+        5,
+        32,
+    )
+    payload[segment_offset:] = loaded
+    return payload
+
+
+def wii_meta_fixture() -> bytes:
+    return (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+        '<app version="1">\n'
+        '  <name>Johnny Castaway</name>\n'
+        '  <coder>Johnny Castaway contributors</coder>\n'
+        f'  <version>{VERSION}</version>\n'
+        '  <short_description>Johnny Castaway for RetroArch</short_description>\n'
+        '  <long_description>Runs legally owned Johnny Castaway data with the '
+        'statically linked libretro core.</long_description>\n'
+        '</app>\n'
+    ).encode()
+
+
 def zip_bytes(entries: list[tuple[str, bytes]], mode: int = 0o644) -> bytes:
     output = io.BytesIO()
     with zipfile.ZipFile(output, "w") as archive:
@@ -189,6 +244,71 @@ class MetadataParserTests(unittest.TestCase):
         validator.validate_cia(bytes(cia_fixture()), VERSION)
         validator.validate_vpk(vita_vpk_fixture(), VERSION)
         validator.validate_vita_audit_elf(bytes(vita_audit_elf_fixture()), VERSION)
+        validator.validate_dol(bytes(dol_fixture()), VERSION, "gamecube")
+        validator.validate_dol(bytes(dol_fixture("wii")), VERSION, "wii")
+        validator.validate_powerpc_audit_elf(
+            bytes(powerpc_elf_fixture()), VERSION, "GameCube"
+        )
+        validator.validate_powerpc_audit_elf(
+            bytes(powerpc_elf_fixture("Wii")), VERSION, "Wii"
+        )
+        validator.validate_wii_meta(wii_meta_fixture(), VERSION)
+
+    def test_dol_ranges_loaded_markers_entry_and_wii_identity_are_required(self) -> None:
+        appended = dol_fixture(include_markers=False)
+        appended.extend(marker_blob())
+        with self.assertRaisesRegex(SystemExit, "loaded sections.*linked Johnny marker"):
+            validator.validate_dol(bytes(appended), VERSION, "gamecube")
+
+        wrong_entry = dol_fixture()
+        struct.pack_into(">I", wrong_entry, 0xE0, 0x80030000)
+        with self.assertRaisesRegex(SystemExit, "entry point"):
+            validator.validate_dol(bytes(wrong_entry), VERSION, "gamecube")
+
+        overlap = dol_fixture()
+        struct.pack_into(">I", overlap, 0x1C, 0x100)
+        struct.pack_into(">I", overlap, 0x64, 0x80030000)
+        struct.pack_into(">I", overlap, 0xAC, 4)
+        with self.assertRaisesRegex(SystemExit, "file section ranges overlap"):
+            validator.validate_dol(bytes(overlap), VERSION, "gamecube")
+
+        with self.assertRaisesRegex(SystemExit, "Wii frontend identity"):
+            validator.validate_dol(bytes(dol_fixture()), VERSION, "wii")
+
+    def test_powerpc_audit_elf_only_accepts_loaded_target_segments(self) -> None:
+        appended = powerpc_elf_fixture(include_markers=False)
+        appended.extend(marker_blob())
+        with self.assertRaisesRegex(SystemExit, "loaded segments.*linked Johnny marker"):
+            validator.validate_powerpc_audit_elf(
+                bytes(appended), VERSION, "GameCube"
+            )
+
+        for offset, replacement, message in (
+            (5, b"\x01", "big-endian"),
+            (18, struct.pack(">H", 40), "PowerPC"),
+            (24, struct.pack(">I", 0x80030000), "entry point"),
+        ):
+            with self.subTest(offset=offset):
+                payload = powerpc_elf_fixture()
+                payload[offset : offset + len(replacement)] = replacement
+                with self.assertRaisesRegex(SystemExit, message):
+                    validator.validate_powerpc_audit_elf(
+                        bytes(payload), VERSION, "GameCube"
+                    )
+
+        with self.assertRaisesRegex(SystemExit, "Wii frontend identity"):
+            validator.validate_powerpc_audit_elf(
+                bytes(powerpc_elf_fixture()), VERSION, "Wii"
+            )
+
+    def test_wii_meta_requires_exact_identity_and_field_set(self) -> None:
+        validator.validate_wii_meta(wii_meta_fixture(), VERSION)
+        extra = wii_meta_fixture().replace(b"</app>", b"<ahb_access/></app>")
+        with self.assertRaisesRegex(SystemExit, "unexpected or missing fields"):
+            validator.validate_wii_meta(extra, VERSION)
+        wrong = wii_meta_fixture().replace(b"Johnny Castaway", b"Wrong App", 1)
+        with self.assertRaisesRegex(SystemExit, "unexpected or missing fields"):
+            validator.validate_wii_meta(wrong, VERSION)
 
     def test_vita_linkage_markers_are_required_in_audit_elf_not_self(self) -> None:
         vpk = vita_vpk_fixture()

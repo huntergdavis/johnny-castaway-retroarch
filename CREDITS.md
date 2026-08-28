@@ -103,6 +103,14 @@ are not copied into this repository; generated installable frontends carry the
 available upstream license notices for libraries selected by the official platform
 makefiles.
 
+The Wii frontend compatibility work also owes thanks to the devkitPro/libogc
+contributors whose current public SDK defines the supported runtime boundary. The
+project's tracked GPLv3 single-core patch conditionally disables RetroArch's re-exec
+path and excludes its GPLv2-only app booter; it was independently written after a
+local cross-session `deja` search found no prior reusable implementation. The exact
+patch bytes, rationale, license, and SHA-256 are carried in generated Wii packages and
+recorded in `docs/PROVENANCE.md` and `docs/FRONTEND_SDK_NOTICES.md`.
+
 ## Additional open media and algorithms
 
 - BigSoundBank sound 0266, [“Sea: Waves”](https://bigsoundbank.com/sea-waves-s0266.html),

@@ -51,7 +51,7 @@ class WebDistributionValidatorTests(unittest.TestCase):
             root / "licenses/retroarch-assets-CC-BY-4.0"
         ).read_bytes()
 
-        info = b'display_version = "0.1.2"\n'
+        info = b'display_version = "0.1.3"\n'
         bundle_path = root / "assets/frontend/bundle.zip"
         bundle_path.parent.mkdir(parents=True, exist_ok=True)
         with zipfile.ZipFile(bundle_path, "w") as bundle:
@@ -66,7 +66,7 @@ class WebDistributionValidatorTests(unittest.TestCase):
                 (
                     "Johnny Castaway RetroArch Web Player build provenance",
                     f"Johnny Castaway commit: {'a' * 40} (clean)",
-                    "Frontend version: 0.1.2",
+                    "Frontend version: 0.1.3",
                     "Tree state: clean",
                     f"Core metadata SHA-256: {hashlib.sha256(info).hexdigest()}",
                     f"BrowserFS SHA-256: {hashlib.sha256(browserfs).hexdigest()}",

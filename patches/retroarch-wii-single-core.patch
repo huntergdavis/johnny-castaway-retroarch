@@ -1,0 +1,222 @@
+From: Johnny Castaway contributors
+Subject: Wii: support a GPLv3-only statically linked single-core frontend
+SPDX-License-Identifier: GPL-3.0-or-later
+
+RetroArch revision 96a1b1a9cf3f9166affcfd7df4323aa58d5c281a embeds
+wii/app_booter when HAVE_RARCH_EXEC is enabled. That component is GPLv2-only,
+so it cannot be included in this GPLv3 combined frontend. Disable the optional
+legacy networking, achievements, threaded USB-HID, and re-exec paths; guard their
+objects and callbacks; and expose a linked target identity for fail-closed artifact
+validation.
+
+The normal statically linked Johnny core, content browser, RGUI, GX video/audio,
+Wiimote/Classic Controller/GameCube-pad input, configuration, and save-state paths
+remain enabled. The build also sets HAVE_THREADS=0 and disables the legacy socket
+define on the command line for compatibility with current devkitPPC/libogc.
+
+diff --git a/Makefile.wii b/Makefile.wii
+index 761ad03..954f1b3 100644
+--- a/Makefile.wii
++++ b/Makefile.wii
+@@ -7,8 +7,8 @@ HAVE_FILE_LOGGER           = 0
+ HAVE_CC_RESAMPLER          = 1
+ WHOLE_ARCHIVE_LINK         = 0
+ BIG_STACK                  = 1
+-HAVE_NETWORKING            = 1
+-HAVE_IFINFO                = 1
++HAVE_NETWORKING            = 0
++HAVE_IFINFO                = 0
+ PC_DEVELOPMENT_IP_ADDRESS  = 255.255.255.255
+ PC_DEVELOPMENT_UDP_PORT    = 3490
+ RARCH_CONSOLE              = 0
+@@ -159,20 +159,24 @@ HAVE_STATIC_AUDIO_FILTERS := 1
+ HAVE_STATIC_VIDEO_FILTERS := 1
+ 
+ #HAVE_LANGEXTRA          := 1
+-HAVE_WIIUSB_HID          := 1
+-HAVE_HID                 := 1
+-HAVE_RARCH_EXEC          := 1
++HAVE_WIIUSB_HID          := 0
++HAVE_HID                 := 0
++HAVE_RARCH_EXEC          := 0
+ HAVE_RSOUND              := 0
+ HAVE_XMB                 := 0
+ HAVE_OZONE               := 0
+ HAVE_RGUI                := 1
+ HAVE_MATERIALUI          := 0
+-HAVE_CHEEVOS             := 1
++HAVE_CHEEVOS             := 0
+ 
+-CFLAGS      += -DHAVE_SOCKET_LEGACY -DHAVE_CHEEVOS
++CFLAGS      += -DHAVE_SOCKET_LEGACY
+ 
+ APP_BOOTER_DIR = wii/app_booter
+-PLATOBJS := $(APP_BOOTER_DIR)/app_booter.binobj
++PLATOBJS :=
++
++ifeq ($(HAVE_RARCH_EXEC), 1)
++   PLATOBJS += $(APP_BOOTER_DIR)/app_booter.binobj
++endif
+ 
+ ifeq ($(USBGECKO), 1)
+    CFLAGS += -DUSBGECKO
+@@ -183,7 +187,15 @@ INCLUDE += -I./libretro-common/include \
+ 	   -Ideps/rcheevos/include
+ CFLAGS += -Wall -std=gnu99 $(MACHDEP) $(PLATCFLAGS) $(INCLUDE)
+ 
+-OBJ =  $(PLATOBJS) audio/drivers/gx_audio.o gfx/drivers/gx_gfx.o input/drivers/gx_input.o frontend/drivers/platform_gx.o input/drivers_joypad/gx_joypad.o libretro-common/memory/mem2_manager.o gfx/drivers/gx_gfx_vi_encoder.o frontend/drivers/platform_wii.o input/drivers_hid/wiiusb_hid.o
++OBJ =  $(PLATOBJS) audio/drivers/gx_audio.o gfx/drivers/gx_gfx.o input/drivers/gx_input.o frontend/drivers/platform_gx.o input/drivers_joypad/gx_joypad.o libretro-common/memory/mem2_manager.o gfx/drivers/gx_gfx_vi_encoder.o
++
++ifeq ($(HAVE_WIIUSB_HID), 1)
++   OBJ += input/drivers_hid/wiiusb_hid.o
++endif
++
++ifeq ($(HAVE_RARCH_EXEC), 1)
++   OBJ += frontend/drivers/platform_wii.o
++endif
+ 
+ ifeq ($(EXTERNAL_LIBOGC), 0)
+    OBJ += wii/libogc/libfat/libfat.o wii/libogc/libfat/fatfile.o wii/libogc/libfat/file_allocation_table.o wii/libogc/libfat/cache.o wii/libogc/libfat/fatdir.o wii/libogc/libfat/partition.o wii/libogc/libfat/directory.o wii/libogc/libfat/filetime.o wii/libogc/libfat/disc.o
+@@ -307,16 +319,20 @@ $(EXT_INTER_TARGET): $(OBJ)
+ %.binobj: %.bin
+ 	$(LD) -r -b binary $(OBJOUT)$@ $<
+ 
++ifeq ($(HAVE_RARCH_EXEC), 1)
+ $(APP_BOOTER_DIR)/app_booter.bin:
+ 	export EXTERNAL_LIBOGC
+ 	$(MAKE) -C $(APP_BOOTER_DIR)
++endif
+ 
+ clean:
+ 	@$(if $(Q), echo $@,)
+ 	$(Q)rm -f $(EXT_TARGET)
+ 	$(Q)rm -f $(EXT_INTER_TARGET)
+ 	$(Q)rm -f $(OBJ)
++ifeq ($(HAVE_RARCH_EXEC), 1)
+ 	$(Q)$(MAKE) -C $(APP_BOOTER_DIR) clean
++endif
+ 
+ .PHONY: clean
+ 
+diff --git a/frontend/drivers/platform_gx.c b/frontend/drivers/platform_gx.c
+index 6dc4968..4821a10 100644
+--- a/frontend/drivers/platform_gx.c
++++ b/frontend/drivers/platform_gx.c
+@@ -66,14 +66,16 @@
+ #include <ogc/ios.h>
+ #include <ogc/usbstorage.h>
+ #include <sdcard/wiisd_io.h>
++#ifdef HAVE_RARCH_EXEC
+ extern void system_exec_wii(const char *path, bool should_load_game);
+ #endif
++#endif
+ 
+ #ifdef USBGECKO
+ #include <debug.h>
+ #endif
+ 
+-#if defined(HW_RVL) && ! defined(IS_SALAMANDER)
++#if defined(HW_RVL) && !defined(IS_SALAMANDER) && defined(HAVE_RARCH_EXEC)
+ static enum frontend_fork gx_fork_mode = FRONTEND_FORK_NONE;
+ #endif
+ 
+@@ -119,6 +121,7 @@ static struct
+    const char *name;
+ } gx_devices[GX_DEVICE_END];
+ 
++#ifdef HAVE_THREADS
+ static slock_t *gx_device_mutex          = NULL;
+ static slock_t *gx_device_cond_mutex     = NULL;
+ static scond_t *gx_device_cond           = NULL;
+@@ -160,6 +163,7 @@ static void gx_devthread(void *a)
+    slock_unlock(gx_device_cond_mutex);
+ }
+ #endif
++#endif
+ 
+ #endif
+ 
+@@ -396,16 +400,18 @@ static void frontend_gx_init(void *data)
+             gx_devices[GX_DEVICE_USB].name,
+             gx_devices[GX_DEVICE_USB].interface);
+ 
++#ifdef HAVE_THREADS
+    gx_device_cond_mutex = slock_new();
+    gx_device_cond       = scond_new();
+    gx_device_mutex      = slock_new();
+    gx_device_thread     = sthread_create(gx_devthread, NULL);
+ #endif
++#endif
+ }
+ 
+ static void frontend_gx_deinit(void *data)
+ {
+-#if defined(HW_RVL) && !defined(IS_SALAMANDER)
++#if defined(HW_RVL) && !defined(IS_SALAMANDER) && defined(HAVE_THREADS)
+    slock_lock(gx_device_cond_mutex);
+    gx_stop_dev_thread = true;
+    slock_unlock(gx_device_cond_mutex);
+@@ -425,6 +431,7 @@ static void frontend_gx_deinit(void *data)
+ #endif
+ }
+ 
++#ifdef HAVE_RARCH_EXEC
+ static void frontend_gx_exec(const char *path, bool should_load_game)
+ {
+ #ifdef HW_RVL
+@@ -484,6 +491,7 @@ static void frontend_gx_exitspawn(char *s, size_t len, char *args)
+ #endif
+    frontend_gx_exec(s, should_load_game);
+ }
++#endif
+ 
+ static void frontend_gx_process_args(int *argc, char *argv[])
+ {
+@@ -505,6 +513,7 @@ static void frontend_gx_process_args(int *argc, char *argv[])
+ #endif
+ }
+ 
++#ifdef HAVE_RARCH_EXEC
+ #if defined(HW_RVL) && !defined(IS_SALAMANDER)
+ static bool frontend_gx_set_fork(enum frontend_fork fork_mode)
+ {
+@@ -526,6 +535,12 @@ static bool frontend_gx_set_fork(enum frontend_fork fork_mode)
+    return true;
+ }
+ #endif
++#endif
++
++static void frontend_gx_get_name(char *s, size_t len)
++{
++   strlcpy(s, "Johnny Castaway Wii frontend", len);
++}
+ 
+ static enum frontend_architecture frontend_gx_get_arch(void)
+ {
+@@ -587,16 +602,24 @@ frontend_ctx_driver_t frontend_ctx_gx = {
+    frontend_gx_get_env,             /* get_env */
+    frontend_gx_init,
+    frontend_gx_deinit,
++#ifdef HAVE_RARCH_EXEC
+    frontend_gx_exitspawn,
++#else
++   NULL,
++#endif
+    frontend_gx_process_args,
++#ifdef HAVE_RARCH_EXEC
+    frontend_gx_exec,
+-#if defined(HW_RVL) && !defined(IS_SALAMANDER)
++#else
++   NULL,
++#endif
++#if defined(HW_RVL) && !defined(IS_SALAMANDER) && defined(HAVE_RARCH_EXEC)
+    frontend_gx_set_fork,            /* set_fork */
+ #else
+    NULL,                            /* set_fork */
+ #endif
+    frontend_gx_shutdown,            /* shutdown */
+-   NULL,                            /* get_name */
++   frontend_gx_get_name,            /* get_name */
+    NULL,                            /* get_os */
+    NULL,                            /* load_content */
+    frontend_gx_get_arch,            /* get_architecture */

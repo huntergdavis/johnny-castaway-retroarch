@@ -1,7 +1,7 @@
 # Installable console frontends
 
-The generated Switch, Nintendo 3DS, GameCube, Wii U, PlayStation Vita/TV, and PlayStation 2
-packages link the validated Johnny Castaway core into RetroArch revision
+The generated Switch, Nintendo 3DS, GameCube, Wii, Wii U, PlayStation Vita/TV, and
+PlayStation 2 packages link the validated Johnny Castaway core into RetroArch revision
 `96a1b1a9cf3f9166affcfd7df4323aa58d5c281a`. They are standalone frontend
 executables, unlike the `.a` files under `build/console`, which are link inputs only.
 
@@ -55,6 +55,30 @@ the pinned makefile's supported current-libogc/default-startup configuration:
 salamander/core switching; the Johnny core is statically linked directly into the DOL.
 Browse to the legally owned resource pair after launch.
 
+### Nintendo Wii
+
+Extract `johnny-castaway-wii-frontend.zip` to an SD-card root. The Homebrew Channel
+layout is:
+
+```text
+apps/JohnnyCastaway/boot.dol
+apps/JohnnyCastaway/meta.xml
+```
+
+Launch Johnny Castaway from the Homebrew Channel and browse to the owned resource
+pair on SD or USB. This is deliberately a statically linked single-core frontend:
+the GPLv2-only upstream Wii app booter and RetroArch re-exec/core-switch path are not
+compiled into this GPLv3 package. Normal RGUI menus, the Johnny Core Options, content
+browsing, GX video/audio/input, configuration, save states, and the linked core remain.
+The exact external-libogc build flags are `EXTERNAL_LIBOGC=1 HAVE_RARCH_EXEC=0
+HAVE_THREADS=0 HAVE_NETWORKING=0 HAVE_CHEEVOS=0 HAVE_WIIUSB_HID=0
+GX_PTHREAD_LEGACY=0 BIG_STACK=0`, with legacy socket/achievements defines removed.
+Networking, RetroAchievements, and thread-dependent USB HID are therefore unavailable;
+Wiimote, Classic Controller, and GameCube-pad input use the retained GX joypad path.
+The tracked compatibility patch and its SHA-256 ship in the package and provenance.
+`icon.png` is intentionally omitted because no owned/open 128×48 Johnny-specific Wii
+icon is available; Homebrew Channel accepts it as optional metadata.
+
 ### Nintendo Wii U
 
 Extract `johnny-castaway-wiiu-frontend.zip` to an SD-card root. It installs the
@@ -98,10 +122,10 @@ because the pinned frontend expects that directory layout.
 
 ## Reproduce
 
-Build all six frontends from strictly validated current core archives:
+Build all seven frontends from strictly validated current core archives:
 
 ```sh
-./scripts/build-console-cores.sh switch 3ds gamecube wiiu vita ps2
+./scripts/build-console-cores.sh switch 3ds gamecube wii wiiu vita ps2
 INSTALLABLE_FRONTEND_CORE_DIR=build/console \
   ./scripts/build-installable-frontends.sh --all
 ```
@@ -118,6 +142,7 @@ Outputs are placed below:
 build/installable-frontends/out/switch/
 build/installable-frontends/out/3ds/
 build/installable-frontends/out/gamecube/
+build/installable-frontends/out/wii/
 build/installable-frontends/out/wiiu/
 build/installable-frontends/out/vita/
 build/installable-frontends/out/ps2/
@@ -132,10 +157,13 @@ their per-target `BUILD-PROVENANCE.txt` manifests bind the observed SHA-256 to t
 Johnny commit, version, clean/dirty state, platform, and immutable SDK image. The
 frontend requires that exact manifest and includes it as `CORE-BUILD-PROVENANCE.txt`.
 
-The validator checks NRO/3DSX/SMDH/CIA/DOL/RPX/VPK/ELF format identities, platform metadata,
-embedded Johnny and current Story/Core Option strings, install layout, byte-identical
-packaging, legal/provenance files, deterministic ZIP timestamps, install-ZIP member
-names, and member names inside nested Vita VPK packages for absence of original data.
+The validator checks NRO/3DSX/SMDH/CIA/DOL/RPX/VPK/ELF format identities, platform
+metadata, loaded executable sections/segments, embedded Johnny and current Story/Core
+Option strings, install layout, byte-identical packaging, legal/provenance files,
+deterministic ZIP timestamps, install-ZIP member names, and member names inside nested
+Vita VPK packages for absence of original data. Wii additionally requires the linked
+single-core identity, exact patch bytes/hash, no-reexec flags, PowerPC audit ELF, and
+Homebrew Channel metadata.
 
 These checks prove compilation, frontend linkage, package structure, metadata, and
 core identity. Real device or emulator execution remains required for boot, content

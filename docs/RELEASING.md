@@ -39,7 +39,7 @@ found.
 sha=0123456789abcdef0123456789abcdef01234567
 ci_run=12345678901
 console_run=12345678902
-output=build/release/v0.1.2
+output=build/release/v0.1.3
 
 scripts/assemble-release.sh \
   --sha "$sha" \
@@ -50,11 +50,11 @@ scripts/assemble-release.sh \
 
 The output contains:
 
-- `assets/`: sixteen tested ZIPs derived from ten Actions source artifacts. The PSP
-  asset and six unified console frontend assets are directly installable ZIPs; the
+- `assets/`: seventeen tested ZIPs derived from ten Actions source artifacts. The PSP
+  asset and seven unified console frontend assets are directly installable ZIPs; the
   other nine assets wrap their source artifacts;
 - `artifacts/`: the extracted source artifacts used to make those ZIPs;
-- `SHA256SUMS`: hashes for the sixteen releasable ZIPs;
+- `SHA256SUMS`: hashes for the seventeen releasable ZIPs;
 - `CONTENTS.sha256`: an exhaustive hash inventory of extracted artifact files;
 - `INVENTORY.md`: run URLs, artifact IDs, sizes, hashes, contents, and validation
   evidence;
@@ -67,15 +67,15 @@ Repeat the checksum checks independently:
 (cd "$output/artifacts" && sha256sum -c ../CONTENTS.sha256)
 ```
 
-Review `INVENTORY.md`, every release-note claim, licenses/notices, all sixteen filenames,
+Review `INVENTORY.md`, every release-note claim, licenses/notices, all seventeen filenames,
 and the GitHub Actions logs. Confirm there are no local original data files beneath
 the output. The Web ZIP must contain no `local-content/` directory.
 
 The `johnny-castaway-console-cores` artifact also carries independently validated
-Switch, 3DS, GameCube, Wii U, Vita, and PS2 install ZIPs under
+Switch, 3DS, GameCube, Wii, Wii U, Vita, and PS2 install ZIPs under
 `build/installable-frontends/out/`.
-The assembler validates and promotes those six nested packages to direct release ZIPs,
-turning ten Actions source artifacts into sixteen release assets. Do not claim device
+The assembler validates and promotes those seven nested packages to direct release ZIPs,
+turning ten Actions source artifacts into seventeen release ZIPs plus `SHA256SUMS`. Do not claim device
 execution until the platform gates in
 `INSTALLABLE_FRONTENDS.md` are complete.
 
@@ -91,9 +91,9 @@ assembly or review. After replacing the example values with the independently ch
 SHA, version, and output directory, obtain explicit publication approval and run:
 
 ```sh
-version=v0.1.2
+version=v0.1.3
 sha=0123456789abcdef0123456789abcdef01234567
-output=build/release/v0.1.2
+output=build/release/v0.1.3
 repository=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
 
 gh release create "$version" \

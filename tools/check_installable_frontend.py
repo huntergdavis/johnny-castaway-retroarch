@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import hashlib
 import io
 import pathlib
 import re
@@ -16,6 +17,11 @@ import xml.etree.ElementTree as ET
 
 
 RETROARCH_REVISION = "96a1b1a9cf3f9166affcfd7df4323aa58d5c281a"
+DEVKITPPC_IMAGE = (
+    "devkitpro/devkitppc@sha256:"
+    "4c919aa26151dd43d88ca28c922d1fe2409579a8ba60ef56517baf1abdfb1a48"
+)
+WII_IDENTITY = b"Johnny Castaway Wii frontend"
 CORE_OPTION_KEYS = (
     "johnny_castaway_audio_enabled",
     "johnny_castaway_audio_volume",
@@ -460,25 +466,133 @@ def validate_ps2_elf(payload: bytes, version: str) -> None:
     require_markers(payload, "PlayStation 2 ELF", version)
 
 
-def validate_dol(payload: bytes, version: str) -> None:
+def inside_regions(start: int, size: int, regions: tuple[tuple[int, int], ...]) -> bool:
+    end = start + size
+    return end >= start and any(start >= low and end <= high for low, high in regions)
+
+
+def reject_overlaps(ranges: list[tuple[int, int]], label: str) -> None:
+    for previous, current in zip(sorted(ranges), sorted(ranges)[1:]):
+        if previous[1] > current[0]:
+            fail(f"{label} ranges overlap")
+
+
+def validate_dol(payload: bytes, version: str, target: str = "gamecube") -> None:
+    label = "Wii DOL" if target == "wii" else "GameCube DOL"
     if len(payload) < 0x100:
-        fail("GameCube DOL is truncated")
+        fail(f"{label} is truncated")
     text_offsets = struct.unpack_from(">7I", payload, 0x00)
     data_offsets = struct.unpack_from(">11I", payload, 0x1C)
+    text_addresses = struct.unpack_from(">7I", payload, 0x48)
+    data_addresses = struct.unpack_from(">11I", payload, 0x64)
     text_sizes = struct.unpack_from(">7I", payload, 0x90)
     data_sizes = struct.unpack_from(">11I", payload, 0xAC)
+    bss_address, bss_size = struct.unpack_from(">II", payload, 0xD8)
     entry = struct.unpack_from(">I", payload, 0xE0)[0]
-    sections = [
-        (offset, size)
-        for offset, size in zip(text_offsets + data_offsets, text_sizes + data_sizes)
+    text_sections = [
+        (offset, address, size)
+        for offset, address, size in zip(text_offsets, text_addresses, text_sizes)
         if size
     ]
-    if not sections or not entry:
-        fail("GameCube DOL has no loadable sections or entry point")
-    for offset, size in sections:
-        if offset < 0x100 or offset + size > len(payload):
-            fail("GameCube DOL has an invalid section range")
-    require_markers(payload, "GameCube DOL", version)
+    data_sections = [
+        (offset, address, size)
+        for offset, address, size in zip(data_offsets, data_addresses, data_sizes)
+        if size
+    ]
+    sections = text_sections + data_sections
+    if not sections or not text_sections or not entry:
+        fail(f"{label} has no loadable text sections or entry point")
+    regions = ((0x80000000, 0x81800000),)
+    if target == "wii":
+        regions += ((0x90000000, 0x94000000),)
+    file_ranges: list[tuple[int, int]] = []
+    memory_ranges: list[tuple[int, int]] = []
+    loaded = bytearray()
+    for offset, address, size in sections:
+        end = offset + size
+        if offset < 0x100 or end < offset or end > len(payload):
+            fail(f"{label} has an invalid file section range")
+        if not inside_regions(address, size, regions):
+            fail(f"{label} has a section outside target RAM")
+        file_ranges.append((offset, end))
+        memory_ranges.append((address, address + size))
+        loaded.extend(payload[offset:end])
+    reject_overlaps(file_ranges, f"{label} file section")
+    reject_overlaps(memory_ranges, f"{label} memory section")
+    if not any(address <= entry < address + size for _, address, size in text_sections):
+        fail(f"{label} entry point is not in a text section")
+    if bss_size:
+        if not inside_regions(bss_address, bss_size, regions):
+            fail(f"{label} BSS is outside target RAM")
+        reject_overlaps(
+            [*memory_ranges, (bss_address, bss_address + bss_size)],
+            f"{label} load/BSS",
+        )
+    require_markers(bytes(loaded), f"{label} loaded sections", version)
+    if target == "wii" and WII_IDENTITY not in loaded:
+        fail("Wii DOL loaded sections are missing the Wii frontend identity")
+
+
+def validate_powerpc_audit_elf(payload: bytes, version: str, target: str) -> None:
+    label = f"{target} audit ELF"
+    if len(payload) < 52 or payload[:4] != b"\x7fELF":
+        fail(f"{label} has no ELF header")
+    if payload[4] != 1 or payload[5] != 2 or payload[6] != 1:
+        fail(f"{label} is not ELF32 big-endian")
+    elf_type, machine = struct.unpack_from(">HH", payload, 16)
+    entry, program_offset = struct.unpack_from(">II", payload, 24)
+    program_entry_size, program_count = struct.unpack_from(">HH", payload, 42)
+    if elf_type != 2 or machine != 20:
+        fail(f"{label} is not an executable for PowerPC")
+    if (
+        program_entry_size < 32
+        or not program_count
+        or program_count > 128
+        or program_offset + program_entry_size * program_count > len(payload)
+    ):
+        fail(f"{label} has an invalid program header table")
+    regions = ((0x80000000, 0x81800000),)
+    if target == "Wii":
+        regions += ((0x90000000, 0x94000000),)
+    loaded = bytearray()
+    load_ranges: list[tuple[int, int]] = []
+    executable_ranges: list[tuple[int, int]] = []
+    for index in range(program_count):
+        offset = program_offset + index * program_entry_size
+        (
+            segment_type,
+            file_offset,
+            virtual_address,
+            _physical_address,
+            file_size,
+            memory_size,
+            flags,
+            _alignment,
+        ) = struct.unpack_from(">8I", payload, offset)
+        if segment_type != 1:
+            continue
+        if not memory_size:
+            if file_size:
+                fail(f"{label} has a file-backed zero-memory PT_LOAD segment")
+            continue
+        file_end = file_offset + file_size
+        if (
+            memory_size < file_size
+            or file_end < file_offset
+            or file_end > len(payload)
+            or not inside_regions(virtual_address, memory_size, regions)
+        ):
+            fail(f"{label} has an invalid PT_LOAD segment")
+        load_ranges.append((virtual_address, virtual_address + memory_size))
+        if flags & 1:
+            executable_ranges.append((virtual_address, virtual_address + memory_size))
+        loaded.extend(payload[file_offset:file_end])
+    if not load_ranges or not any(low <= entry < high for low, high in executable_ranges):
+        fail(f"{label} entry point is not in an executable PT_LOAD segment")
+    reject_overlaps(load_ranges, f"{label} PT_LOAD")
+    require_markers(bytes(loaded), f"{label} loaded segments", version)
+    if target == "Wii" and WII_IDENTITY not in loaded:
+        fail("Wii audit ELF loaded segments are missing the Wii frontend identity")
 
 
 def validate_wiiu_rpx(payload: bytes) -> None:
@@ -522,6 +636,28 @@ def validate_wiiu_meta(payload: bytes, version: str) -> None:
     for name, value in expected.items():
         if root.findtext(name) != value:
             fail(f"Wii U meta.xml has an unexpected {name}")
+
+
+def validate_wii_meta(payload: bytes, version: str) -> None:
+    try:
+        root = ET.fromstring(payload)
+    except ET.ParseError as error:
+        fail(f"Wii meta.xml is invalid: {error}")
+    expected = {
+        "name": "Johnny Castaway",
+        "coder": "Johnny Castaway contributors",
+        "version": version,
+        "short_description": "Johnny Castaway for RetroArch",
+        "long_description": (
+            "Runs legally owned Johnny Castaway data with the statically linked "
+            "libretro core."
+        ),
+    }
+    if root.tag != "app" or root.attrib != {"version": "1"}:
+        fail("Wii meta.xml has an unexpected application identity")
+    children = {child.tag: child.text or "" for child in root}
+    if children != expected:
+        fail("Wii meta.xml has unexpected or missing fields")
 
 
 def expected_zip_time(epoch: int) -> tuple[int, int, int, int, int, int]:
@@ -577,6 +713,11 @@ def validate_project_files(
     for packaged, source in PROJECT_FILE_MAP.items():
         if package.read(packaged) != git_bytes(project_root, expected_commit, source):
             fail(f"packaged project file differs from expected commit: {packaged}")
+    if target == "wii":
+        packaged = "docs/patches/retroarch-wii-single-core.patch"
+        source = "patches/retroarch-wii-single-core.patch"
+        if package.read(packaged) != git_bytes(project_root, expected_commit, source):
+            fail(f"packaged project file differs from expected commit: {packaged}")
     expected_line = f"Johnny Castaway commit: {expected_commit} (clean)".encode()
     if expected_line not in provenance.splitlines():
         fail("build provenance does not name the exact clean expected commit")
@@ -594,7 +735,7 @@ def main() -> int:
     parser.add_argument(
         "--target",
         required=True,
-        choices=("switch", "3ds", "gamecube", "wiiu", "vita", "ps2"),
+        choices=("switch", "3ds", "gamecube", "wii", "wiiu", "vita", "ps2"),
     )
     parser.add_argument("--artifact-dir", required=True, type=pathlib.Path)
     parser.add_argument("--package", required=True, type=pathlib.Path)
@@ -612,6 +753,7 @@ def main() -> int:
         "vita": ("JohnnyCastaway.vpk",),
         "ps2": ("JohnnyCastaway.elf",),
         "gamecube": ("JohnnyCastaway.dol",),
+        "wii": ("JohnnyCastaway.dol", "meta.xml"),
         "wiiu": ("JohnnyCastaway.rpx",),
     }[args.target]
     for name in raw_names:
@@ -629,6 +771,10 @@ def main() -> int:
         "vita": {"JohnnyCastaway.vpk": "JohnnyCastaway.vpk"},
         "ps2": {"JohnnyCastaway/retroarch_ps2.elf": "JohnnyCastaway.elf"},
         "gamecube": {"apps/JohnnyCastaway/boot.dol": "JohnnyCastaway.dol"},
+        "wii": {
+            "apps/JohnnyCastaway/boot.dol": "JohnnyCastaway.dol",
+            "apps/JohnnyCastaway/meta.xml": "meta.xml",
+        },
         "wiiu": {
             "wiiu/apps/JohnnyCastaway/JohnnyCastaway.rpx": "JohnnyCastaway.rpx",
             "wiiu/apps/JohnnyCastaway/meta.xml": "meta.xml",
@@ -638,7 +784,10 @@ def main() -> int:
     expected_time = expected_zip_time(args.epoch)
     with zipfile.ZipFile(args.package) as package:
         members = safe_members(package, "install ZIP", NORMALIZED_MODE)
-        require_package_files(set(members), set(install_paths))
+        target_files = set(install_paths)
+        if args.target == "wii":
+            target_files.add("docs/patches/retroarch-wii-single-core.patch")
+        require_package_files(set(members), target_files)
         for info in members.values():
             if info.date_time != expected_time:
                 fail(f"install ZIP member has a non-reproducible timestamp: {info.filename}")
@@ -653,6 +802,32 @@ def main() -> int:
         ):
             if expected not in provenance:
                 fail(f"build provenance is missing: {expected.decode()}")
+        if args.target == "wii":
+            core_provenance = package.read("CORE-BUILD-PROVENANCE.txt")
+            for expected in (
+                b"Target: wii",
+                b"Platform: wii",
+                f"SDK image: {DEVKITPPC_IMAGE}".encode(),
+            ):
+                if expected not in core_provenance.splitlines():
+                    fail(f"Wii core provenance is missing: {expected.decode()}")
+            patch_payload = package.read(
+                "docs/patches/retroarch-wii-single-core.patch"
+            )
+            patch_sha = hashlib.sha256(patch_payload).hexdigest()
+            for expected in (
+                b"Target: wii",
+                f"SDK image: {DEVKITPPC_IMAGE}".encode(),
+                b"RetroArch flags: EXTERNAL_LIBOGC=1 HAVE_THREADS=0 "
+                b"GX_PTHREAD_LEGACY=0 BIG_STACK=0 "
+                b"PLATCFLAGS=-UHAVE_SOCKET_LEGACY",
+                b"RetroArch patch configuration: HAVE_RARCH_EXEC=0 "
+                b"HAVE_NETWORKING=0 HAVE_CHEEVOS=0 HAVE_WIIUSB_HID=0",
+                f"RetroArch Wii compatibility patch SHA-256: {patch_sha}".encode(),
+                b"RetroArch Wii re-exec/app_booter included: no",
+            ):
+                if expected not in provenance.splitlines():
+                    fail(f"Wii frontend provenance is missing: {expected.decode()}")
         info_text = package.read("johnny_castaway_libretro.info").decode("utf-8")
         if f'display_version = "{args.version}"' not in info_text:
             fail("packaged core metadata version is inconsistent")
@@ -692,7 +867,24 @@ def main() -> int:
             if missing:
                 fail("PlayStation 2 install ZIP is missing: " + ", ".join(sorted(missing)))
     elif args.target == "gamecube":
-        validate_dol((args.artifact_dir / raw_names[0]).read_bytes(), args.version)
+        validate_dol(
+            (args.artifact_dir / raw_names[0]).read_bytes(),
+            args.version,
+            "gamecube",
+        )
+        audit = args.artifact_dir / "retroarch_ngc.elf"
+        if not audit.is_file():
+            fail(f"missing GameCube audit ELF: {audit}")
+        validate_powerpc_audit_elf(audit.read_bytes(), args.version, "GameCube")
+    elif args.target == "wii":
+        validate_dol(
+            (args.artifact_dir / raw_names[0]).read_bytes(), args.version, "wii"
+        )
+        validate_wii_meta((args.artifact_dir / "meta.xml").read_bytes(), args.version)
+        audit = args.artifact_dir / "retroarch_wii.elf"
+        if not audit.is_file():
+            fail(f"missing Wii audit ELF: {audit}")
+        validate_powerpc_audit_elf(audit.read_bytes(), args.version, "Wii")
     else:
         validate_wiiu_rpx((args.artifact_dir / raw_names[0]).read_bytes())
         validate_wiiu_meta((args.artifact_dir / "meta.xml").read_bytes(), args.version)

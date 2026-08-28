@@ -64,7 +64,7 @@ unexpected or undefined `retro_*` symbol.
 These are static core archives, not standalone console applications. A statically
 linked RetroArch build normally copies/renames the selected archive to the frontend's
 expected name, for example `libretro_psp1.a` or `libretro_wii.a`. Switch, 3DS,
-GameCube, Wii U, Vita, PS2, and PSP now also have pinned installable frontend builders; see
+GameCube, Wii, Wii U, Vita, PS2, and PSP now also have pinned installable frontend builders; see
 `INSTALLABLE_FRONTENDS.md` and `PSP_PACKAGE.md`.
 
 ## Installable frontend packages
@@ -81,6 +81,7 @@ validation and requires the adjacent commit/version/image-bound
 | Switch | NRO plus SD-root install ZIP | title `Johnny Castaway`, core version |
 | Nintendo 3DS | 3DSX, SMDH, CIA, and install ZIP | product `CTR-H-JCAST`, ID `0x4A430`, explicit numeric version |
 | GameCube | DOL plus Swiss-friendly install ZIP | current external libogc, default startup, statically linked Johnny core |
+| Wii | DOL plus Homebrew Channel install ZIP | current external libogc, statically linked Johnny core, tracked GPLv3 single-core/no-reexec patch |
 | Wii U | uncompressed RPX plus Homebrew Launcher install ZIP | pinned wut `elf2rpl` explicit large-RPX target |
 | Vita | normalized VPK and install ZIP | title ID `JCASTAWAY`, title `Johnny Castaway` |
 | PlayStation 2 | ELF and directory-layout install ZIP | static core with adjacent `cores`, `info`, and `retroarch` directories |

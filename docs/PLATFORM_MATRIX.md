@@ -26,10 +26,10 @@ toolchain, a current core artifact contract, and a verifiable build are required
 | Android arm64/armv7/x86_64/x86 | dynamic `.so` | all four `android_*` targets | Real NDK r29/API 21 strict builds and exact ABI checks pass |
 | macOS | dynamic `.dylib` | x86_64, arm64, universal | Real Xcode CI builds, exact exports, and universal verification pass |
 | iOS/tvOS | dynamic `.dylib` | arm64 device plus arm64/x86_64 simulators | Real Xcode CI builds and exact Mach-O checks pass |
-| Emscripten | static `.bc` linked into frontend | `emscripten` | Pinned RetroArch JS/WASM build and real-Firefox synthetic plus authentic auto-load/menu runs pass |
+| Emscripten | static `.bc` linked into frontend | `emscripten` | Pinned RetroArch JS/WASM build, HTTP checks, synthetic rendering, authentic auto-load, and menu navigation pass. Authentic data currently shows island/tree but not expected waves/full animation, with choppy audio; rendering/audio acceptance is release-blocking |
 | Nintendo Switch | static `.a` + installable `.nro` | `libnx` | Strict archive passes; pinned RetroArch NRO link, deterministic install ZIP, metadata, embedded-option, and no-data checks pass when the frontend workflow runs; device gate remains |
 | Nintendo 3DS | static `.a` + `.3dsx`/`.cia` | `ctr` | Strict archive passes; pinned RetroArch 3DSX/SMDH/CIA link with deterministic version/product identity and install-package checks is available; device gate remains |
-| GameCube/Wii/Wii U | static `.a` (GameCube `.dol`; Wii U `.rpx`) | `ngc`, `wii`, `wiiu` | All big-endian archives pass; GameCube's current-libogc/default-startup DOL and Wii U's pinned wut uncompressed RPX have deterministic install-package validation; Wii frontend and all device gates remain |
+| GameCube/Wii/Wii U | static `.a` + installable `.dol`/`.rpx` | `ngc`, `wii`, `wiiu` | All big-endian archives pass; GameCube and Wii DOLs and Wii U's pinned wut uncompressed RPX have deterministic install-package validation. Wii is a GPLv3 single-core/no-reexec build with its exact patch and audit ELF validated; all device gates remain |
 | PSP | static `.a` + installable `.PBP` | `psp1` | Real pinned PSPSDK archive/link/package checks pass; pinned PPSSPP v1.20.4 completes a 30-second boot with RetroArch module, GE, and framebuffer activity; physical-hardware rendered menus/gameplay, input, audio, performance, and save states remain |
 | PlayStation Vita/TV | static `.a` + installable `.vpk` | `vita` | Strict archive passes; pinned RetroArch VPK with unique `JCASTAWAY` identity, deterministic package, embedded-option, and no-data checks is available; device gate remains |
 | PlayStation 2 | static `.a` + launchable `.elf` | `ps2` | Strict archive and pinned RetroArch ELF link pass; directory-layout install ZIP, ELF identity, embedded-option, and no-data checks are available; device/emulator gate remains |
@@ -53,8 +53,8 @@ or PS2 `.elf` files.
 
 ## Expansion order
 
-1. Run the linked PSP package on physical hardware; complete Wii and other static frontend
-   links and device tests for the archives that already compile.
+1. Run the linked PSP and Wii packages on physical hardware; complete the remaining
+   device tests for frontends that already compile and pass package validation.
 2. Keep Linux x86 and ARMv7 NEON in normal CI alongside the other validated targets.
 3. Add Dingux/OpenDingux and webOS from pinned public toolchains.
 4. Validate BSD/Haiku native builds.

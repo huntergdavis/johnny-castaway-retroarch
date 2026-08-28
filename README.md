@@ -5,14 +5,17 @@ A portable libretro core for running Johnny Castaway from user-supplied original
 
 ## Status
 
-The `0.1.2` portable core is feature-complete: it builds as a loadable libretro core,
-validates the original resource pair, decodes the original content, and runs the full
+The `0.1.3` development core builds as a loadable libretro core,
+validates the original resource pair, decodes the original content, and implements the full
 automatic story or any of 63 selectable live chapter previews through a deterministic
 640x480 XRGB8888 software framebuffer. Categorized Core Options v2, legacy menu
 fallback, RetroPad input, audio, and versioned chapter-runtime save-state round trips
 are working. Host, Web, and cross-compilation release gates are documented below;
 physical-device execution remains a platform-specific validation step rather than a
-claim made by this repository.
+claim made by this repository. A current authentic-data browser acceptance run loads
+the island/tree and optional audio but does not yet show the expected waves/full
+animation, and its audio is choppy. That Web rendering/audio defect is release-blocking;
+passing synthetic/menu tests do not make v0.1.3 feature-complete until it is fixed.
 
 The repository now contains bounded ADS/TTM parsers and a resumable 50 Hz script VM,
 an indexed sprite compositor, the deterministic story/walking runtime, and an eight-voice
@@ -131,7 +134,8 @@ Eight console cores can be reproduced with pinned official SDK containers:
 This builds and validates static RetroArch core archives for PSP, Vita, PlayStation 2,
 Nintendo 3DS, GameCube, Wii, Wii U, and Switch. Static `.a` files are frontend link
 inputs, not installable console applications. Build pinned Switch NRO, Nintendo
-3DSX/SMDH/CIA, GameCube DOL, Wii U RPX, Vita VPK, and PS2 ELF install packages with:
+3DSX/SMDH/CIA, GameCube DOL, Wii Homebrew Channel DOL, Wii U RPX, Vita VPK,
+and PS2 ELF install packages with:
 
 ```sh
 ./scripts/build-installable-frontends.sh --all
@@ -170,7 +174,7 @@ notices.
 - `tests/`: host-side deterministic tests
 - `scripts/build-target.sh`: native and cross-build entry point
 - `scripts/build-console-cores.sh`: pinned eight-platform console archive builder
-- `scripts/build-installable-frontends.sh`: pinned Switch/3DS/GameCube/Wii U/Vita/PS2 frontend packages
+- `scripts/build-installable-frontends.sh`: pinned Switch/3DS/GameCube/Wii/Wii U/Vita/PS2 frontend packages
 - `scripts/build-psp-frontend.sh`: pinned PSP RetroArch EBOOT/install-package builder
 - `scripts/build-apple-universal.sh`: verified x86_64/arm64 macOS merger
 - `scripts/build-web-player.sh`, `scripts/serve-web.sh`: pinned local RetroArch Web test
@@ -183,7 +187,7 @@ notices.
 - `docs/RELEASING.md`: exact-SHA artifact assembly, audit, and publication boundary
 - `docs/OPTIONAL_ORIGINAL_AUDIO.md`: user-supplied SFX provenance and distribution boundary
 - `docs/CONSOLE_BUILDS.md`: reproducible console SDK images and packaging gates
-- `docs/INSTALLABLE_FRONTENDS.md`: Switch/3DS/GameCube/Wii U/Vita/PS2 installation and validation
+- `docs/INSTALLABLE_FRONTENDS.md`: Switch/3DS/GameCube/Wii/Wii U/Vita/PS2 installation and validation
 - `docs/FRONTEND_SDK_NOTICES.md`: runtime SDK/portlib source and license ledger
 - `docs/PSP_PACKAGE.md`: PSP Memory Stick installation and validation boundary
 - `docs/PLATFORM_MATRIX.md`: source-backed RetroArch platform inventory and coverage

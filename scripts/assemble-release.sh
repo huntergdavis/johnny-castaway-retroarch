@@ -24,7 +24,7 @@ usage: scripts/assemble-release.sh \
 
 Downloads exactly ten expected artifacts, validates their source runs, ABI,
 machine, and installable-frontend contracts, scans for original game data, and
-writes sixteen release ZIPs plus
+writes seventeen release ZIPs plus
 SHA256SUMS, CONTENTS.sha256, INVENTORY.md, and RELEASE_NOTES_DRAFT.md.
 
 The output must be a new ignored directory below build/release/. --dry-run allows
@@ -737,19 +737,21 @@ validation_notes+=('All eight console archives have byte-exact clean-build manif
 validation_notes+=('The PSP frontend passed ELF/PBP identity, embedded-option, checksum, provenance, legal-file, and Memory Stick install-layout checks.')
 validation_notes+=('The PSP Memory Stick INFO copy and package-root core metadata are byte-identical to the expected commit.')
 
-frontend_targets=(switch 3ds gamecube wiiu vita ps2)
+frontend_targets=(switch 3ds gamecube wii wiiu vita ps2)
 frontend_base="${artifacts_dir}/johnny-castaway-console-cores/build/installable-frontends/out"
 declare -A frontend_raw_outputs
 declare -A frontend_platform
 frontend_raw_outputs[switch]='JohnnyCastaway.nro retroarch_switch.elf'
 frontend_raw_outputs[3ds]='JohnnyCastaway.3dsx JohnnyCastaway.smdh JohnnyCastaway.cia retroarch_3ds.elf'
 frontend_raw_outputs[gamecube]='JohnnyCastaway.dol retroarch_ngc.elf'
+frontend_raw_outputs[wii]='JohnnyCastaway.dol meta.xml retroarch_wii.elf'
 frontend_raw_outputs[wiiu]='JohnnyCastaway.rpx meta.xml retroarch_wiiu.elf'
 frontend_raw_outputs[vita]='JohnnyCastaway.vpk retroarch_vita.unstripped.elf'
 frontend_raw_outputs[ps2]='JohnnyCastaway.elf'
 frontend_platform[switch]=libnx
 frontend_platform[3ds]=ctr
 frontend_platform[gamecube]=ngc
+frontend_platform[wii]=wii
 frontend_platform[wiiu]=wiiu
 frontend_platform[vita]=vita
 frontend_platform[ps2]=ps2
@@ -831,7 +833,7 @@ for frontend_target in "${frontend_targets[@]}"; do
         --epoch "${expected_epoch}" --project-root "${project_root}" \
         --expected-commit "${expected_sha}"
 done
-validation_notes+=('Six installable console frontend directories passed complete SHA256SUMS coverage, raw-output, exact commit/version/epoch, deterministic ZIP, metadata, linked-core, provenance, and install-layout validation.')
+validation_notes+=('Seven installable console frontend directories passed complete SHA256SUMS coverage, raw-output, exact commit/version/epoch, deterministic ZIP, metadata, linked-core, provenance, and install-layout validation.')
 
 mapfile -t emscripten_members < <(ar t "${emscripten}")
 ((${#emscripten_members[@]} > 0)) || fail 'Emscripten archive has no members'
@@ -902,7 +904,7 @@ mapfile -t actual_release_zips < <(
     fail 'expected release ZIP list has the wrong size'
 for index in "${!expected_release_zips_sorted[@]}"; do
     [[ "${expected_release_zips_sorted[index]}" = "${actual_release_zips[index]}" ]] ||
-        fail 'release ZIP set does not match the sixteen-asset contract'
+        fail 'release ZIP set does not match the seventeen-ZIP contract'
 done
 scan_file_names "${assets_dir}" 'release assets'
 scan_zip_entries "${assets_dir}"
@@ -974,7 +976,7 @@ fi
         printf -- '- %s\n' "${note}"
     done
     printf -- '- The complete Web distribution passed `tools/check_web_dist.py`.\n'
-    printf -- '- Every package ZIP passed `unzip -t`; `SHA256SUMS` verifies the sixteen release ZIPs assembled from ten source Actions artifacts.\n'
+    printf -- '- Every package ZIP passed `unzip -t`; `SHA256SUMS` verifies the seventeen release ZIPs assembled from ten source Actions artifacts.\n'
     printf -- '- `CONTENTS.sha256` inventories and verifies every extracted artifact file.\n'
     printf -- '- Commit paths, extracted filenames, nested ZIP entries, static archive members, and final package entries were scanned for the original resource pair, numbered WAVs, and ADS/TTM/BMP/SCR/VAG data; none were found.\n'
     printf -- '- Legal, credit, provenance, core-info, and CC0 notice files in every applicable artifact match the expected commit byte-for-byte.\n'
@@ -987,7 +989,7 @@ fi
     fi
     printf 'This release brings Johnny Castaway to RetroArch as a portable C99 core with deterministic 640x480 software rendering, automatic story playback, and direct access to all 63 chapters.\n\n'
     printf 'Highlights include closed captions, live chapter previews, deterministic seed and simulated-calendar controls, 1x-4x playback, authentic tide/raft presentation, an asset-free 36-holiday overlay, optional user-supplied original sound effects, separately licensed CC0 ocean ambience, island walking and tree occlusion, five fade styles, and versioned save states for scenes and transitions.\n\n'
-    printf 'Packages cover Linux, Windows, Android, macOS, iOS, tvOS, Emscripten/Web, PSP, Vita, PS2, Nintendo 3DS, GameCube, Wii, Wii U, and Switch. Seven consoles have direct installable frontend ZIPs: PSP, Switch, Nintendo 3DS, GameCube, Wii U, Vita, and PlayStation 2. Wii remains a validated static `.a` core for frontend linking, not a standalone application.\n\n'
+    printf 'Packages cover Linux, Windows, Android, macOS, iOS, tvOS, Emscripten/Web, PSP, Vita, PS2, Nintendo 3DS, GameCube, Wii, Wii U, and Switch. Eight consoles have direct installable frontend ZIPs: PSP, Switch, Nintendo 3DS, GameCube, Wii, Wii U, Vita, and PlayStation 2.\n\n'
     printf 'Original Sierra/Dynamix data is not distributed. Supply your legally owned `RESOURCE.MAP` and `RESOURCE.001`; supported sibling sound WAVs are also user-supplied. See the included credits, provenance, third-party notices, and platform documentation for lineage and validation boundaries.\n'
 } >"${staging}/RELEASE_NOTES_DRAFT.md"
 

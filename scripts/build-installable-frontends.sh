@@ -28,19 +28,20 @@ ctr_product_code='CTR-H-JCAST'
 ctr_unique_id='0x4A430'
 vita_title_id='JCASTAWAY'
 vita_title='Johnny Castaway'
+wii_patch="$root/patches/retroarch-wii-single-core.patch"
 
 usage()
 {
-    printf 'usage: %s [--pull] [--offline] [--all|switch|3ds|gamecube|wiiu|vita|ps2 ...]\n' "$0"
+    printf 'usage: %s [--pull] [--offline] [--all|switch|3ds|gamecube|wii|wiiu|vita|ps2 ...]\n' "$0"
 }
 
 for argument in "$@"; do
     case "$argument" in
         --pull) pull=1 ;;
         --offline) offline=1 ;;
-        --all) targets='switch 3ds gamecube wiiu vita ps2' ;;
+        --all) targets='switch 3ds gamecube wii wiiu vita ps2' ;;
         --list)
-            printf '%s\n' switch 3ds gamecube wiiu vita ps2
+            printf '%s\n' switch 3ds gamecube wii wiiu vita ps2
             exit 0
             ;;
         -*) usage >&2; exit 2 ;;
@@ -48,7 +49,7 @@ for argument in "$@"; do
     esac
 done
 if [ -z "$targets" ]; then
-    targets='switch 3ds gamecube wiiu vita ps2'
+    targets='switch 3ds gamecube wii wiiu vita ps2'
 fi
 if [ "$pull" -eq 1 ] && [ "$offline" -eq 1 ]; then
     printf '%s\n' '--pull and --offline are mutually exclusive' >&2
@@ -260,6 +261,13 @@ target_configuration()
             expected_archive=libretro_ngc.a
             machine=PowerPC
             ;;
+        wii)
+            image=$devkitppc_image
+            platform=wii
+            archive=johnny_castaway_libretro_wii.a
+            expected_archive=libretro_wii.a
+            machine=PowerPC
+            ;;
         wiiu)
             image=$devkitppc_image
             platform=wiiu
@@ -392,6 +400,11 @@ copy_sdk_licenses()
                     copy_source gamecube-shared-portlibs \
                         /opt/devkitpro/portlibs/gamecube/share/licenses
                     ;;
+                wii)
+                    copy_source libogc /opt/devkitpro/libogc/LICENSE
+                    copy_source wii-portlibs /opt/devkitpro/portlibs/wii/licenses
+                    copy_source ppc-portlibs /opt/devkitpro/portlibs/ppc/licenses
+                    ;;
                 wiiu)
                     copy_source wiiu-portlibs /opt/devkitpro/portlibs/wiiu/licenses
                     copy_source ppc-portlibs /opt/devkitpro/portlibs/ppc/licenses
@@ -456,6 +469,17 @@ write_provenance()
                 ;;
             gamecube)
                 printf 'RetroArch flags: EXTERNAL_LIBOGC=1 HAVE_THREADS=0 GX_PTHREAD_LEGACY=0 BIG_STACK=0\n'
+                ;;
+            wii)
+                wii_patch_sha=$(sha256sum \
+                    "$package_root/docs/patches/retroarch-wii-single-core.patch" |
+                    sed 's/[[:space:]].*$//')
+                printf 'RetroArch flags: EXTERNAL_LIBOGC=1 HAVE_THREADS=0 GX_PTHREAD_LEGACY=0 BIG_STACK=0 PLATCFLAGS=-UHAVE_SOCKET_LEGACY\n'
+                printf 'RetroArch patch configuration: HAVE_RARCH_EXEC=0 HAVE_NETWORKING=0 HAVE_CHEEVOS=0 HAVE_WIIUSB_HID=0\n'
+                printf 'RetroArch Wii compatibility patch SHA-256: %s\n' \
+                    "$wii_patch_sha"
+                printf 'RetroArch Wii re-exec/app_booter included: no\n'
+                printf 'Layout: apps/JohnnyCastaway/boot.dol\n'
                 ;;
             wiiu)
                 printf 'RPX conversion: pinned RetroArch wut elf2rpl, uncompressed large RPX target\n'
@@ -621,6 +645,44 @@ build_gamecube()
     cp "$checkout/retroarch_ngc.elf" "$artifact_dir/retroarch_ngc.elf"
 }
 
+build_wii()
+{
+    checkout=$1
+    core_path=$2
+    artifact_dir=$3
+    git -C "$checkout" apply --check "$wii_patch"
+    git -C "$checkout" apply "$wii_patch"
+    docker run --rm --read-only --network none --security-opt no-new-privileges \
+        --cap-drop ALL --tmpfs /tmp --user "$(id -u):$(id -g)" \
+        -e SOURCE_DATE_EPOCH="$source_date_epoch" -e TZ=UTC \
+        -v "$checkout:/src" -w /src "$image" \
+        make -f Makefile.wii EXTERNAL_LIBOGC=1 HAVE_THREADS=0 \
+        GX_PTHREAD_LEGACY=0 BIG_STACK=0 \
+        PLATCFLAGS=-UHAVE_SOCKET_LEGACY clean
+    cp "$core_path" "$checkout/$expected_archive"
+    docker run --rm --read-only --network none --security-opt no-new-privileges \
+        --cap-drop ALL --tmpfs /tmp --user "$(id -u):$(id -g)" \
+        -e SOURCE_DATE_EPOCH="$source_date_epoch" -e TZ=UTC \
+        -v "$checkout:/src" -w /src "$image" \
+        make -j"$jobs" -f Makefile.wii EXTERNAL_LIBOGC=1 HAVE_THREADS=0 \
+        GX_PTHREAD_LEGACY=0 BIG_STACK=0 \
+        PLATCFLAGS=-UHAVE_SOCKET_LEGACY
+    cp "$checkout/retroarch_wii.dol" "$artifact_dir/JohnnyCastaway.dol"
+    cp "$checkout/retroarch_wii.elf" "$artifact_dir/retroarch_wii.elf"
+    {
+        printf '%s\n' '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        printf '%s\n' '<app version="1">'
+        printf '  <name>%s</name>\n' 'Johnny Castaway'
+        printf '  <coder>%s</coder>\n' 'Johnny Castaway contributors'
+        printf '  <version>%s</version>\n' "$version"
+        printf '  <short_description>%s</short_description>\n' \
+            'Johnny Castaway for RetroArch'
+        printf '  <long_description>%s</long_description>\n' \
+            'Runs legally owned Johnny Castaway data with the statically linked libretro core.'
+        printf '%s\n' '</app>'
+    } >"$artifact_dir/meta.xml"
+}
+
 build_wiiu()
 {
     checkout=$1
@@ -694,6 +756,18 @@ for target in $targets; do
             cp "$artifact_dir/JohnnyCastaway.dol" \
                 "$package_root/apps/JohnnyCastaway/boot.dol"
             artifact_names='JohnnyCastaway.dol retroarch_ngc.elf'
+            ;;
+        wii)
+            build_wii "$checkout" "$core_path" "$artifact_dir"
+            mkdir -p "$package_root/apps/JohnnyCastaway" \
+                "$package_root/docs/patches"
+            cp "$artifact_dir/JohnnyCastaway.dol" \
+                "$package_root/apps/JohnnyCastaway/boot.dol"
+            cp "$artifact_dir/meta.xml" \
+                "$package_root/apps/JohnnyCastaway/meta.xml"
+            cp "$wii_patch" \
+                "$package_root/docs/patches/retroarch-wii-single-core.patch"
+            artifact_names='JohnnyCastaway.dol meta.xml retroarch_wii.elf'
             ;;
         wiiu)
             build_wiiu "$checkout" "$core_path" "$artifact_dir"
