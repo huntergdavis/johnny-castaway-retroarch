@@ -82,6 +82,7 @@ size_t jc_test_story_wave_frame(size_t position, size_t position_count,
 bool jc_test_story_wave_composition(void);
 bool jc_test_story_palette_selection(void);
 size_t jc_test_current_canonical_key_longest_run(void);
+size_t jc_test_current_saved_zone_pixels(void);
 
 static void assert_story_wave_cadence(void)
 {
@@ -887,6 +888,48 @@ int main(int argc, char **argv)
         assert_no_canonical_key_blocks("restored authentic fixed chapter");
         assert(retro_unserialize(animation_state, animation_state_size));
         free(animation_state);
+
+        {
+            uint64_t high_tide_raft_0_hash;
+            uint64_t low_tide_raft_0_hash;
+
+            tide_value = "high";
+            raft_stage_value = "0";
+            variable_updated = true;
+            retro_run();
+            high_tide_raft_0_hash = frame_hash;
+
+            tide_value = "low";
+            variable_updated = true;
+            retro_run();
+            low_tide_raft_0_hash = frame_hash;
+            assert(low_tide_raft_0_hash != high_tide_raft_0_hash);
+
+            tide_value = "high";
+            raft_stage_value = "5";
+            variable_updated = true;
+            retro_run();
+            assert(frame_hash != high_tide_raft_0_hash);
+        }
+
+        chapter_value = "johnny1";
+        variable_updated = true;
+        retro_run();
+        {
+            bool saw_clock_saved_zone = false;
+            unsigned johnny1_frame;
+
+            for (johnny1_frame = 0u; johnny1_frame < 220u;
+                 ++johnny1_frame) {
+                retro_run();
+                if (jc_test_current_saved_zone_pixels() > 0u)
+                    saw_clock_saved_zone = true;
+            }
+            assert(saw_clock_saved_zone);
+            assert(jc_test_current_saved_zone_pixels() == 0u);
+            assert_no_canonical_key_blocks(
+                "authentic johnny1 after THEEND screen replacement");
+        }
     }
 
     automatic_starts_before = automatic_scene_starts;

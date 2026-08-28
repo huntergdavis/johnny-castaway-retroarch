@@ -77,6 +77,25 @@ static bytes_t make_screen(void)
     return bytes;
 }
 
+static bytes_t make_partial_screen(void)
+{
+    bytes_t bytes = {{0}, 0u};
+    const uint8_t packed[] = {0x33u, 0x33u};
+    append_data(&bytes, "SCR:", 4u);
+    append_u16(&bytes, 0u);
+    append_u16(&bytes, 0u);
+    append_data(&bytes, "DIM:", 4u);
+    append_u32(&bytes, 4u);
+    append_u16(&bytes, 2u);
+    append_u16(&bytes, 2u);
+    append_data(&bytes, "BIN:", 4u);
+    append_u32(&bytes, (uint32_t)sizeof(packed) + 5u);
+    append_u8(&bytes, 0u);
+    append_u32(&bytes, (uint32_t)sizeof(packed));
+    append_data(&bytes, packed, sizeof(packed));
+    return bytes;
+}
+
 static bytes_t make_image(void)
 {
     const uint8_t packed[] = {0x15u, 0x23u};
@@ -401,6 +420,53 @@ static void test_primitives_offsets_and_saved_zones(void)
     jc_ttm_renderer_destroy(&renderer);
 }
 
+static void test_partial_screen_replaces_saved_zones(void)
+{
+    resources_t resources;
+    jc_ttm_renderer_resources_t resource_api;
+    jc_ttm_renderer_t renderer;
+    jc_script_error_t error;
+    jc_script_event_t lifecycle;
+    jc_surface_t seeded;
+    uint8_t seeded_pixels[16];
+    uint16_t args[4];
+
+    memset(&resources, 0, sizeof(resources));
+    resources.screen = make_partial_screen();
+    resource_api.load = load_resource;
+    resource_api.release = NULL;
+    resource_api.userdata = &resources;
+    require(jc_ttm_renderer_init(&renderer, 4u, 4u, 5, &resource_api,
+                                 NULL, NULL, &error), error.message);
+    memset(seeded_pixels, 9, sizeof(seeded_pixels));
+    require(jc_surface_init(&seeded, seeded_pixels, sizeof(seeded_pixels),
+                            4u, 4u, 4u),
+            "partial-screen seeded background init failed");
+    require(jc_ttm_renderer_set_background(&renderer, &seeded, &error),
+            error.message);
+    lifecycle = event_base(JC_SCRIPT_EVENT_SCENE_STARTED, 0u);
+    send_event(&renderer, &lifecycle);
+
+    args[0] = 1u; args[1] = 1u; args[2] = 1u; args[3] = 1u;
+    send_args(&renderer, 0xa104u, args, 4u, 11u, 0u);
+    send_args(&renderer, 0x4204u, args, 4u, 0u, 0u);
+    clear_layer(&renderer);
+    frame(&renderer);
+    require(output_at(&renderer, 1u, 1u) == 11u,
+            "partial-screen fixture did not create a saved-zone overlay");
+
+    send_string(&renderer, 0xf01fu, "BG.SCR", 0u);
+    frame(&renderer);
+    require(output_at(&renderer, 0u, 0u) == 3u &&
+                output_at(&renderer, 1u, 1u) == 3u,
+            "partial LOAD_SCREEN did not replace its decoded rows");
+    require(output_at(&renderer, 3u, 3u) == 9u,
+            "partial LOAD_SCREEN did not preserve seeded outer background");
+    require(output_at(&renderer, 1u, 1u) != 11u,
+            "LOAD_SCREEN retained a stale saved-zone overlay");
+    jc_ttm_renderer_destroy(&renderer);
+}
+
 static void test_background_snapshot_and_errors(void)
 {
     resources_t resources;
@@ -531,6 +597,7 @@ int main(void)
 {
     test_resources_sprites_and_palette();
     test_primitives_offsets_and_saved_zones();
+    test_partial_screen_replaces_saved_zones();
     test_background_snapshot_and_errors();
     test_real_vm_event_bridge();
     puts("TTM renderer tests passed");

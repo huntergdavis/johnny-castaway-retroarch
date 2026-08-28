@@ -1282,6 +1282,8 @@ static bool chapter_story_scene(const jc_chapter_t *chapter,
     return false;
 }
 
+static void apply_story_island_options(jc_story_player_t *player);
+
 static bool fixed_chapter_story_player(const jc_chapter_t *chapter,
                                        jc_story_player_t *player)
 {
@@ -1305,6 +1307,7 @@ static bool fixed_chapter_story_player(const jc_chapter_t *chapter,
         jc_director_raft_for_day(story_day);
     if (play->left_island)
         player->run.island.x = -272;
+    apply_story_island_options(player);
     return true;
 }
 
@@ -1772,6 +1775,39 @@ size_t jc_test_current_canonical_key_longest_run(void)
             run = 0u;
     }
     return longest;
+}
+
+size_t jc_test_current_saved_zone_pixels(void)
+{
+    const jc_surface_t *surface;
+    size_t count = 0u;
+    unsigned x;
+    unsigned y;
+
+    if (runtime == NULL || !runtime->renderer.initialized)
+        return 0u;
+    surface = &runtime->renderer.saved_zones;
+    for (y = 0u; y < surface->height; ++y) {
+        for (x = 0u; x < surface->width; ++x) {
+            if (surface->pixels[(size_t)y * surface->pitch + x] !=
+                JC_TTM_RENDERER_TRANSPARENT)
+                ++count;
+        }
+    }
+    return count;
+}
+
+bool jc_test_runtime_status(uint64_t *ticks, bool *finished, bool *failed)
+{
+    if (runtime == NULL || !runtime_ready)
+        return false;
+    if (ticks != NULL)
+        *ticks = runtime->vm.tick_count;
+    if (finished != NULL)
+        *finished = runtime->scene_finished;
+    if (failed != NULL)
+        *failed = runtime_failed;
+    return true;
 }
 #endif
 
@@ -2909,16 +2945,25 @@ void retro_run(void)
         uint8_t previous_simulated_hour = simulated_hour;
         int previous_tide_override = tide_override;
         int previous_raft_override = raft_override;
+        bool fixed_island_options_changed = false;
+        jc_story_scene_t selected_scene;
         char error[256];
         memcpy(previous_screen, selected_screen, sizeof(previous_screen));
         read_core_options();
         (void)update_option_visibility();
+        fixed_island_options_changed =
+            !automatic_story && selected_chapter != NULL &&
+            chapter_story_scene(selected_chapter, &selected_scene) &&
+            (selected_scene.flags & JC_SCENE_ISLAND) != 0u &&
+            (previous_tide_override != tide_override ||
+             previous_raft_override != raft_override);
         if (game_loaded &&
             (previous_diagnostic != diagnostic_display ||
              previous_automatic_story != automatic_story ||
              previous_chapter != selected_chapter ||
              (selected_chapter == NULL &&
               strcmp(previous_screen, selected_screen) != 0) ||
+             fixed_island_options_changed ||
              (automatic_story && previous_automatic_story &&
               (previous_story_seed != story_seed ||
                previous_calendar_mode != story_calendar_mode ||

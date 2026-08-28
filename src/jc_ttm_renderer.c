@@ -485,8 +485,12 @@ static bool handle_load_screen(jc_ttm_renderer_t *renderer,
         return set_error(error, JC_SCRIPT_ERROR_BAD_OPERAND, event->opcode,
                          "could not decode screen %s: %s", name,
                          resource_error);
+    /* Johnny Reborn's GPL host grLoadScreen() releases grSavedZonesLayer,
+     * and its PS1 partial-height path preserves the existing bottom tiles.
+     * A new SCR therefore invalidates COPY_ZONE_TO_BG overlays, but replaces
+     * only the rows it actually contains. */
     jc_surface_reset_clip(&renderer->background);
-    jc_surface_clear(&renderer->background, 0u);
+    jc_surface_clear(&renderer->saved_zones, JC_TTM_RENDERER_TRANSPARENT);
     jc_surface_blit(&renderer->background, 0, 0, &decoded, -1, false);
     return true;
 }
