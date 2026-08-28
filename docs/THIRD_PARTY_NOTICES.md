@@ -20,6 +20,22 @@ Hunter Davis's PS1 audio backend was consulted at introducing commit
 `huntergdavis/jc_reborn` repository. The new mixer copies no platform backend code; the
 design lineage is recorded because its eight-channel limit was deliberately retained.
 
+The caption catalog, scene-explorer metadata, expanded holiday table, and ocean feature
+metadata are translated from Hunter Davis's GPLv3/GPL-3.0-or-later PlayStation port at
+revision `25c5d84593ac20cbee354eaab7779ab7397d6bbe`. That project states that its caption
+text was freshly authored from scene content. The original Sierra/Dynamix media is not
+included in these tables.
+
+## CC0 ocean ambience source
+
+The optional ocean design identifies BigSoundBank sound 0266, “Sea: Waves,” published
+as CC0/public domain at <https://bigsoundbank.com/sea-waves-s0266.html>. The PS1 port's
+derived `OCEAN.VAG` has SHA-256
+`b9eeae5a7f42545ad7fe99701c248c07e8b4c0ad0ab17bb86420f36ea97259c2`.
+This repository currently contains only its source/license/hash/playback metadata, not
+the recording or derived VAG binary. If the asset is added later, this notice must ship
+with it.
+
 ## libretro API header
 
 `external/libretro-common` is a Git submodule pinned to revision

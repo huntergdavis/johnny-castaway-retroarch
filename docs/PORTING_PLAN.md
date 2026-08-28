@@ -59,8 +59,10 @@ state aggregation, and deterministic trace comparison remain.
 
 Status: an allocation-free WAV parser and deterministic eight-voice 11025-to-44100 Hz
 stereo mixer are complete. The mixer runs every `retro_run()`, mute/volume are live Core
-Options v2 plus legacy variables, and mixer phase is saved. TTM cue dispatch, owned sample
-loading/executable extraction, captions, explorer controls, and full engine state remain.
+Options v2 plus legacy variables, and mixer phase is saved. The audited PS1 caption,
+chapter, 36-holiday, and CC0 ambience metadata/state foundations are complete. TTM cue
+dispatch, owned sample loading/executable extraction, caption presentation, explorer
+preview controls, and full engine state remain.
 
 - Port sound triggers and deterministic multi-voice mixing.
 - Add core options, reset semantics, robust save states, controller descriptors, and

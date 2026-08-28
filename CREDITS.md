@@ -34,6 +34,12 @@ of their respective rights holders. This repository distributes none of that con
   [PlayStation port](https://github.com/huntergdavis/johnny-castaway-ps1), and
   [Dreamcast port](https://github.com/huntergdavis/johnny_dreamcastaway) whose memory,
   platform, and validation work informed this design.
+- The PlayStation port's freshly authored closed-caption corpus, 63-scene explorer
+  metadata, 36-holiday calendar, and ocean-ambience feature design were translated into
+  portable catalogs for this core. The ocean loop pipeline was introduced by Hunter
+  Davis in PS1 commit `bb32de68aad33ecd1b8a7fbdc0a9278a35971238`, co-authored there
+  with Claude Opus 4.7, and completed in commit
+  `c194f1bf5716b460ba7276dcb8116b24a690c636`.
 - Ralph Caraveo (`deckarep`) created the 2026
   [Go/Raylib port](https://github.com/deckarep/Johnny-Castaway-2026-Public). It was
   evaluated for this core; its runtime/toolchain tradeoffs informed the C99 decision,
@@ -59,6 +65,15 @@ Johnny Reborn also explicitly credits the earlier research on which it depends:
 Thanks to the RetroArch and libretro contributors for the frontend-independent API,
 Core Options specifications, reference headers, and platform ecosystem. The pinned
 dependency and its license are recorded in `docs/THIRD_PARTY_NOTICES.md`.
+
+## Additional open media and algorithms
+
+- BigSoundBank sound 0266, [“Sea: Waves”](https://bigsoundbank.com/sea-waves-s0266.html),
+  is the CC0/public-domain recording from which the PS1 port made its seamless ocean
+  loop. This repository currently records the asset's provenance and playback settings
+  but does not distribute the audio binary.
+- The expanded holiday calendar uses the public Meeus/Jones/Butcher Gregorian Easter
+  calculation, following the attribution in the PlayStation port.
 
 Exact repository revisions and the distinction between copied data, translated code,
 behavioral references, and independently written code are recorded in
