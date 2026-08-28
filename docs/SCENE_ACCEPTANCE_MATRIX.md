@@ -201,18 +201,23 @@ dedicated pixel hashes only for `intro` and `island_day`.
 `tools/web_smoke_test.py --chapter <slug> --content-dir <dir>` can launch any
 of the 63 fixed chapters, and its current frame-quality gate rejects a
 material four-connected renderer-key block (at least 256 pixels and at least
-16x4 bounds). It does not yet execute a tracked all-63 matrix. The Web follow-
-up should shard the CSV rows, use the native tick counts to choose an adaptive
-window instead of a fixed six seconds, record start/middle/final PNG hashes,
-apply the same class and phase-cleanup assertions, and preserve the current
-audio-cadence checks.
+16x4 bounds). `tools/web_chapter_matrix.py` now owns exact 63-slug accounting,
+balanced sharding, resume fingerprints, and ignored per-scene result artifacts.
+The tracked `docs/scene_acceptance_matrix.csv` remains the historical native
+snapshot recorded at `b7f151f`; it is not rewritten to imply a completed Web
+matrix. Current clean-candidate Web release evidence lives only in the ignored
+`build/exact-02e8ddb-unlock-{1,2,3}/` and
+`build/exact-02e8ddb-normal-options/` runner artifacts described in
+`WEB_TESTING.md`. A future all-63 Web execution can publish status-only summaries
+while keeping user-owned PNGs and content ignored.
 
 The PS1 thumbnail is an expected-preview locator, not a committed golden
 bitmap. Where the user has local `regtest-references/<ADS>-<TAG>` captures, a
 separate opt-in comparator can normalize the PS1 640x448 viewport and compare
 semantic phases. Those copyrighted/user-owned images must remain untracked.
 
-This document does **not** claim Web audio cadence/choppiness is fixed, does
-not claim OCEAN01/02 coverage, and does not elevate completion plus frame
-diversity to pixel-perfect parity with the PS1 signoff. It records exactly
+This document records repeated strict Automatic Story Web audio/renderer acceptance
+for clean candidate `02e8ddb`; it does **not** claim that the all-63 Web matrix has
+been executed, does not claim OCEAN01/02 coverage, and does not elevate completion
+plus frame diversity to pixel-perfect parity with the PS1 signoff. It records exactly
 what is executable now and the stronger oracle needed next.

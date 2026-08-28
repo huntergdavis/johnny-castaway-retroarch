@@ -113,7 +113,7 @@ Each row advances independently through Build/Load/Run/Regress.
 | 1 | `linux_aarch64`, `linux_armv7`, `linux_armv7_neon` | `.so` | real GCC cross-builds and exact 25-symbol ELF export checks pass; ARMv7 variants are verified VFPv3-D16 or NEONv1 hard-float; frontend runs pending |
 | 2 | Android arm64/armv7/x86_64/x86 | `.so` | real NDK r29/API 21 strict builds, machine checks, and exact 25-symbol exports pass; Android frontend/device runs pending |
 | 2 | iOS/tvOS arm64 device + arm64/x86_64 simulators | `.dylib` | real Xcode SDK builds and exact Mach-O ABI exports pass in GitHub `macos-15`; device/frontend runs pending |
-| 2 | `emscripten` | `.bc` static core + RetroArch `.js/.wasm` | archive, pinned real-frontend link/dist, HTTP checks, synthetic frames, authentic 180-resource/23-sound auto-load, deterministic menu navigation, and authentic Automatic Story visual/water-motion plus connected-component color-key gates pass; the latest authentic Firefox run still fails audio cadence (5/509 gaps, 68 ms maximum), so Web audio acceptance remains blocked |
+| 2 | `emscripten` | `.bc` static core + RetroArch `.js/.wasm` | archive, pinned real-frontend link/dist, HTTP checks, synthetic frames, authentic 180-resource/23-sound auto-load, deterministic menu navigation, Automatic Story visual/water-motion plus connected-component color-key gates, explicit blocked-autoplay recovery/reset, and three consecutive strict gap-free audio windows pass on clean candidate `02e8ddb`; the all-63-scene Web matrix remains separate |
 | 3 | `psp1` | static `.a` + RetroArch `.elf`/`EBOOT.PBP` | real official-SDK archive/link/package checks pass; pinned PPSSPP v1.20.4 completes a 30-second boot with module, GE, and framebuffer activity; physical-hardware rendering, input, audio, gameplay, performance, and save states remain |
 | 3 | `vita`, `ctr`, `ps2` | static `.a` + VPK/3DSX/CIA/ELF frontends | strict archives and all 25 entry points pass; pinned RetroArch frontend builders validate formats, fixed identity, current Core Options, provenance, and no-data packaging; device/emulator runs pending |
 | 3 | Switch, Wii, GameCube, Wii U | static `.a` + Switch NRO, GameCube/Wii DOL, Wii U RPX | all strict archives and pinned frontend/install-package validators pass; Wii uses a tracked GPLv3 single-core/no-reexec compatibility patch; device runs remain |
@@ -139,8 +139,10 @@ contract exists.
 5. Browser RetroArch build/link/dist/HTTP and real-Firefox synthetic-content harness.
    **Infrastructure, local original-data auto-loading, and Core Options navigation pass;
    authentic Automatic Story animation, water motion, and residual-key rejection now
-   pass, while stable-audio acceptance remains release-blocking.** Continue expanding targets
-   one validated compiler/frontend at a time without weakening existing gates.
+   pass. Clean candidate `02e8ddb` also passes three consecutive strict authentic
+   delayed-unlock audio/menu runs and a separate ordinary full-options run.** Continue
+   expanding targets and execute the all-63-scene Web matrix one validated gate at a
+   time without weakening existing acceptance.
 
 The project intentionally adds targets sequentially. A giant untested Makefile is not
 considered platform support.

@@ -182,9 +182,14 @@ even when scattered key-like palette colors keep the total fraction below the
 dominant-frame threshold; the largest solid rectangle is retained as an additional
 diagnostic. Automatic mode requires material lower water-band pixel
 changes; a fixed chapter requires material scripted-playfield changes. Both
-continuously queue and complete the pinned RetroArch Web Audio
-driver's 10 ms blocks during a separate idle five-second interval, with scheduled
-duration matching observed browser time and no material post-warmup underrun gap.
+continuously queue and complete the pinned RetroArch Web Audio driver's 10 ms
+blocks during a separate idle five-second interval. The unchanged strict evaluator
+requires at least 95 queued buffers per elapsed second, scheduled duration between
+0.98 and 1.02 times observed wall time, at least 90% of queued buffers ended before
+the snapshot, the pinned 8-12 ms block-size range, and zero positive scheduler gaps.
+The stable-menu phase must either pass those same continuous-audio gates or report an
+exact intentional pause: zero queued/ended buffers, zero queued frames and scheduled
+seconds, and zero positive gaps. A partial or starved schedule fails either phase.
 During that same immediate window, a WebGL diagnostic probe counts texture uploads,
 typed video-sized uploads, draw/clear calls, and context loss/restoration. It reports
 only an ephemeral-salted rolling 32-bit signature and count of distinct signatures
@@ -194,14 +199,33 @@ bytes are never exposed or retained. These probes are enabled only for the runne
 resource contents. The metrics are preserved in `result.json` even when later motion,
 frame-quality, audio, or WebGL assertions fail.
 
-The 2026-08-28 local authentic Automatic Story run recorded in ignored artifact
-`build/web-real-scene-preview-20260828-1409-automatic-results/result.json` is the
-current renderer evidence: all five captured frames were distinct and about 88%
-meaningful, consecutive water-band changes were 2.82–3.22%, and every frame's largest
-renderer-key component was a single 1×1 pixel. This verifies the automatic visual
-renderer and water-motion gates only. The same run did **not** pass overall: its
-independent audio check found 5 underrun gaps among 509 queued buffers, with a 68 ms
-maximum gap. Browser audio is not fixed and remains release-blocking.
+The release-candidate evidence was built from clean Johnny commit
+`02e8ddbc9511ff4e85143966bccb107d096bd449` with generated
+`johnny_castaway_libretro.js` SHA-256
+`691962a1696454b8ea592b3c6a5fac93393c80b793b54a23af0d0daa784260c4` and
+WebAssembly SHA-256
+`2a164afb21a082fd973fa6732a0e50d4bebecb78795e1764ef5cbe10df5d577d`.
+Three consecutive full staged-local `--test-audio-unlock` runs passed in ignored
+artifacts `build/exact-02e8ddb-unlock-1/result.json` through
+`build/exact-02e8ddb-unlock-3/result.json`:
+
+| Run | Queued / ended | Scheduled / wall | Positive gaps | Maximum queue interval | Suspended visuals |
+|---|---:|---:|---:|---:|---:|
+| 1 | 512 / 466 | 0.997405 | 0 (0 ms max) | 138.94 ms | 344 draws / 22 uploads |
+| 2 | 501 / 471 | 0.995173 | 0 (0 ms max) | 120.20 ms | 186 draws / 22 uploads |
+| 3 | 510 / 478 | 1.002248 | 0 (0 ms max) | 149.62 ms | 258 draws / 20 uploads |
+
+Each run captured distinct frames while Firefox reported one locked context, enabled
+that context only through the visible control, observed it running afterward and
+after a RetroArch reset, passed Automatic Story/water/frame-quality/WebGL and full
+Core Options navigation, and recorded an exact all-zero intentional menu-audio pause.
+The separate ordinary staged-local full-options run in ignored artifact
+`build/exact-02e8ddb-normal-options/result.json` also passed: 511/466 buffers,
+0.999046 scheduled/wall, zero positive gaps (0 ms maximum), and a 197.62 ms maximum
+queue interval. These artifacts contain local user-owned screenshots and therefore
+remain ignored; only these measurements and the immutable candidate hashes are
+recorded here. They supersede the earlier failing renderer-preview audio observation
+for this exact candidate without weakening a gate.
 
 For a separate deterministic scripted-motion gate, use a chapter ID present in
 `src/jc_chapters.c` with explicit local content:

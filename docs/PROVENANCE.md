@@ -91,6 +91,34 @@ repository files and revisions directly.
 | `scripts/assemble-release.sh`, `docs/RELEASING.md` | Ten exact Actions source artifacts; this repository's format/archive/Web validators; seven validated unified frontend ZIPs nested in the console source artifact; GitHub CLI run/artifact/release interfaces | New fail-closed release assembly and documentation. The script verifies exact SHA/workflow/status/source-artifact identity, compares metadata/legal files, reruns validators and original-data scans, then transforms ten source artifacts into seventeen release ZIPs: the direct PSP install ZIP, seven direct unified console install ZIPs, and nine remaining source-artifact wrappers. It writes exhaustive checksums/inventory in ignored atomic output and never tags, publishes, commits, or pushes |
 | `docs/PLATFORM_MATRIX.md` | RetroArch `34c069f44f419b708c5362f96c54f959bc182dbe`; libretro-super `bc2b5463fe7e45a36295db54f74bc56b950dec4b`; libretro docs `7a0833c074b31d5438dce6ef6a94eea7f5805ec6`; live libretro buildbot indexes reviewed 2026-08-27 | New evidence ledger. Platform families, artifact forms, and expansion order were summarized from pinned official source/build recipes and live first-party buildbot directories. No source code or platform artwork was copied |
 
+### Web audio cadence and acceptance derivation
+
+The visible audio-state control and explicit user-gesture unlock continue to adapt
+Hunter Davis's GPLv3 `jc_reborn/docs/play/online/player.js` design at commit
+`6316545c0c`, as recorded in the Web-player row above. The Web-only clock added to
+`src/libretro_core.c` is an independent implementation around
+`emscripten_get_now()`: it keeps one nominal 2,646-frame lead at 44.1 kHz, follows
+elapsed browser callbacks with fractional carry, caps recovery at the configured
+384 ms frontend queue, and resets after long pauses, backward/invalid clocks, load,
+reset, and unserialize. Skipped Web presentations avoid redundant RGB565 conversion;
+non-Web builds retain deterministic 882-frame/50 Hz audio batches and XRGB8888 video.
+The required `deja` searches found no indexed adaptive-cadence or strict-evaluator
+implementation to reuse.
+
+The query-gated browser probe derives its expected 10 ms output blocks from the pinned
+GPL RetroArch RWebAudio driver/library and records scheduling metadata only, never
+samples. The independently written strict policy requires at least 95 buffers/second,
+0.98-1.02 scheduled/wall duration, at least 90% ended buffers, and zero positive gaps;
+a stable menu may instead report only an exact all-zero intentional pause. Clean
+candidate `02e8ddbc9511ff4e85143966bccb107d096bd449` (generated
+`johnny_castaway_libretro.js` SHA-256
+`691962a1696454b8ea592b3c6a5fac93393c80b793b54a23af0d0daa784260c4`, WebAssembly
+SHA-256 `2a164afb21a082fd973fa6732a0e50d4bebecb78795e1764ef5cbe10df5d577d`)
+passed three consecutive full delayed-unlock smokes and one ordinary full-options
+smoke. Exact metrics and ignored paths are in `WEB_TESTING.md`; screenshots and local
+user-owned data remain untracked. The tracked scene CSV remains native historical
+evidence and is not promoted into an all-63 Web claim.
+
 The implementation is intentionally split into modules so each derivation can be
 traced rather than obscured in a monolithic port.
 

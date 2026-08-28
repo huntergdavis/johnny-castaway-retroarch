@@ -12,12 +12,16 @@ automatic story or any of 63 selectable live chapter previews through a determin
 fallback, RetroPad input, audio, and versioned chapter-runtime save-state round trips
 are working. Host, Web, and cross-compilation release gates are documented below;
 physical-device execution remains a platform-specific validation step rather than a
-claim made by this repository. A 2026-08-28 authentic-data Firefox run now shows five
-distinct, meaningful Automatic Story frames with material lower-water motion and no
-residual color-key block (largest key-colored component: one pixel). Its independent
-Web Audio gate still failed with 5 gaps in 509 queued buffers and a 68 ms maximum gap.
-The Web renderer evidence therefore passes, but stable browser audio remains
-release-blocking; synthetic/menu and visual passes do not make v0.1.3 feature-complete.
+claim made by this repository. On 2026-08-28, the clean `02e8ddb` Web candidate passed
+three consecutive authentic-data Firefox runs with changing Automatic Story and water
+frames, no material renderer-key block, an explicit blocked-autoplay/Enable Audio
+round trip, and gap-free gameplay audio. The three strict five-second audio windows
+queued/ended 512/466, 501/471, and 510/478 pinned 10 ms buffers, scheduled 0.997405,
+0.995173, and 1.002248 times wall duration, and recorded zero positive gaps. Stable
+RetroArch menus intentionally paused the core and produced exact all-zero audio
+windows. A separate ordinary staged-local full-options run also passed. These results
+close the previously reported Web renderer/audio blocker for this exact candidate;
+device-specific execution gates and the all-63-scene Web matrix remain separate work.
 
 The repository now contains bounded ADS/TTM parsers and a resumable 50 Hz script VM,
 an indexed sprite compositor, the deterministic story/walking runtime, and an eight-voice
