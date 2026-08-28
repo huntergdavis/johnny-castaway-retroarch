@@ -183,6 +183,169 @@ function installAudioSmokeProbe() {
 
 installAudioSmokeProbe();
 
+function installWebGLSmokeProbe() {
+  if (!new URLSearchParams(window.location.search).has("smoke")) return;
+
+  const canvasPrototype = window.HTMLCanvasElement?.prototype;
+  const randomSalt = new Uint32Array(1);
+  if (!canvasPrototype || !window.crypto?.getRandomValues) {
+    window.__jcWebGLProbe = {
+      installed: false,
+      error: "WebGL probe prerequisites are unavailable",
+    };
+    return;
+  }
+  window.crypto.getRandomValues(randomSalt);
+
+  const probe = {
+    installed: true,
+    version: 1,
+    installedAtMs: performance.now(),
+    signatureKind: "ephemeral-salted-sampled-fnv32",
+    contextsCreated: 0,
+    texImage2DCalls: 0,
+    texSubImage2DCalls: 0,
+    typedArrayUploads: 0,
+    videoUploadCandidates: 0,
+    drawArraysCalls: 0,
+    drawElementsCalls: 0,
+    clearCalls: 0,
+    contextLostEvents: 0,
+    contextRestoredEvents: 0,
+    windowGeneration: 0,
+  };
+  const seenContexts = new WeakSet();
+  let windowUploadSignatures = new Set();
+
+  function increment(field) {
+    probe[field] += 1;
+    const windowField = `window${field[0].toUpperCase()}${field.slice(1)}`;
+    probe[windowField] += 1;
+  }
+
+  function recordContext(context, sourceCanvas) {
+    if (!context || seenContexts.has(context)) return;
+    seenContexts.add(context);
+    increment("contextsCreated");
+    sourceCanvas.addEventListener("webglcontextlost", () => {
+      increment("contextLostEvents");
+    });
+    sourceCanvas.addEventListener("webglcontextrestored", () => {
+      increment("contextRestoredEvents");
+    });
+  }
+
+  function sampleVideoUpload(methodName, methodArguments) {
+    const pixels = methodArguments[methodArguments.length - 1];
+    if (!ArrayBuffer.isView(pixels)) return;
+    increment("typedArrayUploads");
+
+    const widthIndex = methodName === "texImage2D" ? 3 : 4;
+    const heightIndex = methodName === "texImage2D" ? 4 : 5;
+    const width = Number(methodArguments[widthIndex]);
+    const height = Number(methodArguments[heightIndex]);
+    if (!(width >= 320 && height >= 240)) return;
+    increment("videoUploadCandidates");
+
+    const bytes = new Uint8Array(
+      pixels.buffer,
+      pixels.byteOffset,
+      pixels.byteLength,
+    );
+    const sampleCount = Math.min(64, bytes.length);
+    let signature = (randomSalt[0] ^ bytes.length) >>> 0;
+    for (let index = 0; index < sampleCount; index += 1) {
+      const offset =
+        sampleCount === 1
+          ? 0
+          : Math.floor((index * (bytes.length - 1)) / (sampleCount - 1));
+      signature = Math.imul(
+        signature ^ bytes[offset] ^ (offset & 0xff),
+        0x01000193,
+      ) >>> 0;
+    }
+    windowUploadSignatures.add(signature);
+    probe.windowDistinctSampledVideoUploads = windowUploadSignatures.size;
+    probe.windowSampledUploadBytes += sampleCount;
+    probe.windowRollingUploadSignature = Math.imul(
+      probe.windowRollingUploadSignature ^ signature,
+      0x01000193,
+    ) >>> 0;
+  }
+
+  function wrapContextMethod(ContextClass, methodName) {
+    const contextPrototype = ContextClass?.prototype;
+    if (!contextPrototype) return;
+    const installedMarker = `__jcSmokeWrapped_${methodName}`;
+    if (contextPrototype[installedMarker]) return;
+    const original = contextPrototype[methodName];
+    if (typeof original !== "function") return;
+    contextPrototype[methodName] = function (...methodArguments) {
+      const result = original.apply(this, methodArguments);
+      increment(`${methodName}Calls`);
+      if (methodName === "texImage2D" || methodName === "texSubImage2D") {
+        sampleVideoUpload(methodName, methodArguments);
+      }
+      return result;
+    };
+    Object.defineProperty(contextPrototype, installedMarker, { value: true });
+  }
+
+  window.__jcResetWebGLProbe = () => {
+    probe.windowGeneration += 1;
+    probe.windowStartedAtMs = performance.now();
+    probe.windowContextsCreated = 0;
+    probe.windowTexImage2DCalls = 0;
+    probe.windowTexSubImage2DCalls = 0;
+    probe.windowTypedArrayUploads = 0;
+    probe.windowVideoUploadCandidates = 0;
+    probe.windowDrawArraysCalls = 0;
+    probe.windowDrawElementsCalls = 0;
+    probe.windowClearCalls = 0;
+    probe.windowContextLostEvents = 0;
+    probe.windowContextRestoredEvents = 0;
+    probe.windowDistinctSampledVideoUploads = 0;
+    probe.windowSampledUploadBytes = 0;
+    probe.windowRollingUploadSignature =
+      (randomSalt[0] ^ probe.windowGeneration) >>> 0;
+    windowUploadSignatures = new Set();
+    return probe;
+  };
+
+  const originalGetContext = canvasPrototype.getContext;
+  canvasPrototype.getContext = function (contextType, ...contextArguments) {
+    const context = originalGetContext.call(
+      this,
+      contextType,
+      ...contextArguments,
+    );
+    if (/^(webgl2?|experimental-webgl)$/.test(String(contextType))) {
+      recordContext(context, this);
+    }
+    return context;
+  };
+
+  for (const ContextClass of [
+    window.WebGLRenderingContext,
+    window.WebGL2RenderingContext,
+  ]) {
+    for (const methodName of [
+      "texImage2D",
+      "texSubImage2D",
+      "drawArrays",
+      "drawElements",
+      "clear",
+    ]) {
+      wrapContextMethod(ContextClass, methodName);
+    }
+  }
+
+  window.__jcWebGLProbe = probe;
+  window.__jcResetWebGLProbe();
+}
+
+installWebGLSmokeProbe();
+
 function setStatus(message, isError = false) {
   statusElement.textContent = message;
   statusElement.classList.toggle("error", isError);

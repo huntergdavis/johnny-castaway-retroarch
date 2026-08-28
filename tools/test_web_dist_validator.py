@@ -160,5 +160,47 @@ class WebDistributionValidatorTests(unittest.TestCase):
             self.assertIn("bundled core metadata hash", result.stdout)
 
 
+class WebDiagnosticProbeSourceTests(unittest.TestCase):
+    def test_webgl_probe_is_query_gated_bounded_and_metadata_only(self) -> None:
+        player = (ROOT / "web/jc-web-player.js").read_text(encoding="utf-8")
+        start = player.index("function installWebGLSmokeProbe()")
+        end = player.index("installWebGLSmokeProbe();", start)
+        probe = player[start:end]
+        self.assertIn('has("smoke")', probe)
+        self.assertIn("crypto.getRandomValues(randomSalt)", probe)
+        self.assertNotIn("randomSalt:", probe)
+        self.assertIn("Math.min(64, bytes.length)", probe)
+        for marker in (
+            "texImage2D",
+            "texSubImage2D",
+            "drawArrays",
+            "drawElements",
+            "clear",
+            "webglcontextlost",
+            "webglcontextrestored",
+            "windowDistinctSampledVideoUploads",
+            "windowRollingUploadSignature",
+        ):
+            self.assertIn(marker, probe)
+        for forbidden in (
+            "probe.pixels",
+            "probe.frames",
+            "probe.uploadBytes",
+            "window.__jcWebGLPixels",
+            "window.__jcWebGLFrames",
+            ".push(bytes",
+        ):
+            self.assertNotIn(forbidden, probe)
+
+        harness = (ROOT / "tools/web_smoke_test.py").read_text(encoding="utf-8")
+        for marker in (
+            "__jcResetWebGLProbe",
+            '"webgl": webgl_metrics',
+            '"distinct_sampled_video_uploads"',
+            '"context_lost_events"',
+        ):
+            self.assertIn(marker, harness)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

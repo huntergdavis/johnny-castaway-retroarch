@@ -176,8 +176,14 @@ changes; a fixed chapter requires material scripted-playfield changes. Both
 continuously queue and complete the pinned RetroArch Web Audio
 driver's 10 ms blocks during a separate idle five-second interval, with scheduled
 duration matching observed browser time and no material post-warmup underrun gap.
-The probe is enabled only for the runner's `?smoke=1` URL and records scheduling
-counts/timing, never audio samples or user-owned resource contents.
+During that same immediate window, a WebGL diagnostic probe counts texture uploads,
+typed video-sized uploads, draw/clear calls, and context loss/restoration. It reports
+only an ephemeral-salted rolling 32-bit signature and count of distinct signatures
+over at most 64 evenly spaced bytes per typed video upload; the salt and sampled
+bytes are never exposed or retained. These probes are enabled only for the runner's
+`?smoke=1` URL and never record audio samples, frames, pixel buffers, or user-owned
+resource contents. The metrics are preserved in `result.json` even when later motion,
+frame-quality, audio, or WebGL assertions fail.
 
 For a separate deterministic scripted-motion gate, use a chapter ID present in
 `src/jc_chapters.c` with explicit local content:

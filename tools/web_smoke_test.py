@@ -445,6 +445,7 @@ def diagnostics(driver: WebDriver) -> dict[str, Any]:
           rejections: smoke.rejections || [],
           consoleErrors: smoke.consoleErrors || [],
           audioProbe: window.__jcAudioProbe || null,
+          webglProbe: window.__jcWebGLProbe || null,
         };
         """
     )
@@ -646,21 +647,37 @@ def capture_temporal_gameplay(
     # the comparatively expensive PNG decoding below.
     probe = driver.execute(
         """
-        if (typeof window.__jcResetAudioProbe !== 'function') return null;
-        return window.__jcResetAudioProbe();
+        return {
+          audio: typeof window.__jcResetAudioProbe === 'function'
+            ? window.__jcResetAudioProbe() : null,
+          webgl: typeof window.__jcResetWebGLProbe === 'function'
+            ? window.__jcResetWebGLProbe() : null,
+        };
         """
     )
-    if not isinstance(probe, dict) or not probe.get("installed"):
+    audio_probe = probe.get("audio") if isinstance(probe, dict) else None
+    if not isinstance(audio_probe, dict) or not audio_probe.get("installed"):
         raise SmokeFailure(f"Web Audio scheduling probe is unavailable: {probe!r}")
     time.sleep(5.0)
-    audio = driver.execute(
+    probe_snapshot = driver.execute(
         """
-        const probe = window.__jcAudioProbe;
-        if (!probe) return null;
-        const snapshot = JSON.parse(JSON.stringify(probe));
-        snapshot.observedWindowElapsedMs = performance.now() - probe.windowStartedAtMs;
-        return snapshot;
+        const snapshot = probe => {
+          if (!probe) return null;
+          const copy = JSON.parse(JSON.stringify(probe));
+          copy.observedWindowElapsedMs = performance.now() - probe.windowStartedAtMs;
+          return copy;
+        };
+        return {
+          audio: snapshot(window.__jcAudioProbe),
+          webgl: snapshot(window.__jcWebGLProbe),
+        };
         """
+    )
+    audio = (
+        probe_snapshot.get("audio") if isinstance(probe_snapshot, dict) else None
+    )
+    webgl = (
+        probe_snapshot.get("webgl") if isinstance(probe_snapshot, dict) else None
     )
 
     decoded_frames = [png_pixels(path) for path in paths]
@@ -764,6 +781,54 @@ def capture_temporal_gameplay(
             f"{positive_gaps}/{queued}, max {maximum_gap_ms:.3f} ms"
         )
 
+    if not isinstance(webgl, dict) or not webgl.get("installed"):
+        failures.append(f"WebGL diagnostic probe disappeared: {webgl!r}")
+        webgl = {}
+    webgl_elapsed = float(webgl.get("observedWindowElapsedMs", 0.0)) / 1000.0
+    contexts_created = int(webgl.get("contextsCreated", 0))
+    texture_uploads = int(webgl.get("windowTexImage2DCalls", 0)) + int(
+        webgl.get("windowTexSubImage2DCalls", 0)
+    )
+    typed_uploads = int(webgl.get("windowTypedArrayUploads", 0))
+    video_uploads = int(webgl.get("windowVideoUploadCandidates", 0))
+    draw_calls = int(webgl.get("windowDrawArraysCalls", 0)) + int(
+        webgl.get("windowDrawElementsCalls", 0)
+    )
+    context_losses = int(webgl.get("contextLostEvents", 0))
+    if contexts_created < 1:
+        failures.append("WebGL probe did not observe a rendering context")
+    if texture_uploads < 1 or video_uploads < 1:
+        failures.append(
+            "WebGL probe observed no typed video-sized texture upload"
+        )
+    if draw_calls < 1:
+        failures.append("WebGL probe observed no draw call")
+    if context_losses:
+        failures.append(f"WebGL context was lost {context_losses} time(s)")
+
+    rolling_signature = int(webgl.get("windowRollingUploadSignature", 0))
+    webgl_metrics = {
+        "observation_elapsed_seconds": webgl_elapsed,
+        "contexts_created": contexts_created,
+        "tex_image_2d_calls": int(webgl.get("windowTexImage2DCalls", 0)),
+        "tex_sub_image_2d_calls": int(
+            webgl.get("windowTexSubImage2DCalls", 0)
+        ),
+        "typed_array_uploads": typed_uploads,
+        "video_upload_candidates": video_uploads,
+        "distinct_sampled_video_uploads": int(
+            webgl.get("windowDistinctSampledVideoUploads", 0)
+        ),
+        "sampled_upload_bytes": int(webgl.get("windowSampledUploadBytes", 0)),
+        "rolling_upload_signature": f"{rolling_signature:08x}",
+        "signature_kind": webgl.get("signatureKind"),
+        "draw_arrays_calls": int(webgl.get("windowDrawArraysCalls", 0)),
+        "draw_elements_calls": int(webgl.get("windowDrawElementsCalls", 0)),
+        "clear_calls": int(webgl.get("windowClearCalls", 0)),
+        "context_lost_events": context_losses,
+        "context_restored_events": int(webgl.get("contextRestoredEvents", 0)),
+    }
+
     temporal = {
         "settle_seconds": 6.0,
         "sample_elapsed_seconds": elapsed,
@@ -794,6 +859,7 @@ def capture_temporal_gameplay(
             "maximum_positive_gap_ms": maximum_gap_ms,
             "maximum_queue_interval_ms": audio.get("windowMaxQueueIntervalMs"),
         },
+        "webgl": webgl_metrics,
         "acceptance_failures": failures,
         "passed": not failures,
     }
