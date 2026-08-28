@@ -27,15 +27,23 @@
 #include <string.h>
 #include <time.h>
 
+#define WEB_AUDIO_NOMINAL_FRAMES 2646u
+#define WEB_AUDIO_MAX_FRAMES 16934u
+#define WEB_AUDIO_MAX_ELAPSED_MS 384.0
+#define WEB_AUDIO_PAUSE_RESET_MS 750.0
+
 #ifdef EMSCRIPTEN
+#include <emscripten/emscripten.h>
 #define PRESENTATION_FRAME_RATE (JC_FRAME_RATE / 3.0)
 #define LOGIC_TICKS_PER_PRESENTATION_FRAME 3u
-#define AUDIO_FRAMES_PER_VIDEO_FRAME 3000u
+#define AUDIO_FRAMES_PER_VIDEO_FRAME WEB_AUDIO_NOMINAL_FRAMES
+#define AUDIO_OUTPUT_MAX_FRAMES WEB_AUDIO_MAX_FRAMES
 #define WEB_VIDEO_SUBMISSION_INTERVAL 2u
 #else
 #define PRESENTATION_FRAME_RATE JC_FRAME_RATE
 #define LOGIC_TICKS_PER_PRESENTATION_FRAME 1u
 #define AUDIO_FRAMES_PER_VIDEO_FRAME 882u
+#define AUDIO_OUTPUT_MAX_FRAMES AUDIO_FRAMES_PER_VIDEO_FRAME
 #endif
 #define LEGACY_CHAPTER_BYTES 1024u
 #define LEGACY_HOLIDAY_BYTES 1024u
@@ -149,10 +157,123 @@ static bool game_loaded;
 static bool reset_pressed;
 static jc_audio_t audio;
 static jc_sfx_t sfx;
-static int16_t audio_output[AUDIO_FRAMES_PER_VIDEO_FRAME * 2u];
+static int16_t audio_output[AUDIO_OUTPUT_MAX_FRAMES * 2u];
 static uint32_t video_output[JC_FRAME_WIDTH * JC_FRAME_HEIGHT];
 #ifdef EMSCRIPTEN
 static uint16_t web_video_output[JC_FRAME_WIDTH * JC_FRAME_HEIGHT];
+#endif
+
+#if defined(EMSCRIPTEN) || defined(JC_LIBRETRO_TEST)
+typedef struct jc_web_audio_clock {
+    bool ready;
+    double last_ms;
+    double fractional_frames;
+    double lead_frames;
+} jc_web_audio_clock_t;
+
+static size_t web_audio_frames_at(jc_web_audio_clock_t *clock,
+                                  double now_ms)
+{
+    double elapsed_ms;
+    double exact_frames;
+    size_t elapsed_frames;
+    size_t frames;
+
+    if (clock == NULL)
+        return WEB_AUDIO_NOMINAL_FRAMES;
+    if (now_ms != now_ms || !clock->ready) {
+        clock->ready = now_ms == now_ms;
+        clock->last_ms = now_ms;
+        clock->fractional_frames = 0.0;
+        clock->lead_frames = now_ms == now_ms ?
+            (double)WEB_AUDIO_NOMINAL_FRAMES : 0.0;
+        return WEB_AUDIO_NOMINAL_FRAMES;
+    }
+    elapsed_ms = now_ms - clock->last_ms;
+    clock->last_ms = now_ms;
+    if (elapsed_ms <= 0.0 || elapsed_ms > WEB_AUDIO_PAUSE_RESET_MS) {
+        clock->fractional_frames = 0.0;
+        clock->lead_frames = (double)WEB_AUDIO_NOMINAL_FRAMES;
+        return WEB_AUDIO_NOMINAL_FRAMES;
+    }
+    if (elapsed_ms > WEB_AUDIO_MAX_ELAPSED_MS)
+        elapsed_ms = WEB_AUDIO_MAX_ELAPSED_MS;
+    exact_frames = elapsed_ms * (double)JC_AUDIO_RATE / 1000.0 +
+                   clock->fractional_frames;
+    elapsed_frames = (size_t)exact_frames;
+    clock->fractional_frames = exact_frames - (double)elapsed_frames;
+    exact_frames = (double)elapsed_frames +
+                   (double)WEB_AUDIO_NOMINAL_FRAMES - clock->lead_frames;
+    frames = exact_frames > 0.0 ? (size_t)exact_frames : 0u;
+    if (frames > WEB_AUDIO_MAX_FRAMES)
+        frames = WEB_AUDIO_MAX_FRAMES;
+    clock->lead_frames += (double)frames - (double)elapsed_frames;
+    return frames;
+}
+#endif
+
+#ifdef JC_LIBRETRO_TEST
+bool jc_test_web_audio_adaptive_cadence(void)
+{
+    jc_web_audio_clock_t clock;
+
+    memset(&clock, 0, sizeof(clock));
+    if (web_audio_frames_at(&clock, 1000.0) != WEB_AUDIO_NOMINAL_FRAMES ||
+        web_audio_frames_at(&clock, 1060.0) != WEB_AUDIO_NOMINAL_FRAMES ||
+        web_audio_frames_at(&clock, 1080.0) != 882u ||
+        clock.lead_frames != (double)WEB_AUDIO_NOMINAL_FRAMES)
+        return false;
+
+    memset(&clock, 0, sizeof(clock));
+    if (web_audio_frames_at(&clock, 0.0) != WEB_AUDIO_NOMINAL_FRAMES ||
+        web_audio_frames_at(&clock, 60.01) != 2646u ||
+        web_audio_frames_at(&clock, 120.02) != 2646u ||
+        web_audio_frames_at(&clock, 180.03) != 2647u)
+        return false;
+
+    memset(&clock, 0, sizeof(clock));
+    if (web_audio_frames_at(&clock, 0.0) != WEB_AUDIO_NOMINAL_FRAMES ||
+        web_audio_frames_at(&clock, 50.0) != 2205u ||
+        web_audio_frames_at(&clock, 120.0) != 3087u ||
+        web_audio_frames_at(&clock, 170.0) != 2205u ||
+        web_audio_frames_at(&clock, 240.0) != 3087u ||
+        clock.lead_frames != (double)WEB_AUDIO_NOMINAL_FRAMES)
+        return false;
+
+    clock.lead_frames = 123.0;
+    if (web_audio_frames_at(&clock, strtod("nan", NULL)) !=
+            WEB_AUDIO_NOMINAL_FRAMES ||
+        clock.ready || clock.lead_frames != 0.0 ||
+        web_audio_frames_at(&clock, 2000.0) != WEB_AUDIO_NOMINAL_FRAMES ||
+        clock.lead_frames != (double)WEB_AUDIO_NOMINAL_FRAMES)
+        return false;
+
+    memset(&clock, 0, sizeof(clock));
+    if (web_audio_frames_at(&clock, 0.0) != WEB_AUDIO_NOMINAL_FRAMES ||
+        web_audio_frames_at(&clock, 500.0) != WEB_AUDIO_MAX_FRAMES ||
+        web_audio_frames_at(&clock, 1300.0) != WEB_AUDIO_NOMINAL_FRAMES ||
+        web_audio_frames_at(&clock, 1360.0) != WEB_AUDIO_NOMINAL_FRAMES ||
+        web_audio_frames_at(&clock, 1300.0) != WEB_AUDIO_NOMINAL_FRAMES ||
+        clock.lead_frames != (double)WEB_AUDIO_NOMINAL_FRAMES)
+        return false;
+    return true;
+}
+#endif
+
+#ifdef EMSCRIPTEN
+static jc_web_audio_clock_t web_audio_clock;
+
+static void reset_web_audio_clock(void)
+{
+    memset(&web_audio_clock, 0, sizeof(web_audio_clock));
+}
+
+static size_t web_audio_frames_for_run(void)
+{
+    return web_audio_frames_at(&web_audio_clock, emscripten_get_now());
+}
+#else
+#define reset_web_audio_clock() ((void)0)
 #endif
 static bool diagnostic_display;
 static char selected_screen[JC_RESOURCE_NAME_BYTES + 1u] = "INTRO.SCR";
@@ -2811,6 +2932,7 @@ void retro_init(void)
     input_poll_cb = input_poll_cb != NULL ? input_poll_cb : null_input_poll;
     input_state_cb = input_state_cb != NULL ? input_state_cb : null_input_state;
     memset(audio_output, 0, sizeof(audio_output));
+    reset_web_audio_clock();
     memset(video_output, 0, sizeof(video_output));
     runtime = NULL;
     memset(&ocean_info, 0, sizeof(ocean_info));
@@ -2871,6 +2993,7 @@ void retro_deinit(void)
     if (content.ready)
         jc_content_unload(&content);
     game_loaded = false;
+    reset_web_audio_clock();
 }
 
 unsigned retro_api_version(void)
@@ -2910,6 +3033,7 @@ void retro_reset(void)
 {
     char error[256];
 
+    reset_web_audio_clock();
     jc_core_reset(&core);
     jc_audio_reset(&audio);
     if (ocean_enabled &&
@@ -2924,6 +3048,7 @@ void retro_run(void)
 {
     bool pressed;
     bool options_updated = false;
+    size_t audio_frames = AUDIO_FRAMES_PER_VIDEO_FRAME;
     unsigned story_tick;
     uint64_t previous_story_ticks =
         runtime_ready && runtime != NULL ? runtime->vm.tick_count : 0u;
@@ -3011,8 +3136,11 @@ void retro_run(void)
          story_tick < playback_speed * LOGIC_TICKS_PER_PRESENTATION_FRAME;
          ++story_tick)
         jc_captions_tick(&captions);
-    jc_audio_mix(&audio, audio_output, AUDIO_FRAMES_PER_VIDEO_FRAME);
-    audio_batch_cb(audio_output, AUDIO_FRAMES_PER_VIDEO_FRAME);
+#ifdef EMSCRIPTEN
+    audio_frames = web_audio_frames_for_run();
+#endif
+    jc_audio_mix(&audio, audio_output, audio_frames);
+    audio_batch_cb(audio_output, audio_frames);
 }
 
 static uint32_t serialized_chapter_index(const jc_chapter_t *chapter)
@@ -3175,6 +3303,7 @@ static bool retro_unserialize_legacy(const uint8_t *bytes, size_t size)
     if (success) {
         core = *candidate_core;
         audio = candidate_audio;
+        reset_web_audio_clock();
     }
     free(candidate_core);
     return success;
@@ -3716,6 +3845,8 @@ cleanup:
         free(candidate_runtime);
     }
     free(candidate_core);
+    if (success)
+        reset_web_audio_clock();
     return success;
 }
 
@@ -3741,6 +3872,7 @@ bool retro_load_game(const struct retro_game_info *game)
     jc_sfx_report_t sfx_report;
     char error[256];
 
+    reset_web_audio_clock();
     if (game == NULL || game->path == NULL || game->path[0] == '\0')
         return false;
     if (content.ready)
@@ -3823,6 +3955,7 @@ bool retro_load_game_special(unsigned game_type,
 
 void retro_unload_game(void)
 {
+    reset_web_audio_clock();
     game_loaded = false;
     jc_captions_clear(&captions);
     if (runtime != NULL) {

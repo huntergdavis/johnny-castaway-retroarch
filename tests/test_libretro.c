@@ -81,6 +81,7 @@ size_t jc_test_story_wave_frame(size_t position, size_t position_count,
                                 uint64_t runtime_ticks);
 bool jc_test_story_wave_composition(void);
 bool jc_test_story_palette_selection(void);
+bool jc_test_web_audio_adaptive_cadence(void);
 size_t jc_test_current_canonical_key_longest_run(void);
 size_t jc_test_current_saved_zone_pixels(void);
 
@@ -109,6 +110,7 @@ static void assert_story_wave_cadence(void)
     assert(jc_test_story_wave_frame(1u, 4u, 72u) == 0u);
     assert(jc_test_story_wave_composition());
     assert(jc_test_story_palette_selection());
+    assert(jc_test_web_audio_adaptive_cadence());
 }
 
 static void write_u16le(uint8_t *data, uint16_t value)
