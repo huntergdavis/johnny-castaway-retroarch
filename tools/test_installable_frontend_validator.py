@@ -69,10 +69,24 @@ def vita_sfo_fixture() -> bytes:
 def vita_vpk_fixture() -> bytes:
     return zip_bytes(
         [
-            ("eboot.bin", b"SCE\0compressed-self-without-plain-core-markers"),
+            ("eboot.bin", vita_self_fixture()),
             ("sce_sys/param.sfo", vita_sfo_fixture()),
         ]
     )
+
+
+def vita_self_fixture() -> bytes:
+    elf_offset = 0xA0
+    header_len = 0x1000
+    payload = bytearray(header_len + 52)
+    payload[:4] = b"SCE\0"
+    struct.pack_into("<IHHI", payload, 4, 3, 0xC0, 1, 0x600)
+    struct.pack_into("<QQQ", payload, 16, header_len, 52, len(payload))
+    struct.pack_into("<QQQ", payload, 48, 4, 0x80, elf_offset)
+    payload[elf_offset : elf_offset + 4] = b"\x7fELF"
+    payload[elf_offset + 4] = 1
+    payload[elf_offset + 5] = 1
+    return bytes(payload)
 
 
 def vita_audit_elf_fixture() -> bytearray:
@@ -189,6 +203,24 @@ class MetadataParserTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(SystemExit, "Vita audit ELF.*linked Johnny marker"):
             validator.validate_vita_audit_elf(bytes(audit), VERSION)
+
+    def test_vita_self_header_truncation_and_offsets_are_rejected(self) -> None:
+        with self.assertRaisesRegex(SystemExit, "complete SELF header"):
+            validator.validate_vita_self(b"SCE\0")
+        mutations = (
+            (4, struct.pack("<I", 2), "version or type"),
+            (16, struct.pack("<Q", 0x2000), "length fields"),
+            (24, struct.pack("<Q", 0), "length fields"),
+            (56, struct.pack("<Q", 0x90), "app-info offset"),
+            (64, struct.pack("<Q", 0x2000), "embedded ELF offset"),
+            (0xA0, b"NOPE", "ELF32 little-endian"),
+        )
+        for offset, replacement, message in mutations:
+            with self.subTest(offset=offset):
+                payload = bytearray(vita_self_fixture())
+                payload[offset : offset + len(replacement)] = replacement
+                with self.assertRaisesRegex(SystemExit, message):
+                    validator.validate_vita_self(bytes(payload))
 
     def test_fake_minimal_metadata_fixtures_are_rejected(self) -> None:
         fake_nro = bytearray(0x200)

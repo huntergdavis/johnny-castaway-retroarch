@@ -401,6 +401,27 @@ def validate_cia(payload: bytes, version: str) -> None:
         fail(f"unexpected Nintendo 3DS NCCH product code: {product_code!r}")
 
 
+def validate_vita_self(payload: bytes) -> None:
+    if len(payload) < 0x80 or payload[:4] != b"SCE\0":
+        fail("Vita eboot.bin has no complete SELF header")
+    version, _sdk_type, header_type, _metadata_offset = struct.unpack_from(
+        "<IHHI", payload, 4
+    )
+    header_len, elf_filesize = struct.unpack_from("<QQ", payload, 16)
+    appinfo_offset, elf_offset = struct.unpack_from("<QQ", payload, 56)
+    if version != 3 or header_type != 1:
+        fail("Vita eboot.bin has an unsupported SELF version or type")
+    if header_len < 0x80 or header_len > len(payload) or not elf_filesize:
+        fail("Vita eboot.bin has invalid SELF length fields")
+    if appinfo_offset != 0x80:
+        fail("Vita eboot.bin has an unexpected SELF app-info offset")
+    if elf_offset < 0x80 or elf_offset + 52 > len(payload):
+        fail("Vita eboot.bin has an invalid embedded ELF offset")
+    embedded = payload[elf_offset : elf_offset + 52]
+    if embedded[:4] != b"\x7fELF" or embedded[4] != 1 or embedded[5] != 1:
+        fail("Vita eboot.bin has no ELF32 little-endian payload")
+
+
 def validate_vpk(payload: bytes, version: str) -> None:
     with zipfile.ZipFile(io.BytesIO(payload)) as archive:
         members = safe_members(archive, "Vita VPK")
@@ -409,8 +430,7 @@ def validate_vpk(payload: bytes, version: str) -> None:
         if missing:
             fail("Vita VPK is missing: " + ", ".join(sorted(missing)))
         executable = archive.read("eboot.bin")
-        if len(executable) < 4 or executable[:4] != b"SCE\0":
-            fail("Vita eboot.bin has no SELF header")
+        validate_vita_self(executable)
         sfo = read_sfo(archive.read("sce_sys/param.sfo"))
         if sfo.get("TITLE_ID") != b"JCASTAWAY":
             fail(f"unexpected Vita TITLE_ID: {sfo.get('TITLE_ID')!r}")
