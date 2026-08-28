@@ -40,6 +40,52 @@ def marker_blob() -> bytes:
     return b"\0".join((*validator.MARKERS, VERSION.encode("ascii")))
 
 
+def vita_sfo_fixture() -> bytes:
+    keys = b"TITLE\0TITLE_ID\0"
+    title = b"Johnny Castaway\0"
+    title_id = b"JCASTAWAY\0"
+    key_offset = 20 + 2 * 16
+    data_offset = key_offset + len(keys)
+    payload = bytearray(data_offset + len(title) + len(title_id))
+    payload[:4] = b"\0PSF"
+    struct.pack_into("<I", payload, 4, 0x00000101)
+    struct.pack_into("<III", payload, 8, key_offset, data_offset, 2)
+    struct.pack_into("<HHIII", payload, 20, 0, 0x0204, len(title), len(title), 0)
+    struct.pack_into(
+        "<HHIII",
+        payload,
+        36,
+        len(b"TITLE\0"),
+        0x0204,
+        len(title_id),
+        len(title_id),
+        len(title),
+    )
+    payload[key_offset:data_offset] = keys
+    payload[data_offset:] = title + title_id
+    return bytes(payload)
+
+
+def vita_vpk_fixture() -> bytes:
+    return zip_bytes(
+        [
+            ("eboot.bin", b"SCE\0compressed-self-without-plain-core-markers"),
+            ("sce_sys/param.sfo", vita_sfo_fixture()),
+        ]
+    )
+
+
+def vita_audit_elf_fixture() -> bytearray:
+    markers = marker_blob()
+    payload = bytearray(52 + len(markers))
+    payload[:4] = b"\x7fELF"
+    payload[4] = 1
+    payload[5] = 1
+    struct.pack_into("<HH", payload, 16, 2, 40)
+    payload[52:] = markers
+    return payload
+
+
 def nro_fixture() -> bytearray:
     markers = marker_blob()
     executable_size = 0x80 + len(markers)
@@ -127,6 +173,22 @@ class MetadataParserTests(unittest.TestCase):
         validator.validate_nro(bytes(nro_fixture()), VERSION)
         validator.validate_smdh(bytes(smdh_fixture()))
         validator.validate_cia(bytes(cia_fixture()), VERSION)
+        validator.validate_vpk(vita_vpk_fixture(), VERSION)
+        validator.validate_vita_audit_elf(bytes(vita_audit_elf_fixture()), VERSION)
+
+    def test_vita_linkage_markers_are_required_in_audit_elf_not_self(self) -> None:
+        vpk = vita_vpk_fixture()
+        with zipfile.ZipFile(io.BytesIO(vpk)) as archive:
+            self.assertNotIn(b"Johnny Castaway", archive.read("eboot.bin"))
+        validator.validate_vpk(vpk, VERSION)
+        audit = vita_audit_elf_fixture()
+        marker_at = audit.find(b"Johnny Castaway")
+        self.assertGreaterEqual(marker_at, 0)
+        audit[marker_at : marker_at + len(b"Johnny Castaway")] = b"X" * len(
+            b"Johnny Castaway"
+        )
+        with self.assertRaisesRegex(SystemExit, "Vita audit ELF.*linked Johnny marker"):
+            validator.validate_vita_audit_elf(bytes(audit), VERSION)
 
     def test_fake_minimal_metadata_fixtures_are_rejected(self) -> None:
         fake_nro = bytearray(0x200)

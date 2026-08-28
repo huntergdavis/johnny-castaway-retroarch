@@ -409,12 +409,24 @@ def validate_vpk(payload: bytes, version: str) -> None:
         if missing:
             fail("Vita VPK is missing: " + ", ".join(sorted(missing)))
         executable = archive.read("eboot.bin")
-        require_markers(executable, "Vita eboot.bin", version)
+        if len(executable) < 4 or executable[:4] != b"SCE\0":
+            fail("Vita eboot.bin has no SELF header")
         sfo = read_sfo(archive.read("sce_sys/param.sfo"))
         if sfo.get("TITLE_ID") != b"JCASTAWAY":
             fail(f"unexpected Vita TITLE_ID: {sfo.get('TITLE_ID')!r}")
         if sfo.get("TITLE") != b"Johnny Castaway":
             fail(f"unexpected Vita TITLE: {sfo.get('TITLE')!r}")
+
+
+def validate_vita_audit_elf(payload: bytes, version: str) -> None:
+    if len(payload) < 52 or payload[:4] != b"\x7fELF":
+        fail("Vita audit artifact has no ELF header")
+    if payload[4] != 1 or payload[5] != 1:
+        fail("Vita audit ELF is not ELF32 little-endian")
+    elf_type, machine = struct.unpack_from("<HH", payload, 16)
+    if elf_type != 2 or machine != 40:
+        fail("Vita audit ELF is not an executable for ARM")
+    require_markers(payload, "Vita audit ELF", version)
 
 
 def validate_ps2_elf(payload: bytes, version: str) -> None:
@@ -641,6 +653,10 @@ def main() -> int:
         validate_cia((args.artifact_dir / raw_names[2]).read_bytes(), args.version)
     elif args.target == "vita":
         validate_vpk((args.artifact_dir / raw_names[0]).read_bytes(), args.version)
+        audit = args.artifact_dir / "retroarch_vita.unstripped.elf"
+        if not audit.is_file():
+            fail(f"missing Vita audit ELF: {audit}")
+        validate_vita_audit_elf(audit.read_bytes(), args.version)
     elif args.target == "ps2":
         validate_ps2_elf((args.artifact_dir / raw_names[0]).read_bytes(), args.version)
         with zipfile.ZipFile(args.package) as package:
