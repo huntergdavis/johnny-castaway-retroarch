@@ -19,6 +19,7 @@ All references were reviewed locally on 2026-08-27 at these immutable commits:
 | [huntergdavis/johnny_dreamcastaway](https://github.com/huntergdavis/johnny_dreamcastaway) | `7f2f1adf344fe309c43493e3701ae5967e4eee4f` | GPLv3 | Graphics/sound/event platform seams |
 | [deckarep/Johnny-Castaway-2026-Public](https://github.com/deckarep/Johnny-Castaway-2026-Public) | `ba5ae61884ff3fb765e766d3d28507a03dea9b20` | No license file found in reviewed snapshot; all rights reserved by default | Evaluated only; no code or data reused |
 | [libretro/libretro-common](https://github.com/libretro/libretro-common) | `09b55b683764d49ae1e640d7db5069931d6d2d40` | Per-file; `libretro.h` uses the MIT license text | Pinned Git submodule and API header |
+| [libretro/libretro-fceumm](https://github.com/libretro/libretro-fceumm) | `236ccdfc911e84c60fea6b9d0699c2d440a8de14` | GPLv2 | Reviewed portable-core target names and devkitPro compiler/static-library conventions; no Makefile text copied |
 
 The local cross-session `deja` recall search was run before implementation but returned
 no reusable session record within the query timeout. Reuse claims below therefore cite
@@ -46,7 +47,7 @@ repository files and revisions directly.
 | `src/jc_decompress.c` | Johnny Reborn `uncompress.c`; Wilson `crates/wilson-dgds/src/decompress.rs`; ScummVM DGDS research cited by Wilson | Independently written bounded C99 RLE/LZW decoder using documented DGDS behavior |
 | `src/jc_palette.c`, `src/jc_scr.c`, `src/jc_surface.c` | Johnny Reborn `graphics.c`; Wilson `crates/wilson-dgds/src/pal.rs`, `scr.rs`, `pixels.rs`; Wilson engine `surface.rs`; Hunter PS1 indexed-surface work | Independently written C99 decoder/raster layer informed by the named implementations and low-memory constraints |
 | `src/libretro_core.c`, `johnny_castaway_libretro.info` | Pinned `external/libretro-common/include/libretro.h`; libretro core/options conventions | New adapter code written against the official API; the header is consumed from the pinned submodule |
-| `Makefile`, `scripts/build-target.sh` | libretro platform conventions and prior Hunter console ports | New project build mapping; no third-party build file copied verbatim |
+| `Makefile`, `scripts/build-target.sh` | libretro platform conventions, pinned FCEUmm `Makefile.libretro`, [official Android NDK ABI guide](https://developer.android.com/ndk/guides/abis), [official NDK non-CMake toolchain guide](https://developer.android.com/ndk/guides/other_build_systems), and prior Hunter console ports | New project build mapping; Android uses the documented four ABIs and NDK r22+ LLVM target-triple/API form. No third-party build file copied verbatim |
 
 New PS1-extra and web-harness entries are appended to this table when their parallel
 workstreams land. The implementation is intentionally split into modules so

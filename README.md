@@ -45,6 +45,19 @@ A target appearing in that list means the build mapping exists, not that it has
 already passed its compiler and RetroArch runtime gates. The live status is in
 `docs/PORTING_PLAN.md`.
 
+Android builds use the NDK r22-or-newer LLVM toolchain layout and build one ABI at a
+time. Set `ANDROID_NDK_HOME` (or `ANDROID_NDK_ROOT`), then select the ABI:
+
+```sh
+ANDROID_NDK_HOME=/path/to/android-ndk ./scripts/build-target.sh android-arm64
+ANDROID_NDK_HOME=/path/to/android-ndk ./scripts/build-target.sh android-armv7
+ANDROID_NDK_HOME=/path/to/android-ndk ./scripts/build-target.sh android-x86_64
+ANDROID_NDK_HOME=/path/to/android-ndk ./scripts/build-target.sh android-x86
+```
+
+`ANDROID_API` defaults to 21. `ANDROID_NDK_HOST_TAG` is inferred for Linux and macOS
+and can be overridden for another NDK host package.
+
 ## Data and copyright
 
 No Sierra/Dynamix game data, artwork, or audio is distributed here. Users must provide

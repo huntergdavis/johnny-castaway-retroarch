@@ -11,7 +11,8 @@ fi
 case "$target" in
     --list)
         printf '%s\n' native linux-x86_64 linux-aarch64 linux-armv7 \
-            windows-x64 windows-x86 macos web psp vita 3ds ps2
+            windows-x64 windows-x86 macos web android-arm64 \
+            android-armv7 android-x86_64 android-x86 psp vita 3ds ps2
         exit 0
         ;;
     native) platform=unix ;;
@@ -22,6 +23,10 @@ case "$target" in
     windows-x86) platform=mingw_x86 ;;
     macos) platform=osx ;;
     web) platform=emscripten ;;
+    android-arm64) platform=android_arm64 ;;
+    android-armv7) platform=android_armv7 ;;
+    android-x86_64) platform=android_x86_64 ;;
+    android-x86) platform=android_x86 ;;
     psp) platform=psp1 ;;
     vita) platform=vita ;;
     3ds) platform=ctr ;;

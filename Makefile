@@ -61,6 +61,33 @@ else ifeq ($(platform),emscripten)
   TARGET := $(BUILD_DIR)/$(TARGET_NAME)_libretro_emscripten.bc
   PLATFORM_CFLAGS := -DEMSCRIPTEN
   STATIC_LINKING := 1
+else ifneq (,$(filter $(platform),android_arm64 android_armv7 android_x86_64 android_x86))
+  ANDROID_NDK_HOME ?= $(ANDROID_NDK_ROOT)
+  ANDROID_API ?= 21
+  detected_host := $(shell uname -s)
+  ifeq ($(detected_host),Darwin)
+    ANDROID_NDK_HOST_TAG ?= darwin-x86_64
+  else
+    ANDROID_NDK_HOST_TAG ?= linux-x86_64
+  endif
+  ifeq ($(strip $(ANDROID_NDK_HOME)),)
+    $(error Set ANDROID_NDK_HOME or ANDROID_NDK_ROOT for $(platform))
+  endif
+  ANDROID_TOOLCHAIN := $(ANDROID_NDK_HOME)/toolchains/llvm/prebuilt/$(ANDROID_NDK_HOST_TAG)/bin
+  ifeq ($(platform),android_arm64)
+    ANDROID_TRIPLE := aarch64-linux-android
+  else ifeq ($(platform),android_armv7)
+    ANDROID_TRIPLE := armv7a-linux-androideabi
+  else ifeq ($(platform),android_x86_64)
+    ANDROID_TRIPLE := x86_64-linux-android
+  else
+    ANDROID_TRIPLE := i686-linux-android
+  endif
+  CC := $(ANDROID_TOOLCHAIN)/$(ANDROID_TRIPLE)$(ANDROID_API)-clang
+  AR := $(ANDROID_TOOLCHAIN)/llvm-ar
+  TARGET := $(BUILD_DIR)/$(TARGET_NAME)_libretro.so
+  PLATFORM_CFLAGS := -fPIC -DANDROID
+  SHARED := -shared
 else ifeq ($(platform),psp1)
   CC := psp-gcc
   AR := psp-ar

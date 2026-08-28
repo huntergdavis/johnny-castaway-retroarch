@@ -22,8 +22,9 @@ A target is complete only after four separate gates:
 
 ### M1 — Content and engine clock
 
-Status: content pairing, VFS/stdio access, safe map parsing, lazy entry reads, and real
-archive validation are complete. The resumable ADS/TTM clock remains.
+Status: complete. Content pairing, VFS/stdio access, safe map parsing, lazy entry reads,
+real archive validation, bounded ADS/TTM parsing, and the resumable 50 Hz script clock
+are implemented and sanitizer-tested.
 
 - Accept `RESOURCE.MAP` as content and find the sibling `RESOURCE.001` safely.
 - Add libretro VFS with stdio fallback and exact error messages through the log API.
@@ -34,8 +35,9 @@ archive validation are complete. The resumable ADS/TTM clock remains.
 ### M2 — Software raster
 
 Status: indexed surfaces, clipped transparent/flipped blits, stored/RLE/LZW decode,
-palette decode, SCR decode, and final XRGB expansion are complete and sanitizer-tested.
-BMP sheets, remaining primitives, saved zones, and layered composition remain.
+palette/SCR/BMP decode, ordered layered composition, and final XRGB expansion are complete
+and sanitizer-tested. Remaining work is saved zones, less-common raster primitives, and
+wiring TTM drawing events into resource-backed layers.
 
 - Implement indexed surface allocation, clipping, fill, line, circle, blit, color key,
   horizontal flip, saved zones, palette expansion, and final compositing.
@@ -44,11 +46,21 @@ BMP sheets, remaining primitives, saved zones, and layered composition remain.
 
 ### M3 — Story runtime
 
+Status: the bounded ADS/TTM parsers, callback-driven multi-thread VM, deterministic
+director, corrected weighted path data, and nonblocking walk animation are complete.
+Authentic resource binding, island assembly, event-to-render dispatch, whole-runtime save
+state aggregation, and deterministic trace comparison remain.
+
 - Port TTM, ADS, director/story selection, island state, pathfinding, and walking.
 - Compare deterministic scene traces with Wilson Reborn and the PS1 host harness.
 - Add core options for deterministic seed, calendar override, speed, and captions.
 
 ### M4 — Audio and frontend completeness
+
+Status: an allocation-free WAV parser and deterministic eight-voice 11025-to-44100 Hz
+stereo mixer are complete. The mixer runs every `retro_run()`, mute/volume are live Core
+Options v2 plus legacy variables, and mixer phase is saved. TTM cue dispatch, owned sample
+loading/executable extraction, captions, explorer controls, and full engine state remain.
 
 - Port sound triggers and deterministic multi-voice mixing.
 - Add core options, reset semantics, robust save states, controller descriptors, and
@@ -56,6 +68,8 @@ BMP sheets, remaining primitives, saved zones, and layered composition remain.
 - Complete and test every menu surface in `RETROARCH_INTEGRATION.md`; never expose a
   placeholder option that does nothing.
 - Add content-free test ROM fixtures and automated libretro ABI smoke loading.
+  **Synthetic MAP/archive fixture and mock frontend test complete; real RetroArch loading
+  remains a per-target gate.**
 
 ### M5 — Platforms, one compiler at a time
 
@@ -63,14 +77,14 @@ Each row advances independently through Build/Load/Run/Regress.
 
 | Wave | Make platform | Output | Current state |
 |---|---|---|---|
-| 0 | `linux_x86_64` | `.so` | implemented; local validation pending |
-| 1 | `mingw_x86_64` | `.dll` | cross-build and 25 ABI exports validated |
+| 0 | `linux_x86_64` | `.so` | build and mock-frontend validation pass; RetroArch load/run pending |
+| 1 | `mingw_x86_64` | `.dll` | cross-build and ABI exports validated; frontend run pending |
 | 1 | `mingw_x86` | `.dll` | build mapping added; compiler unavailable locally |
 | 1 | `osx` (x86_64/arm64) | `.dylib` | build mapping added; universal script pending |
 | 1 | `linux_aarch64`, `linux_armv7` | `.so` | build mapping added |
-| 2 | Android arm64/armv7/x86_64/x86 | `.so` | NDK mapping pending |
+| 2 | Android arm64/armv7/x86_64/x86 | `.so` | NDK r22+ mappings and compiler dry-runs pass; real NDK builds/frontend runs pending |
 | 2 | iOS/tvOS | static `.a` | toolchain mapping pending |
-| 2 | `emscripten` | `.bc` static core | wasm objects and archive build validated |
+| 2 | `emscripten` | `.bc` static core | wasm objects/archive validated; browser frontend harness in progress |
 | 3 | `psp1`, `vita`, `ctr`, `ps2` | static `.a` | initial compiler mapping added |
 | 3 | Switch, Wii, GameCube, Wii U | static `.a` | devkitPro mapping pending |
 | 4 | PS3, Xbox-family, Haiku/BSD/webOS and other buildbot targets | varies | inventory pending |
@@ -81,12 +95,14 @@ contract exists.
 
 ## Today’s critical path
 
-1. Finish and validate M0.
-2. Implement M1 content pairing and resource I/O.
-3. Port the surface type plus enough SCR decoding to display a real background. **Done.**
-4. Land a first DGDS-driven frame before expanding the platform matrix. **Done.**
-5. Compile Windows x64 after native Linux; record missing toolchains rather than hiding
-   failures.
+1. Core shell, content pairing, lazy resource I/O, and first DGDS frame. **Done.**
+2. Bounded BMP/ADS/TTM, director/path/walk, and deterministic mixer foundations. **Done.**
+3. Wire ADS resources to TTM slots, instruction events to the compositor/mixer, and
+   director plans to scene transitions.
+4. Port feasible PS1 additions: captions, 36-holiday calendar, scene explorer previews,
+   and the CC0 ocean ambience loop with full attribution.
+5. Complete browser/native RetroArch smoke harnesses, then expand targets one validated
+   compiler/frontend at a time.
 
 The project intentionally adds targets sequentially. A giant untested Makefile is not
 considered platform support.
