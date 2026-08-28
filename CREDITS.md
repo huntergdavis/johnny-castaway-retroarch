@@ -36,7 +36,9 @@ of their respective rights holders. This repository distributes none of that con
   platform, and validation work informed this design.
 - The PlayStation port's freshly authored closed-caption corpus, 63-scene explorer
   metadata, 36-holiday calendar, and ocean-ambience feature design were translated into
-  portable catalogs for this core. The ocean loop pipeline was introduced by Hunter
+  portable catalogs for this core. Its centered, bottom-band caption presentation
+  informed this port's independently drawn 5x7 software renderer. The ocean loop
+  pipeline was introduced by Hunter
   Davis in PS1 commit `bb32de68aad33ecd1b8a7fbdc0a9278a35971238`, co-authored there
   with Claude Opus 4.7, and completed in commit
   `c194f1bf5716b460ba7276dcb8116b24a690c636`.

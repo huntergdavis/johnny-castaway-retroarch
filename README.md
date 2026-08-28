@@ -17,7 +17,7 @@ sound mixer. It also includes the PS1 port's audited 79-caption/63-chapter catal
 36-holiday calendar, and CC0 ocean-ambience descriptor/configuration. TTM events now
 drive a bounded indexed renderer for resources, layers, sprites,
 primitives, saved zones, and frame composition. The content-backed loader, ADS scene
-orchestration, preview controls, caption presentation, audio event dispatch, and
+orchestration, preview controls, caption timing/menu integration, audio event dispatch, and
 ambience sample loading are still being connected to the libretro adapter. The mixer
 already supports the reserved ambience ID, 56% per-sample gain, and deterministic
 seamless looping, but no CC0 audio binary is distributed yet. This is therefore not yet

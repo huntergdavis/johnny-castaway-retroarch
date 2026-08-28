@@ -2,7 +2,8 @@ TARGET_NAME := johnny_castaway
 platform ?= unix
 BUILD_DIR := build/$(platform)
 
-SOURCES := src/jc_ads.c src/jc_audio.c src/jc_bmp.c src/jc_captions.c \
+SOURCES := src/jc_ads.c src/jc_audio.c src/jc_bmp.c src/jc_caption_render.c \
+           src/jc_captions.c \
            src/jc_chapters.c src/jc_compositor.c src/jc_content.c src/jc_core.c \
            src/jc_decompress.c src/jc_director.c src/jc_extras.c \
            src/jc_palette.c src/jc_path.c src/jc_resource_map.c src/jc_rng.c \
@@ -175,6 +176,7 @@ WALK_TEST_TARGET := build/tests/test_walk
 AUDIO_TEST_TARGET := build/tests/test_audio
 SCRIPT_TEST_TARGET := build/tests/test_script_vm
 EXTRAS_TEST_TARGET := build/tests/test_extras
+CAPTION_RENDER_TEST_TARGET := build/tests/test_caption_render
 TTM_RENDERER_TEST_TARGET := build/tests/test_ttm_renderer
 VAG_TEST_TARGET := build/tests/test_vag
 LIBRETRO_TEST_TARGET := build/tests/test_libretro
@@ -234,6 +236,12 @@ $(EXTRAS_TEST_TARGET): src/jc_captions.c src/jc_chapters.c src/jc_extras.c \
 	$(HOST_CC) -std=c99 $(WARNINGS) -Iinclude -O2 -o $@ \
 		src/jc_captions.c src/jc_chapters.c src/jc_extras.c tests/test_extras.c
 
+$(CAPTION_RENDER_TEST_TARGET): src/jc_caption_render.c src/jc_captions.c \
+                               tests/test_caption_render.c
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c99 $(WARNINGS) -Iinclude -O2 -o $@ \
+		src/jc_caption_render.c src/jc_captions.c tests/test_caption_render.c
+
 $(TTM_RENDERER_TEST_TARGET): src/jc_ads.c src/jc_bmp.c src/jc_compositor.c \
                              src/jc_decompress.c src/jc_palette.c \
                              src/jc_scr.c src/jc_script_vm.c src/jc_surface.c \
@@ -259,7 +267,8 @@ HOST_CC ?= cc
 test: $(TEST_TARGET) $(MAP_TEST_TARGET) $(GRAPHICS_TEST_TARGET) \
       $(BMP_TEST_TARGET) $(DIRECTOR_TEST_TARGET) $(PATH_TEST_TARGET) \
       $(WALK_TEST_TARGET) $(AUDIO_TEST_TARGET) $(SCRIPT_TEST_TARGET) \
-      $(EXTRAS_TEST_TARGET) $(TTM_RENDERER_TEST_TARGET) \
+      $(EXTRAS_TEST_TARGET) $(CAPTION_RENDER_TEST_TARGET) \
+      $(TTM_RENDERER_TEST_TARGET) \
       $(VAG_TEST_TARGET) $(LIBRETRO_TEST_TARGET)
 	./$(TEST_TARGET)
 	./$(MAP_TEST_TARGET)
@@ -271,6 +280,7 @@ test: $(TEST_TARGET) $(MAP_TEST_TARGET) $(GRAPHICS_TEST_TARGET) \
 	./$(AUDIO_TEST_TARGET)
 	./$(SCRIPT_TEST_TARGET)
 	./$(EXTRAS_TEST_TARGET)
+	./$(CAPTION_RENDER_TEST_TARGET)
 	./$(TTM_RENDERER_TEST_TARGET)
 	./$(VAG_TEST_TARGET)
 	./$(LIBRETRO_TEST_TARGET)
