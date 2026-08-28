@@ -142,6 +142,9 @@ static jc_audio_t audio;
 static jc_sfx_t sfx;
 static int16_t audio_output[AUDIO_FRAMES_PER_VIDEO_FRAME * 2u];
 static uint32_t video_output[JC_FRAME_WIDTH * JC_FRAME_HEIGHT];
+#ifdef EMSCRIPTEN
+static uint16_t web_video_output[JC_FRAME_WIDTH * JC_FRAME_HEIGHT];
+#endif
 static bool diagnostic_display;
 static char selected_screen[JC_RESOURCE_NAME_BYTES + 1u] = "INTRO.SCR";
 static const jc_chapter_t *selected_chapter;
@@ -2406,8 +2409,25 @@ static void present_video_frame(void)
             ++automatic_transition_ticks;
         }
     }
+#ifdef EMSCRIPTEN
+    {
+        size_t index;
+
+        for (index = 0u;
+             index < (size_t)JC_FRAME_WIDTH * JC_FRAME_HEIGHT; ++index) {
+            uint32_t pixel = video_output[index];
+            web_video_output[index] =
+                (uint16_t)(((pixel >> 8) & UINT32_C(0xf800)) |
+                           ((pixel >> 5) & UINT32_C(0x07e0)) |
+                           ((pixel >> 3) & UINT32_C(0x001f)));
+        }
+        video_cb(web_video_output, JC_FRAME_WIDTH, JC_FRAME_HEIGHT,
+                 JC_FRAME_WIDTH * sizeof(uint16_t));
+    }
+#else
     video_cb(video_output, JC_FRAME_WIDTH, JC_FRAME_HEIGHT,
              JC_FRAME_WIDTH * sizeof(uint32_t));
+#endif
 }
 
 static void null_video(const void *data, unsigned width, unsigned height, size_t pitch)
@@ -3413,7 +3433,11 @@ void retro_cheat_set(unsigned index, bool enabled, const char *code)
 
 bool retro_load_game(const struct retro_game_info *game)
 {
+#ifdef EMSCRIPTEN
+    enum retro_pixel_format pixel_format = RETRO_PIXEL_FORMAT_RGB565;
+#else
     enum retro_pixel_format pixel_format = RETRO_PIXEL_FORMAT_XRGB8888;
+#endif
     struct retro_vfs_interface_info vfs_info;
     jc_sfx_report_t sfx_report;
     char error[256];
