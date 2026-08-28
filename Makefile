@@ -408,7 +408,7 @@ $(RUNTIME_TEST_TARGET): src/jc_ads.c src/jc_bmp.c src/jc_compositor.c \
 
 $(LIBRETRO_TEST_TARGET): $(SOURCES) tests/test_libretro.c
 	@mkdir -p $(dir $@)
-	$(HOST_CC) -std=c99 $(WARNINGS) -Iinclude \
+	$(HOST_CC) -std=c99 $(WARNINGS) -DJC_LIBRETRO_TEST -Iinclude \
 		-Iexternal/libretro-common/include -O2 -o $@ $(SOURCES) tests/test_libretro.c
 
 HOST_CC ?= cc

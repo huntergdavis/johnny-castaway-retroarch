@@ -74,6 +74,36 @@ typedef struct script_buffer {
     size_t size;
 } script_buffer_t;
 
+size_t jc_test_story_wave_frame(size_t position, size_t position_count,
+                                uint64_t runtime_ticks);
+bool jc_test_story_wave_composition(void);
+
+static void assert_story_wave_cadence(void)
+{
+    assert(jc_test_story_wave_frame(0u, 3u, 0u) == 0u);
+    assert(jc_test_story_wave_frame(1u, 3u, 0u) == 1u);
+    assert(jc_test_story_wave_frame(2u, 3u, 0u) == 0u);
+    assert(jc_test_story_wave_frame(0u, 3u, 7u) == 0u);
+    assert(jc_test_story_wave_frame(2u, 3u, 8u) == 1u);
+    assert(jc_test_story_wave_frame(2u, 3u, 6u) == 0u);
+    assert(jc_test_story_wave_frame(2u, 3u, 9u) == 1u);
+    assert(jc_test_story_wave_frame(0u, 3u, 16u) == 1u);
+    assert(jc_test_story_wave_frame(1u, 3u, 24u) == 2u);
+    assert(jc_test_story_wave_frame(0u, 3u, 48u) == 2u);
+    assert(jc_test_story_wave_frame(0u, 3u, 72u) == 0u);
+
+    assert(jc_test_story_wave_frame(0u, 4u, 0u) == 0u);
+    assert(jc_test_story_wave_frame(1u, 4u, 0u) == 0u);
+    assert(jc_test_story_wave_frame(2u, 4u, 0u) == 0u);
+    assert(jc_test_story_wave_frame(3u, 4u, 0u) == 0u);
+    assert(jc_test_story_wave_frame(1u, 4u, 8u) == 1u);
+    assert(jc_test_story_wave_frame(2u, 4u, 16u) == 1u);
+    assert(jc_test_story_wave_frame(3u, 4u, 24u) == 1u);
+    assert(jc_test_story_wave_frame(0u, 4u, 32u) == 1u);
+    assert(jc_test_story_wave_frame(1u, 4u, 72u) == 0u);
+    assert(jc_test_story_wave_composition());
+}
+
 static void write_u16le(uint8_t *data, uint16_t value)
 {
     data[0] = (uint8_t)value;
@@ -676,6 +706,7 @@ int main(int argc, char **argv)
     unsigned audio_frames_before;
     unsigned automatic_starts_before;
 
+    assert_story_wave_cadence();
     retro_set_environment(environment);
     retro_set_video_refresh(video);
     retro_set_audio_sample(audio_sample);
@@ -1028,6 +1059,10 @@ int main(int argc, char **argv)
         assert(retro_unserialize(malformed, state_size));
         assert(retro_unserialize(state, state_size));
 
+        playback_speed_value = "1";
+        variable_updated = true;
+        retro_run();
+        walks_before = automatic_walk_starts;
         for (frame = 0u;
              frame < 5000u && automatic_walk_starts == walks_before &&
              runtime_error_logs == 0u;
@@ -1035,6 +1070,15 @@ int main(int argc, char **argv)
             retro_run();
         assert(runtime_error_logs == 0u);
         assert(automatic_walk_starts == walks_before + 1u);
+        assert(retro_serialize(state, state_size));
+        compact_position = read_u32le(state + 60u);
+        assert(((compact_position >> 9) & 0x3u) == 1u);
+        assert(((compact_position >> 14) & 0x7ffu) == 0u);
+        assert(retro_unserialize(state, state_size));
+        assert(retro_serialize(roundtrip, state_size));
+        assert(memcmp(roundtrip, state, state_size) == 0);
+        playback_speed_value = "4";
+        variable_updated = true;
         retro_run();
         assert(retro_serialize(state, state_size));
         assert(((read_u32le(state + 60u) >> 9) & 0x3u) == 1u);

@@ -37,6 +37,8 @@
 #define CHAPTER_RUNTIME_SEED 0x4a435241u
 #define STORY_PLAN_SEED 24u
 #define WALK_RUNTIME_SEED_XOR 0x57414c4bu
+#define ISLAND_WAVE_INTERVAL_TICKS 8u
+#define ISLAND_WAVE_INITIAL_ADVANCES 4u
 
 #define JC_STORY_CONTEXT_FLAG (UINT32_C(1) << 31)
 #define JC_STORY_CONTEXT_YDAY_SHIFT 8u
@@ -1295,6 +1297,11 @@ static bool load_walk_resources(char *error, size_t error_size)
         jc_bmp_free(&island_sprites);
         if (error != NULL && error_size > 0u)
             error[0] = '\0';
+    } else if (island_sprites.image_count <= 41u && log_cb != NULL) {
+        log_cb(RETRO_LOG_WARN,
+               "Johnny Castaway island waves: BACKGRND has %u frames; "
+               "42 required, continuing without animated foam\n",
+               (unsigned)island_sprites.image_count);
     }
     have_raft_sprites = load_content_bmp("MRAFT.BMP", &raft_sprites,
                                          error, error_size);
@@ -1477,6 +1484,214 @@ static bool blit_story_sprite(jc_bmp_t *bmp, size_t frame,
     return true;
 }
 
+typedef struct jc_story_wave_position {
+    int x;
+    int y;
+    size_t first_frame;
+} jc_story_wave_position_t;
+
+static const jc_story_wave_position_t story_high_tide_waves[] = {
+    {270, 306, 3u}, {364, 319, 6u}, {518, 303, 9u}
+};
+static const jc_story_wave_position_t story_low_tide_waves[] = {
+    {129, 340, 39u}, {233, 323, 30u},
+    {367, 356, 33u}, {558, 323, 36u}
+};
+
+static size_t story_wave_frame(size_t position, size_t position_count,
+                               uint64_t runtime_ticks)
+{
+    uint64_t advances = ISLAND_WAVE_INITIAL_ADVANCES +
+                        runtime_ticks / ISLAND_WAVE_INTERVAL_TICKS;
+    size_t residue = (position + position_count - 1u) % position_count;
+    uint64_t latest;
+
+    if (advances <= residue)
+        return 0u;
+    latest = residue +
+             ((advances - 1u - residue) / position_count) * position_count;
+    return (size_t)((latest / position_count) % 3u);
+}
+
+#ifdef JC_LIBRETRO_TEST
+size_t jc_test_story_wave_frame(size_t position, size_t position_count,
+                                uint64_t runtime_ticks)
+{
+    return story_wave_frame(position, position_count, runtime_ticks);
+}
+#endif
+
+static bool draw_story_island_waves(jc_surface_t *background,
+                                    bool low_tide, int offset_x,
+                                    int offset_y, uint64_t ticks)
+{
+    const jc_story_wave_position_t *positions = story_high_tide_waves;
+    size_t position_count = sizeof(story_high_tide_waves) /
+                            sizeof(story_high_tide_waves[0]);
+    size_t index;
+
+    if (island_sprites.image_count <= 41u)
+        return true;
+    if (low_tide) {
+        positions = story_low_tide_waves;
+        position_count = sizeof(story_low_tide_waves) /
+                         sizeof(story_low_tide_waves[0]);
+    }
+    for (index = 0u; index < position_count; ++index) {
+        size_t frame = positions[index].first_frame +
+                       story_wave_frame(index, position_count, ticks);
+        if (!blit_story_sprite(&island_sprites, frame, background,
+                               positions[index].x + offset_x,
+                               positions[index].y + offset_y))
+            return false;
+    }
+    return true;
+}
+
+static bool compose_story_island_waves(
+    jc_runtime_t *target_runtime, const jc_story_player_t *player,
+    jc_script_error_t *error)
+{
+    jc_surface_t *background = &target_runtime->renderer.background;
+    jc_surface_t *saved_background = &target_runtime->renderer.scratch;
+    size_t row;
+    bool success = false;
+
+    if (background->pixels == NULL || background->width != JC_FRAME_WIDTH ||
+        background->height != JC_FRAME_HEIGHT ||
+        background->pitch < JC_FRAME_WIDTH ||
+        saved_background->pixels == NULL ||
+        saved_background->width != JC_FRAME_WIDTH ||
+        saved_background->height != JC_FRAME_HEIGHT ||
+        saved_background->pitch < JC_FRAME_WIDTH)
+        return false;
+    if (island_sprites.image_count <= 41u)
+        return jc_ttm_renderer_compose(&target_runtime->renderer, error);
+
+    for (row = 0u; row < JC_FRAME_HEIGHT; ++row) {
+        memcpy(saved_background->pixels + row * saved_background->pitch,
+               background->pixels + row * background->pitch,
+               JC_FRAME_WIDTH);
+    }
+    if (!draw_story_island_waves(background, player->run.island.low_tide,
+                                 player->run.island.x,
+                                 player->run.island.y,
+                                 target_runtime->vm.tick_count))
+        goto restore;
+    success = jc_ttm_renderer_compose(&target_runtime->renderer, error);
+
+restore:
+    for (row = 0u; row < JC_FRAME_HEIGHT; ++row) {
+        memcpy(background->pixels + row * background->pitch,
+               saved_background->pixels + row * saved_background->pitch,
+               JC_FRAME_WIDTH);
+    }
+    return success;
+}
+
+#ifdef JC_LIBRETRO_TEST
+static uint64_t test_surface_hash(const jc_surface_t *surface)
+{
+    uint64_t hash = UINT64_C(1469598103934665603);
+    unsigned y;
+
+    for (y = 0u; y < surface->height; ++y) {
+        unsigned x;
+        for (x = 0u; x < surface->width; ++x) {
+            hash ^= surface->pixels[(size_t)y * surface->pitch + x];
+            hash *= UINT64_C(1099511628211);
+        }
+    }
+    return hash;
+}
+
+static bool test_surface_is_color(const jc_surface_t *surface, uint8_t color)
+{
+    unsigned y;
+
+    for (y = 0u; y < surface->height; ++y) {
+        unsigned x;
+        for (x = 0u; x < surface->width; ++x) {
+            if (surface->pixels[(size_t)y * surface->pitch + x] != color)
+                return false;
+        }
+    }
+    return true;
+}
+
+bool jc_test_story_wave_composition(void)
+{
+    jc_runtime_t *target = NULL;
+    jc_story_player_t player;
+    jc_bmp_t fixture;
+    jc_bmp_t previous_sprites;
+    jc_bmp_image_t images[42];
+    uint8_t pixels[42];
+    jc_script_error_t error;
+    uint64_t first_hash;
+    bool success = false;
+    size_t index;
+
+    target = (jc_runtime_t *)calloc(1u, sizeof(*target));
+    if (target == NULL)
+        return false;
+    memset(&player, 0, sizeof(player));
+    memset(&fixture, 0, sizeof(fixture));
+    for (index = 0u; index < 42u; ++index) {
+        pixels[index] = (uint8_t)(20u + index);
+        images[index].width = 1u;
+        images[index].height = 1u;
+        images[index].pixel_count = 1u;
+        images[index].pixels = &pixels[index];
+    }
+    /* The second phase at the rightmost high-tide position is transparent,
+     * proving that the preceding phase is not left baked into the backdrop. */
+    pixels[10] = 5u;
+    fixture.image_count = 42u;
+    fixture.images = images;
+    fixture.pixel_storage = pixels;
+    fixture.pixel_storage_size = sizeof(pixels);
+    if (!jc_ttm_renderer_init(&target->renderer, JC_FRAME_WIDTH,
+                              JC_FRAME_HEIGHT, -1, NULL, NULL, NULL,
+                              &error))
+        goto cleanup;
+    jc_surface_clear(&target->renderer.background, 1u);
+    target->renderer.thread_active[0] = true;
+    jc_surface_put_pixel(&target->renderer.thread_layers[0], 270, 306, 77u);
+    previous_sprites = island_sprites;
+    island_sprites = fixture;
+
+    target->vm.tick_count = 0u;
+    if (!compose_story_island_waves(target, &player, &error) ||
+        !test_surface_is_color(&target->renderer.background, 1u) ||
+        target->renderer.output.pixels[306u * JC_FRAME_WIDTH + 270u] != 77u ||
+        target->renderer.output.pixels[303u * JC_FRAME_WIDTH + 518u] != 29u)
+        goto restore;
+    first_hash = test_surface_hash(&target->renderer.output);
+    if (!compose_story_island_waves(target, &player, &error) ||
+        !test_surface_is_color(&target->renderer.background, 1u) ||
+        test_surface_hash(&target->renderer.output) != first_hash)
+        goto restore;
+
+    target->vm.tick_count = ISLAND_WAVE_INTERVAL_TICKS;
+    if (!compose_story_island_waves(target, &player, &error) ||
+        !test_surface_is_color(&target->renderer.background, 1u) ||
+        target->renderer.output.pixels[303u * JC_FRAME_WIDTH + 518u] != 1u ||
+        test_surface_hash(&target->renderer.output) == first_hash)
+        goto restore;
+    success = true;
+
+restore:
+    island_sprites = previous_sprites;
+cleanup:
+    if (target != NULL) {
+        jc_ttm_renderer_destroy(&target->renderer);
+        free(target);
+    }
+    return success;
+}
+#endif
+
 static bool apply_story_island_overlays(
     jc_runtime_t *target_runtime, const jc_story_player_t *player,
     jc_script_error_t *error)
@@ -1520,7 +1735,89 @@ static bool apply_story_island_overlays(
                 return false;
         }
     }
-    return jc_ttm_renderer_compose(&target_runtime->renderer, error);
+    return compose_story_island_waves(target_runtime, player, error);
+}
+
+static void refresh_story_island_animation(uint64_t previous_ticks)
+{
+    const jc_scene_play_t *play;
+    const jc_surface_t *surface;
+    const jc_palette_t *palette;
+    jc_script_error_t error;
+
+    if (!game_loaded || !automatic_story || !runtime_ready || runtime == NULL ||
+        runtime_failed || automatic_transition != JC_AUTOMATIC_TRANSITION_NONE)
+        return;
+    play = jc_story_player_current(&story_player);
+    if (play == NULL || (play->scene.flags & JC_SCENE_ISLAND) == 0u)
+        return;
+    if (runtime->vm.tick_count / ISLAND_WAVE_INTERVAL_TICKS ==
+        previous_ticks / ISLAND_WAVE_INTERVAL_TICKS)
+        return;
+    if (!apply_story_island_overlays(runtime, &story_player, &error)) {
+        runtime_failed = true;
+        if (log_cb != NULL)
+            log_cb(RETRO_LOG_ERROR,
+                   "Johnny Castaway island animation: %s\n", error.message);
+        return;
+    }
+    surface = jc_runtime_output(runtime);
+    palette = jc_runtime_palette(runtime);
+    /* A scene can spend waiting ticks before its first palette event.  The
+     * indexed wave composition is already deterministic, but cannot be
+     * converted to XRGB until that event arrives. */
+    if (palette == NULL)
+        return;
+    if (surface == NULL ||
+        !jc_core_update_content_frame(&core, surface, palette)) {
+        runtime_failed = true;
+        if (log_cb != NULL)
+            log_cb(RETRO_LOG_ERROR,
+                   "Johnny Castaway island animation: frame conversion failed\n");
+    }
+}
+
+static bool render_story_walk_frame(jc_island_walk_t *transition,
+                                    jc_surface_t *destination,
+                                    jc_surface_t *scratch,
+                                    const jc_story_player_t *player,
+                                    uint64_t wave_ticks, bool advance,
+                                    jc_island_walk_result_t *result)
+{
+    jc_surface_t *clean;
+    unsigned row;
+    bool rendered;
+
+    if (transition == NULL || destination == NULL || scratch == NULL ||
+        player == NULL || !transition->initialized)
+        return false;
+    clean = &transition->clean_island;
+    if (clean->pixels == NULL || scratch->pixels == NULL ||
+        clean->width != scratch->width || clean->height != scratch->height ||
+        clean->pitch < clean->width || scratch->pitch < scratch->width)
+        return false;
+    for (row = 0u; row < clean->height; ++row) {
+        memcpy(scratch->pixels + (size_t)row * scratch->pitch,
+               clean->pixels + (size_t)row * clean->pitch, clean->width);
+    }
+    if (!draw_story_island_waves(clean, player->run.island.low_tide,
+                                 player->run.island.x,
+                                 player->run.island.y, wave_ticks)) {
+        rendered = false;
+    } else if (advance) {
+        jc_island_walk_result_t tick_result =
+            jc_island_walk_tick(transition, destination);
+        if (result != NULL)
+            *result = tick_result;
+        rendered = tick_result != JC_ISLAND_WALK_ERROR;
+    } else {
+        rendered = jc_island_walk_render(transition, destination);
+    }
+    for (row = 0u; row < clean->height; ++row) {
+        memcpy(clean->pixels + (size_t)row * clean->pitch,
+               scratch->pixels + (size_t)row * scratch->pitch, clean->width);
+    }
+    return rendered;
 }
 
 static bool start_automatic_scene(char *error, size_t error_size)
@@ -1749,11 +2046,27 @@ static void tick_story_runtime(void)
         return;
     if (automatic_story &&
         automatic_transition == JC_AUTOMATIC_TRANSITION_WALK) {
-        jc_island_walk_result_t walk_result =
-            jc_island_walk_tick(&island_walk, &walk_frame);
+        jc_island_walk_result_t walk_result = JC_ISLAND_WALK_ERROR;
         const jc_palette_t *palette =
             walk_palette_ready ? &walk_palette : jc_runtime_palette(runtime);
 
+        if (!render_story_walk_frame(
+                &island_walk, &walk_frame, &runtime->renderer.scratch,
+                &story_player,
+                runtime->vm.tick_count + automatic_transition_ticks,
+                true, &walk_result)) {
+            const char *walk_error = jc_island_walk_error(&island_walk);
+            snprintf(message, sizeof(message),
+                     "%s",
+                     walk_error != NULL && walk_error[0] != '\0'
+                         ? walk_error
+                         : "island walk wave backdrop composition failed");
+            runtime_failed = true;
+            if (log_cb != NULL)
+                log_cb(RETRO_LOG_ERROR,
+                       "Johnny Castaway automatic story: %s\n", message);
+            return;
+        }
         ++automatic_transition_ticks;
         if ((walk_result == JC_ISLAND_WALK_ACTIVE ||
              walk_result == JC_ISLAND_WALK_ARRIVED) && palette != NULL &&
@@ -2104,6 +2417,8 @@ void retro_run(void)
     bool pressed;
     bool options_updated = false;
     unsigned story_tick;
+    uint64_t previous_story_ticks =
+        runtime_ready && runtime != NULL ? runtime->vm.tick_count : 0u;
 
     if (environment_cb != NULL &&
         environment_cb(RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE, &options_updated) &&
@@ -2166,6 +2481,7 @@ void retro_run(void)
         jc_core_step(&core);
         for (story_tick = 0u; story_tick < playback_speed; ++story_tick)
             tick_story_runtime();
+        refresh_story_island_animation(previous_story_ticks);
     }
 
     present_video_frame();
@@ -2393,7 +2709,6 @@ bool retro_serialize(void *data, size_t size)
                 return false;
             if (automatic_transition == JC_AUTOMATIC_TRANSITION_WALK) {
                 if (!runtime->scene_finished || !island_walk.active ||
-                    automatic_transition_ticks == 0u ||
                     automatic_transition_ticks > JC_STORY_STATE_PROGRESS_MASK ||
                     story_player.scene_index + 1u >=
                         story_player.run.scene_count)
@@ -2664,7 +2979,6 @@ bool retro_unserialize(const void *data, size_t size)
         } else if (saved_story_transition == JC_STORY_STATE_WALKING) {
             const jc_scene_play_t *next;
             if (!finished || !walk_resources_ready ||
-                saved_transition_progress == 0u ||
                 story_scene_index + 1u >=
                     candidate_story_player.run.scene_count)
                 return false;
@@ -2788,6 +3102,16 @@ bool retro_unserialize(const void *data, size_t size)
             if (walk_result != JC_ISLAND_WALK_ACTIVE)
                 goto cleanup;
         }
+        if (!render_story_walk_frame(
+                &candidate_island_walk, &candidate_walk_frame,
+                &candidate_runtime->renderer.scratch,
+                &candidate_story_player,
+                candidate_runtime->vm.tick_count +
+                    (saved_transition_progress > 0u
+                         ? saved_transition_progress - 1u
+                         : 0u),
+                false, NULL))
+            goto cleanup;
         if (!walk_palette_ready ||
             !jc_core_update_content_frame(candidate_core,
                                           &candidate_walk_frame,

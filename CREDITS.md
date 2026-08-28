@@ -49,6 +49,10 @@ of their respective rights holders. This repository distributes none of that con
   graphics, island, and walk implementations at revision
   `25c5d84593ac20cbee354eaab7779ab7397d6bbe`. The libretro implementations replace
   blocking/platform drawing with new deterministic, bounded C99 state machines; the
+  high/low-tide foam positions, three-frame animation cycles, four-step seed, and
+  eight-tick advance cadence follow that revision's `src/scene/island.c` and
+  `src/ads/foreground_bridge.c.inc`, while all composition/state code is new. No
+  `BACKGRND.BMP` pixels or other original artwork are copied. The
   exact copied or translated data tables remain identified separately in
   `docs/PROVENANCE.md`.
 - The tide and raft Core Options follow that PS1 revision's `AUTO/HIGH/LOW` and
