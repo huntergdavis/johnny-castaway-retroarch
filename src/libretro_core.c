@@ -1553,41 +1553,19 @@ static bool compose_story_island_waves(
     jc_script_error_t *error)
 {
     jc_surface_t *background = &target_runtime->renderer.background;
-    jc_surface_t *saved_background = &target_runtime->renderer.scratch;
-    size_t row;
-    bool success = false;
 
-    if (background->pixels == NULL || background->width != JC_FRAME_WIDTH ||
-        background->height != JC_FRAME_HEIGHT ||
-        background->pitch < JC_FRAME_WIDTH ||
-        saved_background->pixels == NULL ||
-        saved_background->width != JC_FRAME_WIDTH ||
-        saved_background->height != JC_FRAME_HEIGHT ||
-        saved_background->pitch < JC_FRAME_WIDTH)
-        return false;
-    if (island_sprites.image_count <= 41u)
-        return jc_ttm_renderer_compose(&target_runtime->renderer, error);
-
-    for (row = 0u; row < JC_FRAME_HEIGHT; ++row) {
-        memcpy(saved_background->pixels + row * saved_background->pitch,
-               background->pixels + row * background->pitch,
-               JC_FRAME_WIDTH);
-    }
     if (!draw_story_island_waves(background, player->run.island.low_tide,
                                  player->run.island.x,
                                  player->run.island.y,
                                  target_runtime->vm.tick_count))
-        goto restore;
-    success = jc_ttm_renderer_compose(&target_runtime->renderer, error);
-
-restore:
-    for (row = 0u; row < JC_FRAME_HEIGHT; ++row) {
-        memcpy(background->pixels + row * background->pitch,
-               saved_background->pixels + row * saved_background->pitch,
-               JC_FRAME_WIDTH);
-    }
-    return success;
+        return false;
+    return jc_ttm_renderer_compose(&target_runtime->renderer, error);
 }
+
+static bool present_story_frame(
+    jc_core_t *target_core, jc_runtime_t *target_runtime,
+    const jc_story_player_t *player, const jc_palette_t *palette,
+    jc_script_error_t *error);
 
 #ifdef JC_LIBRETRO_TEST
 static uint64_t test_surface_hash(const jc_surface_t *surface)
@@ -1601,6 +1579,19 @@ static uint64_t test_surface_hash(const jc_surface_t *surface)
             hash ^= surface->pixels[(size_t)y * surface->pitch + x];
             hash *= UINT64_C(1099511628211);
         }
+    }
+    return hash;
+}
+
+static uint64_t test_core_frame_hash(const jc_core_t *target)
+{
+    uint64_t hash = UINT64_C(1469598103934665603);
+    size_t index;
+
+    for (index = 0u; index < (size_t)JC_FRAME_WIDTH * JC_FRAME_HEIGHT;
+         ++index) {
+        hash ^= target->framebuffer[index];
+        hash *= UINT64_C(1099511628211);
     }
     return hash;
 }
@@ -1624,11 +1615,19 @@ bool jc_test_story_wave_composition(void)
     jc_runtime_t *target = NULL;
     jc_story_player_t player;
     jc_bmp_t fixture;
+    jc_bmp_t raft_fixture;
     jc_bmp_t previous_sprites;
+    jc_bmp_t previous_raft_sprites;
     jc_bmp_image_t images[42];
+    jc_bmp_image_t raft_image;
     uint8_t pixels[42];
+    uint8_t raft_pixel = 90u;
+    jc_core_t target_core;
+    jc_palette_t palette;
     jc_script_error_t error;
+    uint64_t clean_output_hash;
     uint64_t first_hash;
+    uint64_t low_tide_hash;
     bool success = false;
     size_t index;
 
@@ -1637,6 +1636,11 @@ bool jc_test_story_wave_composition(void)
         return false;
     memset(&player, 0, sizeof(player));
     memset(&fixture, 0, sizeof(fixture));
+    memset(&raft_fixture, 0, sizeof(raft_fixture));
+    memset(&palette, 0, sizeof(palette));
+    for (index = 0u; index < 256u; ++index)
+        palette.xrgb[index] = (uint32_t)index;
+    jc_core_init(&target_core);
     for (index = 0u; index < 42u; ++index) {
         pixels[index] = (uint8_t)(20u + index);
         images[index].width = 1u;
@@ -1651,38 +1655,72 @@ bool jc_test_story_wave_composition(void)
     fixture.images = images;
     fixture.pixel_storage = pixels;
     fixture.pixel_storage_size = sizeof(pixels);
+    raft_image.width = 1u;
+    raft_image.height = 1u;
+    raft_image.pixel_count = 1u;
+    raft_image.pixels = &raft_pixel;
+    raft_fixture.image_count = 1u;
+    raft_fixture.images = &raft_image;
+    raft_fixture.pixel_storage = &raft_pixel;
+    raft_fixture.pixel_storage_size = 1u;
     if (!jc_ttm_renderer_init(&target->renderer, JC_FRAME_WIDTH,
                               JC_FRAME_HEIGHT, -1, NULL, NULL, NULL,
                               &error))
         goto cleanup;
+    target->initialized = true;
     jc_surface_clear(&target->renderer.background, 1u);
     target->renderer.thread_active[0] = true;
     jc_surface_put_pixel(&target->renderer.thread_layers[0], 270, 306, 77u);
+    if (!jc_ttm_renderer_compose(&target->renderer, &error))
+        goto cleanup;
+    clean_output_hash = test_surface_hash(&target->renderer.output);
     previous_sprites = island_sprites;
+    previous_raft_sprites = raft_sprites;
     island_sprites = fixture;
+    raft_sprites = raft_fixture;
+    player.ready = true;
+    player.run.scene_count = 1u;
+    player.run.scenes[0].scene.flags = JC_SCENE_ISLAND;
+    player.run.island.raft_stage = 1u;
 
     target->vm.tick_count = 0u;
-    if (!compose_story_island_waves(target, &player, &error) ||
+    if (!present_story_frame(&target_core, target, &player, &palette, &error) ||
         !test_surface_is_color(&target->renderer.background, 1u) ||
-        target->renderer.output.pixels[306u * JC_FRAME_WIDTH + 270u] != 77u ||
-        target->renderer.output.pixels[303u * JC_FRAME_WIDTH + 518u] != 29u)
+        test_surface_hash(&target->renderer.output) != clean_output_hash ||
+        target_core.framebuffer[306u * JC_FRAME_WIDTH + 270u] != 77u ||
+        target_core.framebuffer[303u * JC_FRAME_WIDTH + 518u] != 29u ||
+        target_core.framebuffer[266u * JC_FRAME_WIDTH + 512u] != 90u)
         goto restore;
-    first_hash = test_surface_hash(&target->renderer.output);
-    if (!compose_story_island_waves(target, &player, &error) ||
+    first_hash = test_core_frame_hash(&target_core);
+    if (!present_story_frame(&target_core, target, &player, &palette, &error) ||
         !test_surface_is_color(&target->renderer.background, 1u) ||
-        test_surface_hash(&target->renderer.output) != first_hash)
+        test_surface_hash(&target->renderer.output) != clean_output_hash ||
+        test_core_frame_hash(&target_core) != first_hash)
         goto restore;
-
+    player.run.island.low_tide = true;
+    if (!present_story_frame(&target_core, target, &player, &palette, &error) ||
+        !test_surface_is_color(&target->renderer.background, 1u) ||
+        test_surface_hash(&target->renderer.output) != clean_output_hash ||
+        target_core.framebuffer[279u * JC_FRAME_WIDTH + 288u] != 20u ||
+        target_core.framebuffer[281u * JC_FRAME_WIDTH + 529u] != 90u)
+        goto restore;
+    low_tide_hash = test_core_frame_hash(&target_core);
+    if (!present_story_frame(&target_core, target, &player, &palette, &error) ||
+        !test_surface_is_color(&target->renderer.background, 1u) ||
+        test_surface_hash(&target->renderer.output) != clean_output_hash ||
+        test_core_frame_hash(&target_core) != low_tide_hash)
+        goto restore;
     target->vm.tick_count = ISLAND_WAVE_INTERVAL_TICKS;
-    if (!compose_story_island_waves(target, &player, &error) ||
+    if (!present_story_frame(&target_core, target, &player, &palette, &error) ||
         !test_surface_is_color(&target->renderer.background, 1u) ||
-        target->renderer.output.pixels[303u * JC_FRAME_WIDTH + 518u] != 1u ||
-        test_surface_hash(&target->renderer.output) == first_hash)
+        test_surface_hash(&target->renderer.output) != clean_output_hash ||
+        test_core_frame_hash(&target_core) == low_tide_hash)
         goto restore;
     success = true;
 
 restore:
     island_sprites = previous_sprites;
+    raft_sprites = previous_raft_sprites;
 cleanup:
     if (target != NULL) {
         jc_ttm_renderer_destroy(&target->renderer);
@@ -1692,20 +1730,43 @@ cleanup:
 }
 #endif
 
-static bool apply_story_island_overlays(
-    jc_runtime_t *target_runtime, const jc_story_player_t *player,
+static bool present_story_frame(
+    jc_core_t *target_core, jc_runtime_t *target_runtime,
+    const jc_story_player_t *player, const jc_palette_t *palette,
     jc_script_error_t *error)
 {
     const jc_scene_play_t *play = jc_story_player_current(player);
+    const jc_surface_t *surface;
     jc_surface_t *background;
+    jc_surface_t *saved_background;
     int offset_x;
     int offset_y;
     uint8_t raft_stage;
+    size_t row;
+    bool success = false;
 
-    if (target_runtime == NULL || play == NULL ||
-        (play->scene.flags & JC_SCENE_ISLAND) == 0u)
-        return true;
+    if (target_core == NULL || target_runtime == NULL || palette == NULL)
+        return false;
+    surface = jc_runtime_output(target_runtime);
+    if (surface == NULL)
+        return false;
+    if (play == NULL || (play->scene.flags & JC_SCENE_ISLAND) == 0u)
+        return jc_core_update_content_frame(target_core, surface, palette);
     background = &target_runtime->renderer.background;
+    saved_background = &target_runtime->renderer.scratch;
+    if (background->pixels == NULL || background->width != JC_FRAME_WIDTH ||
+        background->height != JC_FRAME_HEIGHT ||
+        background->pitch < JC_FRAME_WIDTH ||
+        saved_background->pixels == NULL ||
+        saved_background->width != JC_FRAME_WIDTH ||
+        saved_background->height != JC_FRAME_HEIGHT ||
+        saved_background->pitch < JC_FRAME_WIDTH)
+        return false;
+    for (row = 0u; row < JC_FRAME_HEIGHT; ++row) {
+        memcpy(saved_background->pixels + row * saved_background->pitch,
+               background->pixels + row * background->pitch,
+               JC_FRAME_WIDTH);
+    }
     offset_x = player->run.island.x;
     offset_y = player->run.island.y;
     raft_stage = player->run.island.raft_stage;
@@ -1716,7 +1777,7 @@ static bool apply_story_island_overlays(
         int y = player->run.island.low_tide ? 281 : 266;
         if (!blit_story_sprite(&raft_sprites, raft_stage - 1u, background,
                                x + offset_x, y + offset_y))
-            return false;
+            goto restore;
     }
     if (player->run.island.low_tide && island_sprites.image_count > 14u) {
         static const struct {
@@ -1732,16 +1793,73 @@ static bool apply_story_island_overlays(
             if (!blit_story_sprite(&island_sprites, sprites[index].frame,
                                    background, sprites[index].x + offset_x,
                                    sprites[index].y + offset_y))
-                return false;
+                goto restore;
         }
     }
-    return compose_story_island_waves(target_runtime, player, error);
+    if (!compose_story_island_waves(target_runtime, player, error))
+        goto restore;
+    success = jc_core_update_content_frame(
+        target_core, jc_runtime_output(target_runtime), palette);
+
+restore:
+    for (row = 0u; row < JC_FRAME_HEIGHT; ++row) {
+        memcpy(background->pixels + row * background->pitch,
+               saved_background->pixels + row * saved_background->pitch,
+               JC_FRAME_WIDTH);
+    }
+    if (!jc_ttm_renderer_compose(&target_runtime->renderer, error))
+        success = false;
+    return success;
 }
+
+static const jc_palette_t *story_runtime_palette(
+    const jc_runtime_t *target_runtime)
+{
+    const jc_palette_t *palette = jc_runtime_palette(target_runtime);
+
+    if (palette != NULL)
+        return palette;
+    return walk_palette_ready ? &walk_palette : NULL;
+}
+
+#ifdef JC_LIBRETRO_TEST
+bool jc_test_story_palette_selection(void)
+{
+    jc_runtime_t fixture;
+    jc_palette_t saved_walk_palette = walk_palette;
+    bool saved_walk_palette_ready = walk_palette_ready;
+    const jc_palette_t *selected;
+    bool success;
+
+    memset(&fixture, 0, sizeof(fixture));
+    fixture.initialized = true;
+    fixture.renderer.initialized = true;
+    walk_palette_ready = false;
+    success = story_runtime_palette(&fixture) == NULL;
+
+    memset(&walk_palette, 0, sizeof(walk_palette));
+    walk_palette.xrgb[1] = 0x00112233u;
+    walk_palette_ready = true;
+    selected = story_runtime_palette(&fixture);
+    success = success && selected == &walk_palette &&
+              selected->xrgb[1] == 0x00112233u;
+
+    fixture.renderer.has_palette = true;
+    fixture.renderer.palette.xrgb[1] = 0x00445566u;
+    selected = story_runtime_palette(&fixture);
+    success = success && selected == &fixture.renderer.palette &&
+              selected->xrgb[1] == 0x00445566u;
+
+    walk_palette = saved_walk_palette;
+    walk_palette_ready = saved_walk_palette_ready;
+    return success;
+}
+
+#endif
 
 static void refresh_story_island_animation(uint64_t previous_ticks)
 {
     const jc_scene_play_t *play;
-    const jc_surface_t *surface;
     const jc_palette_t *palette;
     jc_script_error_t error;
 
@@ -1754,22 +1872,10 @@ static void refresh_story_island_animation(uint64_t previous_ticks)
     if (runtime->vm.tick_count / ISLAND_WAVE_INTERVAL_TICKS ==
         previous_ticks / ISLAND_WAVE_INTERVAL_TICKS)
         return;
-    if (!apply_story_island_overlays(runtime, &story_player, &error)) {
-        runtime_failed = true;
-        if (log_cb != NULL)
-            log_cb(RETRO_LOG_ERROR,
-                   "Johnny Castaway island animation: %s\n", error.message);
-        return;
-    }
-    surface = jc_runtime_output(runtime);
-    palette = jc_runtime_palette(runtime);
-    /* A scene can spend waiting ticks before its first palette event.  The
-     * indexed wave composition is already deterministic, but cannot be
-     * converted to XRGB until that event arrives. */
+    palette = story_runtime_palette(runtime);
     if (palette == NULL)
         return;
-    if (surface == NULL ||
-        !jc_core_update_content_frame(&core, surface, palette)) {
+    if (!present_story_frame(&core, runtime, &story_player, palette, &error)) {
         runtime_failed = true;
         if (log_cb != NULL)
             log_cb(RETRO_LOG_ERROR,
@@ -2020,7 +2126,16 @@ static bool begin_automatic_walk(const jc_scene_play_t *next,
 static bool begin_automatic_fade(char *error, size_t error_size)
 {
     jc_fade_style_t style = jc_fade_style_for_sequence(fade_sequence);
+    const jc_palette_t *palette = story_runtime_palette(runtime);
+    jc_script_error_t presentation_error;
 
+    if (palette == NULL ||
+        !present_story_frame(&core, runtime, &story_player, palette,
+                             &presentation_error)) {
+        snprintf(error, error_size,
+                 "could not compose final story frame before fade");
+        return false;
+    }
     if (!jc_fade_begin(&scene_fade, JC_FADE_OUT, style)) {
         snprintf(error, error_size, "could not start sequence fade");
         return false;
@@ -2111,21 +2226,23 @@ static void tick_story_runtime(void)
     result = jc_runtime_tick(runtime, &error);
     if (result == JC_SCRIPT_TICK_FRAME) {
         const jc_surface_t *surface;
-        const jc_palette_t *palette = jc_runtime_palette(runtime);
-        if (automatic_story &&
-            !apply_story_island_overlays(runtime, &story_player, &error)) {
-            runtime_failed = true;
-            if (log_cb != NULL)
-                log_cb(RETRO_LOG_ERROR,
-                       "Johnny Castaway island presentation: %s\n",
-                       error.message);
-            return;
-        }
+        const jc_palette_t *palette = story_runtime_palette(runtime);
         surface = jc_runtime_output(runtime);
         if (surface != NULL && palette != NULL) {
             walk_palette = *palette;
             walk_palette_ready = true;
-            (void)jc_core_update_content_frame(&core, surface, palette);
+            if (automatic_story) {
+                if (!present_story_frame(&core, runtime, &story_player,
+                                         palette, &error)) {
+                    runtime_failed = true;
+                    if (log_cb != NULL)
+                        log_cb(RETRO_LOG_ERROR,
+                               "Johnny Castaway island presentation: %s\n",
+                               error.message);
+                }
+            } else {
+                (void)jc_core_update_content_frame(&core, surface, palette);
+            }
         }
     } else if (result == JC_SCRIPT_TICK_ERROR) {
         runtime_failed = true;
@@ -2612,7 +2729,7 @@ static bool restore_candidate_frame(jc_core_t *candidate_core,
         const jc_surface_t *surface =
             jc_runtime_output(candidate_runtime);
         const jc_palette_t *palette =
-            jc_runtime_palette(candidate_runtime);
+            story_runtime_palette(candidate_runtime);
         if (surface != NULL && palette != NULL)
             return jc_core_update_content_frame(candidate_core, surface,
                                                 palette);
@@ -3048,15 +3165,23 @@ bool retro_unserialize(const void *data, size_t size)
         !restore_runtime_candidate(candidate_runtime, candidate_chapter,
                                    diagnostic, has_scene, finished,
                                    runtime_ticks, seed, runtime_offset_x,
-                                   runtime_offset_y) ||
-        (automatic && !diagnostic &&
-         !apply_story_island_overlays(candidate_runtime,
-                                      &candidate_story_player, NULL)) ||
-        !restore_candidate_frame(candidate_core, candidate_runtime,
+                                   runtime_offset_y))
+        goto cleanup;
+    if (!restore_candidate_frame(candidate_core, candidate_runtime,
                                  candidate_chapter,
                                  serialized_screen_names[screen_index],
-                                 diagnostic) ||
-        !jc_core_unserialize(candidate_core,
+                                 diagnostic))
+        goto cleanup;
+    if (automatic && !diagnostic) {
+        const jc_palette_t *candidate_palette =
+            story_runtime_palette(candidate_runtime);
+        if (candidate_palette == NULL ||
+            !present_story_frame(candidate_core, candidate_runtime,
+                                 &candidate_story_player,
+                                 candidate_palette, NULL))
+            goto cleanup;
+    }
+    if (!jc_core_unserialize(candidate_core,
                              bytes + JC_LIBRETRO_STATE_HEADER_SIZE,
                              core_size))
         goto cleanup;

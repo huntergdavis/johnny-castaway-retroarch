@@ -77,6 +77,7 @@ typedef struct script_buffer {
 size_t jc_test_story_wave_frame(size_t position, size_t position_count,
                                 uint64_t runtime_ticks);
 bool jc_test_story_wave_composition(void);
+bool jc_test_story_palette_selection(void);
 
 static void assert_story_wave_cadence(void)
 {
@@ -102,6 +103,7 @@ static void assert_story_wave_cadence(void)
     assert(jc_test_story_wave_frame(0u, 4u, 32u) == 1u);
     assert(jc_test_story_wave_frame(1u, 4u, 72u) == 0u);
     assert(jc_test_story_wave_composition());
+    assert(jc_test_story_palette_selection());
 }
 
 static void write_u16le(uint8_t *data, uint16_t value)
@@ -823,6 +825,20 @@ int main(int argc, char **argv)
     chapter_hash = frame_hash;
     assert(chapter_hash != intro_hash && chapter_hash != diagnostic_hash);
     assert(!initial_screen_option_visible);
+    if (argc == 2) {
+        size_t animation_state_size = retro_serialize_size();
+        uint8_t *animation_state = (uint8_t *)malloc(animation_state_size);
+
+        assert(animation_state != NULL);
+        assert(retro_serialize(animation_state, animation_state_size));
+        for (preview_startup_frames = 0u;
+             preview_startup_frames < 120u && frame_hash == chapter_hash;
+             ++preview_startup_frames)
+            retro_run();
+        assert(frame_hash != chapter_hash);
+        assert(retro_unserialize(animation_state, animation_state_size));
+        free(animation_state);
+    }
 
     automatic_starts_before = automatic_scene_starts;
     story_seed_value = "24";
@@ -1127,6 +1143,8 @@ int main(int argc, char **argv)
         automatic_next_hash = frame_hash;
         automatic_next_audio = last_audio_has_signal;
         assert(retro_unserialize(state, state_size));
+        assert(retro_serialize(roundtrip, state_size));
+        assert(memcmp(roundtrip, state, state_size) == 0);
         retro_run();
         assert(frame_hash == automatic_next_hash);
         assert(last_audio_has_signal == automatic_next_audio);
