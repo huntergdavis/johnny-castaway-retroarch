@@ -1,0 +1,213 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# Immutable action pins verified from the official repositories on 2026-08-27:
+# - actions/checkout v7.0.1:
+#   https://github.com/actions/checkout/releases/tag/v7.0.1
+# - actions/upload-artifact v7.0.1:
+#   https://github.com/actions/upload-artifact/releases/tag/v7.0.1
+# - emsdk 3.1.69 tag commit a36df02dc438e8b02f91122a4c62eeecb6784272:
+#   https://github.com/emscripten-core/emsdk/releases/tag/3.1.69
+
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      full_web_player:
+        description: Build and package the complete RetroArch Web Player
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  STRICT_WARNINGS: -Wall -Wextra -Wpedantic -Werror
+  EMSDK_REVISION: a36df02dc438e8b02f91122a4c62eeecb6784272
+  EMSDK_VERSION: 3.1.69
+
+jobs:
+  host-tests:
+    name: Strict host tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out source and libretro-common
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Reject original game data and validate web sources
+        run: python3 tools/check_web_sources.py .
+
+      - name: Build and run all host tests with warnings as errors
+        run: make test HOST_CC=gcc WARNINGS="$STRICT_WARNINGS"
+
+  linux-core:
+    name: Linux x86_64 core
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out source and libretro-common
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Build shared core
+        run: make -j2 platform=linux_x86_64 WARNINGS="$STRICT_WARNINGS"
+
+      - name: Check ELF dynamic exports
+        run: >-
+          python3 tools/check_core_exports.py
+          --format elf
+          --tool nm
+          build/linux_x86_64/johnny_castaway_libretro.so
+
+      - name: Upload Linux core
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: johnny-castaway-linux-x86_64
+          path: |
+            build/linux_x86_64/johnny_castaway_libretro.so
+            johnny_castaway_libretro.info
+            LICENSE
+            CREDITS.md
+            docs/PROVENANCE.md
+            docs/THIRD_PARTY_NOTICES.md
+          if-no-files-found: error
+          retention-days: 14
+
+  windows-core:
+    name: Windows x64 core
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out source and libretro-common
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Install MinGW x64 toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends gcc-mingw-w64-x86-64 binutils-mingw-w64-x86-64
+
+      - name: Build DLL
+        run: make -j2 platform=mingw_x86_64 WARNINGS="$STRICT_WARNINGS"
+
+      - name: Check PE export directory
+        run: >-
+          python3 tools/check_core_exports.py
+          --format pe
+          --tool x86_64-w64-mingw32-objdump
+          build/mingw_x86_64/johnny_castaway_libretro.dll
+
+      - name: Upload Windows core
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: johnny-castaway-windows-x64
+          path: |
+            build/mingw_x86_64/johnny_castaway_libretro.dll
+            johnny_castaway_libretro.info
+            LICENSE
+            CREDITS.md
+            docs/PROVENANCE.md
+            docs/THIRD_PARTY_NOTICES.md
+          if-no-files-found: error
+          retention-days: 14
+
+  emscripten-core:
+    name: Emscripten core and web source checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out source and libretro-common
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Install pinned official Emscripten SDK and build core archive
+        shell: bash
+        run: |
+          git init "$RUNNER_TEMP/emsdk"
+          git -C "$RUNNER_TEMP/emsdk" remote add origin https://github.com/emscripten-core/emsdk.git
+          git -C "$RUNNER_TEMP/emsdk" fetch --depth 1 origin "$EMSDK_REVISION"
+          git -C "$RUNNER_TEMP/emsdk" checkout --detach FETCH_HEAD
+          "$RUNNER_TEMP/emsdk/emsdk" install "$EMSDK_VERSION"
+          "$RUNNER_TEMP/emsdk/emsdk" activate "$EMSDK_VERSION"
+          source "$RUNNER_TEMP/emsdk/emsdk_env.sh"
+          emcc --version
+          make -j2 platform=emscripten WARNINGS="$STRICT_WARNINGS"
+          emar t build/emscripten/johnny_castaway_libretro_emscripten.bc | sort
+
+      - name: Validate browser tooling and local-only source graph
+        run: |
+          bash -n scripts/build-web-player.sh scripts/serve-web.sh
+          node --check web/jc-web-player.js
+          python3 tools/check_web_sources.py .
+          python3 tools/check_web_dist.py --help >/dev/null
+
+      - name: Upload Emscripten core and web source kit
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: johnny-castaway-emscripten-core
+          path: |
+            build/emscripten/johnny_castaway_libretro_emscripten.bc
+            johnny_castaway_libretro.info
+            scripts/build-web-player.sh
+            scripts/serve-web.sh
+            tools/check_web_dist.py
+            tools/serve_web.py
+            web/
+            LICENSE
+            CREDITS.md
+            docs/PROVENANCE.md
+            docs/THIRD_PARTY_NOTICES.md
+            docs/WEB_TESTING.md
+          if-no-files-found: error
+          retention-days: 14
+
+  full-web-player:
+    name: Full RetroArch Web Player (manual)
+    if: github.event_name == 'workflow_dispatch' && inputs.full_web_player
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out source and libretro-common
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Install pinned SDK and build complete Web Player
+        shell: bash
+        run: |
+          git init "$RUNNER_TEMP/emsdk"
+          git -C "$RUNNER_TEMP/emsdk" remote add origin https://github.com/emscripten-core/emsdk.git
+          git -C "$RUNNER_TEMP/emsdk" fetch --depth 1 origin "$EMSDK_REVISION"
+          git -C "$RUNNER_TEMP/emsdk" checkout --detach FETCH_HEAD
+          "$RUNNER_TEMP/emsdk/emsdk" install "$EMSDK_VERSION"
+          "$RUNNER_TEMP/emsdk/emsdk" activate "$EMSDK_VERSION"
+          source "$RUNNER_TEMP/emsdk/emsdk_env.sh"
+          JOBS=2 ./scripts/build-web-player.sh
+          python3 tools/check_web_dist.py build/web-player/dist
+
+      - name: Upload complete local Web Player
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: johnny-castaway-retroarch-web
+          path: build/web-player/dist/
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 9
