@@ -186,7 +186,7 @@ do
 done
 
 rm -rf "$package_root"
-mkdir -p "$artifact_dir" "$package_root/PSP/GAME/JohnnyCastaway" \
+mkdir -p "$artifact_dir" "$package_root/PSP/GAME/JohnnyCastaway/INFO" \
     "$package_root/docs/licenses"
 rm -f "$artifact_dir/EBOOT.PBP" "$artifact_dir/retroarchpsp.elf" \
     "$artifact_dir/johnny-castaway-psp-frontend.zip" \
@@ -195,6 +195,8 @@ rm -f "$artifact_dir/EBOOT.PBP" "$artifact_dir/retroarchpsp.elf" \
 cp "$elf" "$artifact_dir/retroarchpsp.elf"
 cp "$pbp" "$artifact_dir/EBOOT.PBP"
 cp "$pbp" "$package_root/PSP/GAME/JohnnyCastaway/EBOOT.PBP"
+cp "$root/johnny_castaway_libretro.info" \
+    "$package_root/PSP/GAME/JohnnyCastaway/INFO/"
 cp "$root/docs/PSP_PACKAGE.md" "$package_root/README-PSP.md"
 cp "$root/LICENSE" "$root/CREDITS.md" "$root/johnny_castaway_libretro.info" \
     "$package_root/"
@@ -232,6 +234,7 @@ package_zip="$artifact_dir/johnny-castaway-psp-frontend.zip"
 unzip -tq "$package_zip"
 for expected_path in \
     PSP/GAME/JohnnyCastaway/EBOOT.PBP \
+    PSP/GAME/JohnnyCastaway/INFO/johnny_castaway_libretro.info \
     README-PSP.md \
     BUILD-PROVENANCE.txt \
     LICENSE \
@@ -251,6 +254,14 @@ packaged_pbp_sha=$(unzip -p "$package_zip" \
     PSP/GAME/JohnnyCastaway/EBOOT.PBP | sha256sum | awk '{print $1}')
 if [ "$packaged_pbp_sha" != "$pbp_sha" ]; then
     printf 'packaged EBOOT.PBP does not match the validated frontend\n' >&2
+    exit 1
+fi
+source_info_sha=$(sha256sum "$root/johnny_castaway_libretro.info" | awk '{print $1}')
+packaged_info_sha=$(unzip -p "$package_zip" \
+    PSP/GAME/JohnnyCastaway/INFO/johnny_castaway_libretro.info | \
+    sha256sum | awk '{print $1}')
+if [ "$packaged_info_sha" != "$source_info_sha" ]; then
+    printf 'packaged PSP core metadata does not match the source file\n' >&2
     exit 1
 fi
 if unzip -Z1 "$package_zip" | grep -Ei \

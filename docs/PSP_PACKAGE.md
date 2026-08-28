@@ -12,7 +12,12 @@ of a PSP Memory Stick. The executable is installed as:
 
 ```text
 PSP/GAME/JohnnyCastaway/EBOOT.PBP
+PSP/GAME/JohnnyCastaway/INFO/johnny_castaway_libretro.info
 ```
+
+The second file is the matching core metadata at the `INFO` directory selected by
+RetroArch's PSP frontend. It supplies the frontend's core name, supported content
+extensions, and no-content/save-state declarations.
 
 Launch Johnny Castaway from the PSP game menu. Use RetroArch's content browser to
 open a legally owned `RESOURCE.MAP`; its matching `RESOURCE.001` must be in the same
@@ -48,6 +53,8 @@ build/psp-frontend/out/README-PSP.md
 build/psp-frontend/out/SHA256SUMS
 ```
 
-This proves the complete frontend link and package format. A real PSP or PPSSPP run
-is still required to validate boot, content browsing, input, audio, performance, and
-save-state behavior on the emulated or physical platform.
+This proves the complete frontend link and package format. The separate
+`scripts/test-psp-ppsspp.sh` gate validates EBOOT boot, module startup, and active GE
+and framebuffer calls in pinned PPSSPP. Real PSP hardware remains required to validate
+rendered menus/gameplay, content browsing, controller input, audio, performance, and
+save-state behavior on the physical platform.

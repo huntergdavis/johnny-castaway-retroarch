@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 set -eu
 
-root=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
+root=$(CDPATH='' cd -- "$(dirname "$0")/.." && pwd)
 build_base=${CONSOLE_BUILD_DIR:-build/console}
 jobs=${JOBS:-}
 warnings=${WARNINGS:--Wall -Wextra -Wpedantic -Werror}
@@ -136,13 +136,15 @@ build_target()
                 apk add --no-cache make >/dev/null
                 export PATH="/usr/local/ps2dev/ee/bin:/usr/local/ps2dev/bin:$PATH"
                 make -j"$JC_JOBS" platform="$JC_PLATFORM" \
-                    BUILD_DIR="$JC_BUILD_DIR" WARNINGS="$JC_WARNINGS"
+                    ARFLAGS=rcsD BUILD_DIR="$JC_BUILD_DIR" \
+                    WARNINGS="$JC_WARNINGS"
                 chown -R "$JC_UID:$JC_GID" "$JC_BUILD_DIR"
             '
     else
         docker run --rm --user "$(id -u):$(id -g)" \
             -v "$root:/src" -w /src "$image" \
-            make -j"$jobs" platform="$platform" BUILD_DIR="$output_dir" \
+            make -j"$jobs" platform="$platform" ARFLAGS=rcsD \
+            BUILD_DIR="$output_dir" \
             WARNINGS="$warnings"
     fi
     python3 "$root/tools/check_console_archive.py" \

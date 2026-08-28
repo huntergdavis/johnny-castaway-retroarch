@@ -237,10 +237,12 @@ override CFLAGS := $(OPTFLAGS) $(COMMON_CFLAGS) $(PLATFORM_CFLAGS) $(CFLAGS)
 
 all: $(TARGET)
 
+ARFLAGS := rcs
+
 $(TARGET): $(OBJECTS)
 	@mkdir -p $(dir $@)
 ifeq ($(STATIC_LINKING),1)
-	$(AR) rcs $@ $(OBJECTS)
+	$(AR) $(ARFLAGS) $@ $(OBJECTS)
 else
 	$(CC) $(SHARED) -o $@ $(OBJECTS) $(LDFLAGS) $(LDLIBS)
 endif

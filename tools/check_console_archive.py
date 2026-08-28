@@ -14,6 +14,58 @@ import subprocess
 from check_core_exports import REQUIRED_EXPORTS
 
 
+def check_deterministic_archive_metadata(archive: pathlib.Path) -> int:
+    """Require GNU/SVR4 ar members to carry deterministic metadata."""
+    data = archive.read_bytes()
+    if not data.startswith(b"!<arch>\n"):
+        raise SystemExit("archive check failed: invalid ar global header")
+
+    offset = 8
+    header_count = 0
+    while offset < len(data):
+        if len(data) - offset < 60:
+            raise SystemExit("archive check failed: truncated ar member header")
+        header = data[offset:offset + 60]
+        if header[58:60] != b"`\n":
+            raise SystemExit("archive check failed: invalid ar member header")
+
+        name = header[:16].decode("ascii", errors="replace").strip()
+        fields = {
+            "timestamp": header[16:28],
+            "uid": header[28:34],
+            "gid": header[34:40],
+        }
+        for label, raw_value in fields.items():
+            try:
+                value = int(raw_value.strip() or b"0", 10)
+            except ValueError as error:
+                raise SystemExit(
+                    f"archive check failed: invalid {label} for member {name!r}"
+                ) from error
+            if value != 0:
+                raise SystemExit(
+                    "archive check failed: nondeterministic "
+                    f"{label}={value} for member {name!r}"
+                )
+
+        try:
+            member_size = int(header[48:58].strip(), 10)
+        except ValueError as error:
+            raise SystemExit(
+                f"archive check failed: invalid size for member {name!r}"
+            ) from error
+        offset += 60 + member_size
+        if offset % 2:
+            offset += 1
+        header_count += 1
+
+    if offset != len(data):
+        raise SystemExit("archive check failed: invalid ar member padding")
+    if header_count == 0:
+        raise SystemExit("archive check failed: archive has no member headers")
+    return header_count
+
+
 def run(tool: str, arguments: list[str]) -> str:
     result = subprocess.run(
         [tool, *arguments],
@@ -42,6 +94,7 @@ def main() -> int:
     if not args.archive.is_file() or args.archive.stat().st_size == 0:
         raise SystemExit(f"archive check failed: missing/empty archive: {args.archive}")
 
+    header_count = check_deterministic_archive_metadata(args.archive)
     members = [line for line in run(args.ar, ["t", str(args.archive)]).splitlines()
                if line]
     if not members:
@@ -94,7 +147,8 @@ def main() -> int:
     digest = hashlib.sha256(args.archive.read_bytes()).hexdigest()
     print(
         f"console archive check passed: {args.archive} "
-        f"members={len(members)} machine={args.machine} "
+        f"members={len(members)} ar_headers={header_count} "
+        f"machine={args.machine} deterministic_metadata=yes "
         f"retro_symbols={len(found)} sha256={digest}"
     )
     return 0
