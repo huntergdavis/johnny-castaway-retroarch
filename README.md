@@ -7,22 +7,23 @@ A portable libretro core for running Johnny Castaway from user-supplied original
 
 Milestone 0 and the first content/rendering slice are complete: the repository builds
 a loadable libretro core, validates the original resource pair, decodes palette and SCR
-resources, and displays selectable authentic screens through a deterministic 640x480
-XRGB8888 software framebuffer. Categorized Core Options v2, legacy menu fallback,
-RetroPad input, correctly paced silent audio, and save-state round trips are working.
+resources, and displays selectable authentic screens or live ADS scenes through a
+deterministic 640x480 XRGB8888 software framebuffer. Categorized Core Options v2,
+legacy menu fallback, RetroPad input, audio, and base save-state round trips are working.
 
 The repository now contains bounded ADS/TTM parsers and a resumable 50 Hz script VM,
 an indexed sprite compositor, the deterministic story/walking runtime, and an eight-voice
 sound mixer. It also includes the PS1 port's audited 79-caption/63-chapter catalogs,
 36-holiday calendar, and embedded CC0 ocean ambience. TTM events now
 drive a bounded indexed renderer for resources, layers, sprites,
-primitives, saved zones, and frame composition. A bounded content-backed runtime now
+primitives, saved zones, and frame composition. A bounded content-backed runtime
 loads one ADS plus its declared TTM resources and drives the renderer at 50 Hz. That
-runtime, high-level story orchestration, preview controls, caption timing/menu
-integration, audio sample resolution, and ambience playback are still being connected
-to the libretro adapter. The embedded ocean asset, decoder, reserved mixer ID, 56%
-gain, and deterministic seamless loop path are individually complete. This is therefore
-not yet the complete screensaver experience.
+runtime is connected to the libretro adapter: all 63 chapters can be selected as live
+graphical previews, captions have complete presentation options, and the embedded ocean
+loop has enable/volume controls. High-level day/story cycling, island/walk integration,
+36-holiday sprite visuals, original sound-effect extraction, preview navigation controls,
+and whole-runtime save states remain. This is therefore not yet the complete screensaver
+experience.
 
 ## Why C
 
@@ -86,8 +87,9 @@ porting plan.
 ## Data and copyright
 
 No Sierra/Dynamix game data, artwork, or audio is distributed here. Users must provide
-their own original files. The engine and core code are GPLv3; the original game data
-remains the property of its rights holders.
+their own original files. The only bundled audio is the separately licensed CC0 ocean
+ambience documented in `docs/licenses/BigSoundBank-0266-CC0.md`. The engine and core
+code are GPLv3; the original game data remains the property of its rights holders.
 
 This port builds on years of community format research and several open-source Johnny
 Castaway engines. See [CREDITS.md](CREDITS.md) for people and project history,

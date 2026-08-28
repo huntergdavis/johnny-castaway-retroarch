@@ -38,8 +38,8 @@ Status: indexed surfaces, clipped transparent/flipped blits, stored/RLE/LZW deco
 palette/SCR/BMP decode, ordered layered composition, and final XRGB expansion are complete
 and sanitizer-tested. TTM events now drive SCR/PAL/BMP loading, clips, sprites, core
 primitives, background snapshots, saved zones, per-thread layers, and ordered frame
-composition. Remaining work is the `jc_content` loader adapter, frontend framebuffer
-handoff, fades, and less-common/dump-only image operations.
+composition. Content-backed runtime loading and frontend framebuffer handoff are now
+complete. Remaining work is fades and less-common/dump-only image operations.
 
 - Implement indexed surface allocation, clipping, fill, line, circle, blit, color key,
   horizontal flip, saved zones, palette expansion, and final compositing.
@@ -50,9 +50,10 @@ handoff, fades, and less-common/dump-only image operations.
 
 Status: the bounded ADS/TTM parsers, callback-driven multi-thread VM, deterministic
 director, corrected weighted path data, and nonblocking walk animation are complete.
-The VM-to-render callback bridge is complete and tested with synthetic bytecode.
-Authentic archive binding, island assembly, audio/control event dispatch, whole-runtime
-save-state aggregation, and deterministic trace comparison remain.
+The VM-to-render callback bridge, authentic archive binding, one-ADS chapter starts,
+and live libretro framebuffer handoff are complete and tested with synthetic bytecode.
+Island/director assembly, original audio sample loading, whole-runtime save-state
+aggregation, and deterministic real-data trace comparison remain.
 
 - Port TTM, ADS, director/story selection, island state, pathfinding, and walking.
 - Compare deterministic scene traces with Wilson Reborn and the PS1 host harness.
@@ -63,10 +64,11 @@ save-state aggregation, and deterministic trace comparison remain.
 Status: an allocation-free WAV parser and deterministic eight-voice 11025-to-44100 Hz
 stereo mixer are complete. The mixer runs every `retro_run()`, mute/volume are live Core
 Options v2 plus legacy variables, and mixer phase is saved. The audited PS1 caption,
-chapter, 36-holiday, and CC0 ambience metadata/state foundations are complete. The mixer
-has a reserved ambience ID with per-sample gain and seamless deterministic looping. TTM
-cue dispatch, owned sample loading/executable extraction, the CC0 PCM/VAG import,
-caption presentation, explorer preview controls, and full engine state remain.
+chapter, 36-holiday, and CC0 ambience foundations are complete. The exact licensed VAG
+is embedded and decoded, the mixer loops it at independent gain, and TTM sample cues are
+dispatched. All 63 chapters start as live-rendered Core Option previews, and caption
+presentation has functional menu controls. Original sample loading/executable extraction,
+holiday sprite visuals, explorer controller navigation, and full engine state remain.
 
 - Port sound triggers and deterministic multi-voice mixing.
 - Add core options, reset semantics, robust save states, controller descriptors, and
@@ -103,10 +105,11 @@ contract exists.
 
 1. Core shell, content pairing, lazy resource I/O, and first DGDS frame. **Done.**
 2. Bounded BMP/ADS/TTM, director/path/walk, and deterministic mixer foundations. **Done.**
-3. Wire ADS resources to TTM slots, instruction events to the compositor/mixer, and
-   director plans to scene transitions.
+3. Wire ADS resources to TTM slots and instruction events to the compositor/mixer.
+   **Done for selectable one-ADS chapters; director transitions and original SFX remain.**
 4. Port feasible PS1 additions: captions, 36-holiday calendar, scene explorer previews,
-   and the CC0 ocean ambience loop with full attribution.
+   and the CC0 ocean ambience loop with full attribution. **Captions, chapter previews,
+   calendar data, and ambience are done; holiday sprite presentation remains.**
 5. Browser RetroArch build/link/dist/HTTP harness. **Done; interactive lawful-data run
    remains.** Complete native RetroArch smoke, then expand targets one validated
    compiler/frontend at a time.

@@ -7,16 +7,25 @@ Menu integration is a release gate for every platform, not a post-port task.
 - **Main Menu / Load Core**: core name, version, license, authors, and `.map|.001`
   content extensions are provided by the core and `.info` metadata.
 - **Quick Menu / Core Options / Story**: Initial Screen selects Intro, day/night
-  island, office, Suzy beach, or ending and applies immediately.
+  island, office, Suzy beach, or ending. Chapter exposes Static Screen plus all 63
+  audited PS1 scene-explorer records; selecting a chapter starts its original ADS/tag
+  and the first live-rendered frame acts as the graphical preview. Both apply immediately.
 - **Quick Menu / Core Options / Video**: Display Source switches between original
   user data and the built-in diagnostic frame and applies immediately.
-- **Quick Menu / Core Options / Audio**: Enable and Volume control the deterministic
-  eight-voice mixer immediately. Mixer phase/configuration is included in save states;
-  actual sound cues land with the ADS/TTM runtime and owned WAV loading.
+- **Quick Menu / Core Options / Audio**: master Enable/Volume and independent Ocean
+  Ambience enable/volume controls apply immediately. The exact CC0 loop is decoded once,
+  trimmed to its VAG loop markers, registered at the PS1 default 56% gain, and mixed by
+  the deterministic eight-voice mixer. TTM sample events are dispatched; original SFX
+  remain silent until owned sample extraction/loading is implemented.
+- **Quick Menu / Core Options / Accessibility**: Closed Captions enable, size,
+  background (none/box/full-width bar), background opacity, and top/center/bottom
+  position apply immediately. Captions use the audited 79-entry PS1 catalog and a
+  bounded software renderer.
 - **Quick Menu / Controls / Port 1**: the port declares a RetroPad; Start restarts
   the current core timeline.
-- **Quick Menu / State**: serialize/unserialize is implemented for deterministic
-  timeline state. State coverage expands with each engine subsystem.
+- **Quick Menu / State**: serialize/unserialize covers the base timeline and mixer,
+  including ocean loop position. ADS/TTM runtime, loaded renderer resources, and caption
+  timing are not yet serialized; chapter-mode states are not release-complete.
 - Modern frontends receive categorized Core Options v2. Older frontends receive
   equivalent legacy variables, preserving menu support on console builds.
 
@@ -25,11 +34,12 @@ Menu integration is a release gate for every platform, not a post-port task.
 The following option groups are required before the story-runtime milestone is done,
 but they must not appear as nonfunctional menu entries:
 
-- **Story**: normal cycle vs scene explorer, initial day/scene, deterministic seed,
+- **Story**: normal cycle, deterministic seed,
   real/simulated calendar, holiday override, tide/raft stage, and playback speed.
-- **Audio**: ambience and voice/mixer policy after multiple authentic policies exist.
-- **Accessibility**: captions, scene descriptions, high contrast, reduced flashing,
-  and caption size/background.
+- **Audio**: original SFX sample extraction and voice policy after multiple authentic
+  policies exist.
+- **Accessibility**: high contrast and reduced flashing after their rendering behavior
+  exists.
 - **Video**: crop/overscan policy, palette mode, aspect policy, and optional filters
   only where they belong in the core rather than frontend shaders.
 - **Controls**: pause, next/previous scene in explorer mode, caption toggle, and

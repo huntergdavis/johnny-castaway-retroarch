@@ -26,6 +26,10 @@ void jc_core_reset(jc_core_t *core);
 void jc_core_step(jc_core_t *core);
 bool jc_core_set_content_frame(jc_core_t *core, const jc_surface_t *surface,
                                const jc_palette_t *palette);
+/* Replace content pixels without resetting frame_number/phase. */
+bool jc_core_update_content_frame(jc_core_t *core,
+                                  const jc_surface_t *surface,
+                                  const jc_palette_t *palette);
 void jc_core_clear_content_frame(jc_core_t *core);
 const uint32_t *jc_core_framebuffer(const jc_core_t *core);
 size_t jc_core_serialize_size(void);

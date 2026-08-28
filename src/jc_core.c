@@ -79,8 +79,9 @@ void jc_core_step(jc_core_t *core)
         render_diagnostic_frame(core);
 }
 
-bool jc_core_set_content_frame(jc_core_t *core, const jc_surface_t *surface,
-                               const jc_palette_t *palette)
+bool jc_core_update_content_frame(jc_core_t *core,
+                                  const jc_surface_t *surface,
+                                  const jc_palette_t *palette)
 {
     unsigned x_offset;
     unsigned y_offset;
@@ -101,6 +102,14 @@ bool jc_core_set_content_frame(jc_core_t *core, const jc_surface_t *surface,
             destination[x] = palette->xrgb[source[x]];
     }
     core->has_content_frame = true;
+    return true;
+}
+
+bool jc_core_set_content_frame(jc_core_t *core, const jc_surface_t *surface,
+                               const jc_palette_t *palette)
+{
+    if (!jc_core_update_content_frame(core, surface, palette))
+        return false;
     jc_core_reset(core);
     return true;
 }
