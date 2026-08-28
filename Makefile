@@ -7,7 +7,8 @@ SOURCES := src/jc_ads.c src/jc_audio.c src/jc_bmp.c src/jc_captions.c \
            src/jc_decompress.c src/jc_director.c src/jc_extras.c \
            src/jc_palette.c src/jc_path.c src/jc_resource_map.c src/jc_rng.c \
            src/jc_scr.c src/jc_script_vm.c src/jc_surface.c src/jc_ttm.c \
-           src/jc_walk.c src/jc_wav.c src/libretro_core.c
+           src/jc_ttm_renderer.c src/jc_walk.c src/jc_wav.c \
+           src/libretro_core.c
 OBJECTS := $(patsubst %.c,$(BUILD_DIR)/%.o,$(SOURCES))
 INCLUDES := -Iinclude -Iexternal/libretro-common/include
 WARNINGS := -Wall -Wextra -Wpedantic
@@ -174,6 +175,7 @@ WALK_TEST_TARGET := build/tests/test_walk
 AUDIO_TEST_TARGET := build/tests/test_audio
 SCRIPT_TEST_TARGET := build/tests/test_script_vm
 EXTRAS_TEST_TARGET := build/tests/test_extras
+TTM_RENDERER_TEST_TARGET := build/tests/test_ttm_renderer
 LIBRETRO_TEST_TARGET := build/tests/test_libretro
 $(TEST_TARGET): src/jc_core.c tests/test_core.c include/jc_core.h
 	@mkdir -p $(dir $@)
@@ -231,6 +233,17 @@ $(EXTRAS_TEST_TARGET): src/jc_captions.c src/jc_chapters.c src/jc_extras.c \
 	$(HOST_CC) -std=c99 $(WARNINGS) -Iinclude -O2 -o $@ \
 		src/jc_captions.c src/jc_chapters.c src/jc_extras.c tests/test_extras.c
 
+$(TTM_RENDERER_TEST_TARGET): src/jc_ads.c src/jc_bmp.c src/jc_compositor.c \
+                             src/jc_decompress.c src/jc_palette.c \
+                             src/jc_scr.c src/jc_script_vm.c src/jc_surface.c \
+                             src/jc_ttm.c src/jc_ttm_renderer.c \
+                             tests/test_ttm_renderer.c
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c99 $(WARNINGS) -Iinclude -O2 -o $@ \
+		src/jc_ads.c src/jc_bmp.c src/jc_compositor.c src/jc_decompress.c src/jc_palette.c \
+		src/jc_scr.c src/jc_script_vm.c src/jc_surface.c src/jc_ttm.c \
+		src/jc_ttm_renderer.c tests/test_ttm_renderer.c
+
 $(LIBRETRO_TEST_TARGET): $(SOURCES) tests/test_libretro.c
 	@mkdir -p $(dir $@)
 	$(HOST_CC) -std=c99 $(WARNINGS) -Iinclude \
@@ -240,7 +253,8 @@ HOST_CC ?= cc
 test: $(TEST_TARGET) $(MAP_TEST_TARGET) $(GRAPHICS_TEST_TARGET) \
       $(BMP_TEST_TARGET) $(DIRECTOR_TEST_TARGET) $(PATH_TEST_TARGET) \
       $(WALK_TEST_TARGET) $(AUDIO_TEST_TARGET) $(SCRIPT_TEST_TARGET) \
-      $(EXTRAS_TEST_TARGET) $(LIBRETRO_TEST_TARGET)
+      $(EXTRAS_TEST_TARGET) $(TTM_RENDERER_TEST_TARGET) \
+      $(LIBRETRO_TEST_TARGET)
 	./$(TEST_TARGET)
 	./$(MAP_TEST_TARGET)
 	./$(GRAPHICS_TEST_TARGET)
@@ -251,6 +265,7 @@ test: $(TEST_TARGET) $(MAP_TEST_TARGET) $(GRAPHICS_TEST_TARGET) \
 	./$(AUDIO_TEST_TARGET)
 	./$(SCRIPT_TEST_TARGET)
 	./$(EXTRAS_TEST_TARGET)
+	./$(TTM_RENDERER_TEST_TARGET)
 	./$(LIBRETRO_TEST_TARGET)
 
 INSPECT_TARGET := build/tools/jc_inspect

@@ -36,8 +36,10 @@ are implemented and sanitizer-tested.
 
 Status: indexed surfaces, clipped transparent/flipped blits, stored/RLE/LZW decode,
 palette/SCR/BMP decode, ordered layered composition, and final XRGB expansion are complete
-and sanitizer-tested. Remaining work is saved zones, less-common raster primitives, and
-wiring TTM drawing events into resource-backed layers.
+and sanitizer-tested. TTM events now drive SCR/PAL/BMP loading, clips, sprites, core
+primitives, background snapshots, saved zones, per-thread layers, and ordered frame
+composition. Remaining work is the `jc_content` loader adapter, frontend framebuffer
+handoff, fades, and less-common/dump-only image operations.
 
 - Implement indexed surface allocation, clipping, fill, line, circle, blit, color key,
   horizontal flip, saved zones, palette expansion, and final compositing.
@@ -48,8 +50,9 @@ wiring TTM drawing events into resource-backed layers.
 
 Status: the bounded ADS/TTM parsers, callback-driven multi-thread VM, deterministic
 director, corrected weighted path data, and nonblocking walk animation are complete.
-Authentic resource binding, island assembly, event-to-render dispatch, whole-runtime save
-state aggregation, and deterministic trace comparison remain.
+The VM-to-render callback bridge is complete and tested with synthetic bytecode.
+Authentic archive binding, island assembly, audio/control event dispatch, whole-runtime
+save-state aggregation, and deterministic trace comparison remain.
 
 - Port TTM, ADS, director/story selection, island state, pathfinding, and walking.
 - Compare deterministic scene traces with Wilson Reborn and the PS1 host harness.
