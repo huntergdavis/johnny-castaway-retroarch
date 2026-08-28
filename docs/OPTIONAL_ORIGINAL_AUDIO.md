@@ -23,6 +23,21 @@ code in this repository are new GPL-3.0-or-later code based on the documented
 interface above. A required `deja` recall query found no prior SFX/Web loader
 implementation to reuse.
 
+## Validate a local sound bank
+
+Run the production WAV loader and mixer against every original effect with:
+
+```sh
+make sound-bank-test CONTENT=/path/to/RESOURCE.MAP
+```
+
+The acceptance tool requires all 23 existing sibling WAVs, verifies their
+decoded PCM produces an audible signal through the eight-voice mixer, checks
+equal stereo output and end-of-sample voice cleanup, and reports the duration
+and peak for each ID. IDs 11 and 13 must remain absent and are reported as the
+original scripts' known-silent no-ops. The tool reads user-owned data in place;
+it does not copy or embed any sound.
+
 ## Ownership and distribution boundary
 
 No original sound-effect WAV is part of this source repository, generated

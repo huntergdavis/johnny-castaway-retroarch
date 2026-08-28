@@ -475,9 +475,22 @@ authentic-test: $(AUTHENTIC_TEST_TARGET)
 		{ echo "Set CONTENT=/path/to/RESOURCE.MAP" >&2; exit 2; }
 	./$(AUTHENTIC_TEST_TARGET) "$(CONTENT)"
 
+SOUND_BANK_TEST_TARGET := build/tools/check_sound_bank
+$(SOUND_BANK_TEST_TARGET): src/jc_audio.c src/jc_sfx.c src/jc_wav.c \
+                          tools/check_sound_bank.c
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c99 $(WARNINGS) -Iinclude \
+		-Iexternal/libretro-common/include -O2 -o $@ \
+		src/jc_audio.c src/jc_sfx.c src/jc_wav.c tools/check_sound_bank.c
+
+sound-bank-test: $(SOUND_BANK_TEST_TARGET)
+	@test -n "$(CONTENT)" || \
+		{ echo "Set CONTENT=/path/to/RESOURCE.MAP" >&2; exit 2; }
+	./$(SOUND_BANK_TEST_TARGET) "$(CONTENT)"
+
 clean:
 	rm -rf build
 
 -include $(OBJECTS:.o=.d)
 
-.PHONY: all authentic-test clean inspect test
+.PHONY: all authentic-test clean inspect sound-bank-test test
