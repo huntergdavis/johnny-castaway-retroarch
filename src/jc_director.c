@@ -41,6 +41,32 @@ static const struct TStoryScene *pick_scene(uint8_t day, uint8_t wanted,
     return &storyScenes[matches[jc_rng_below(rng, count)]];
 }
 
+static bool valid_spot_heading(int spot, int heading)
+{
+    return spot >= SPOT_A && spot <= SPOT_F &&
+           heading >= HDG_S && heading <= HDG_SE;
+}
+
+static bool valid_start(const struct TStoryScene *scene)
+{
+    return scene != NULL &&
+           valid_spot_heading(scene->spotStart, scene->hdgStart);
+}
+
+static bool valid_end(const struct TStoryScene *scene)
+{
+    return scene != NULL &&
+           valid_spot_heading(scene->spotEnd, scene->hdgEnd);
+}
+
+static bool same_scene(const struct TStoryScene *left,
+                       const struct TStoryScene *right)
+{
+    return left != NULL && right != NULL &&
+           left->adsTagNo == right->adsTagNo &&
+           strcmp(left->adsName, right->adsName) == 0;
+}
+
 static jc_island_state_t island_for_scene(const struct TStoryScene *scene,
                                            uint8_t day, jc_holiday_t holiday,
                                            bool night, jc_rng_t *rng)
@@ -77,6 +103,7 @@ void jc_director_init(jc_director_t *director, uint8_t story_day,
     director->current_day = story_day < 1u || story_day > 11u ? 1u : story_day;
     director->stored_yday = stored_yday;
     director->daynight_mode = JC_DAYNIGHT_ORIGINAL;
+    director->first_sequence = true;
 }
 
 bool jc_director_advance_day(jc_director_t *director, int today_yday)
@@ -166,14 +193,25 @@ bool jc_director_plan(jc_director_t *director, int today_yday, uint8_t hour,
 {
     const struct TStoryScene *final_scene;
     bool has_previous = false;
+    bool first_sequence;
     uint8_t previous_spot = 0u;
     uint8_t previous_heading = 0u;
+    uint8_t final_unwanted;
 
     if (director == NULL || rng == NULL || run == NULL)
         return false;
     memset(run, 0, sizeof(*run));
     jc_director_advance_day(director, today_yday);
-    final_scene = pick_scene(director->current_day, FINAL, 0u, rng);
+    first_sequence = director->first_sequence;
+    final_unwanted = first_sequence ? FIRST : 0u;
+    final_scene = pick_scene(director->current_day, FINAL,
+                             final_unwanted, rng);
+    if (final_scene != NULL && (final_scene->flags & FIRST) == 0u) {
+        unsigned retry;
+        for (retry = 0u; retry < 32u && !valid_start(final_scene); ++retry)
+            final_scene = pick_scene(director->current_day, FINAL,
+                                     final_unwanted, rng);
+    }
     if (final_scene == NULL)
         return false;
     run->on_island = (final_scene->flags & ISLAND) != 0;
@@ -189,16 +227,30 @@ bool jc_director_plan(jc_director_t *director, int today_yday, uint8_t hour,
 
     if ((final_scene->flags & FIRST) == 0) {
         uint8_t wanted = 0u;
-        uint8_t unwanted = FINAL;
+        uint8_t unwanted = (uint8_t)(FINAL | (first_sequence ? FIRST : 0u));
+        unsigned intermediate_count = 6u + jc_rng_below(rng, 14u);
         unsigned index = 0u;
+        const struct TStoryScene *last_scene = NULL;
         if (run->island.low_tide)
             wanted |= LOWTIDE_OK;
         if (run->island.x != 0 || run->island.y != 0)
             wanted |= VARPOS_OK;
         while (run->scene_count + 1u < JC_DIRECTOR_MAX_SCENES &&
-               index < 6u + jc_rng_below(rng, 14u)) {
-            const struct TStoryScene *scene = pick_scene(
-                director->current_day, wanted, unwanted, rng);
+               index < intermediate_count) {
+            const struct TStoryScene *scene = NULL;
+            unsigned pick_try;
+            for (pick_try = 0u; pick_try < 8u; ++pick_try) {
+                scene = pick_scene(director->current_day, wanted,
+                                   unwanted, rng);
+                if (scene == NULL)
+                    break;
+                if (has_previous && !valid_start(scene))
+                    continue;
+                if (!valid_end(scene))
+                    continue;
+                if (!same_scene(scene, last_scene))
+                    break;
+            }
             if (scene == NULL)
                 break;
             append_play(run, scene, has_previous, previous_spot,
@@ -206,11 +258,13 @@ bool jc_director_plan(jc_director_t *director, int today_yday, uint8_t hour,
             has_previous = true;
             previous_spot = (uint8_t)scene->spotEnd;
             previous_heading = (uint8_t)scene->hdgEnd;
+            last_scene = scene;
             unwanted |= FIRST;
             ++index;
         }
     }
     append_play(run, final_scene, has_previous, previous_spot,
                 previous_heading, run->on_island);
+    director->first_sequence = false;
     return true;
 }

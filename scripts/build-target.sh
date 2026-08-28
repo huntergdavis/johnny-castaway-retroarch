@@ -10,7 +10,8 @@ fi
 
 case "$target" in
     --list)
-        printf '%s\n' native linux-x86_64 linux-aarch64 linux-armv7 \
+        printf '%s\n' native linux-x86_64 linux-x86 linux-aarch64 \
+            linux-armv7 linux-armv7-neon \
             windows-x64 windows-x86 macos macos-x86_64 macos-arm64 \
             macos-universal ios-arm64 ios-sim-arm64 ios-sim-x86_64 \
             tvos-arm64 tvos-sim-arm64 tvos-sim-x86_64 web android-arm64 \
@@ -20,8 +21,10 @@ case "$target" in
         ;;
     native) platform=unix ;;
     linux-x86_64) platform=linux_x86_64 ;;
+    linux-x86) platform=linux_x86 ;;
     linux-aarch64) platform=linux_aarch64 ;;
     linux-armv7) platform=linux_armv7 ;;
+    linux-armv7-neon) platform=linux_armv7_neon ;;
     windows-x64) platform=mingw_x86_64 ;;
     windows-x86) platform=mingw_x86 ;;
     macos) platform=osx ;;

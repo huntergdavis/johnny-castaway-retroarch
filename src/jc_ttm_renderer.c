@@ -600,16 +600,27 @@ static bool draw_sprite(jc_ttm_renderer_t *renderer,
         return set_error(error, JC_SCRIPT_ERROR_BAD_OPERAND, event->opcode,
                          "DRAW_SPRITE references an out-of-range slot");
     bmp = &renderer->bmp_slots[event->scene_slot][image_slot];
+    /*
+     * The original host renderer treats an in-range empty BMP slot as an
+     * intentionally absent frame and simply draws nothing.  This occurs in
+     * authentic JOHNNY.ADS tag 6: the just-finished thread slot is reused for
+     * SJWORK.TTM tag 9 (which loads BMP slot 3), while tag 3 runs later in the
+     * same scheduler pass and attempts one draw before tag 9 gets its turn.
+     * Keep the no-op narrow: invalid slot numbers and failed LOAD_IMAGE events
+     * remain structured errors, as does an invalid decoded surface.
+     */
     if (bmp->images == NULL)
-        return set_error(error, JC_SCRIPT_ERROR_UNBOUND_RESOURCE,
-                         event->opcode,
-                         "DRAW_SPRITE uses unloaded BMP slot %u",
-                         (unsigned)image_slot);
-    if (frame >= bmp->image_count ||
-        !jc_bmp_image_surface(bmp, frame, &sprite))
+        return true;
+    /* Authentic scripts can request a frame beyond the currently installed
+     * image count while recycling BMP slots (MARY.ADS tag 1 does this after
+     * replacing slot 2 with SMDATE11.BMP).  Johnny Reborn's host renderer
+     * validates that request and draws nothing; retain that safe behavior. */
+    if (frame >= bmp->image_count)
+        return true;
+    if (!jc_bmp_image_surface(bmp, frame, &sprite))
         return set_error(error, JC_SCRIPT_ERROR_BAD_OPERAND, event->opcode,
-                         "DRAW_SPRITE frame %u exceeds loaded image count %lu",
-                         (unsigned)frame, (unsigned long)bmp->image_count);
+                         "DRAW_SPRITE frame %u has an invalid decoded surface",
+                         (unsigned)frame);
     if (sprite.width > renderer->width || sprite.height > renderer->height)
         return set_error(error, JC_SCRIPT_ERROR_LIMIT, event->opcode,
                          "sprite frame dimensions exceed the render canvas");

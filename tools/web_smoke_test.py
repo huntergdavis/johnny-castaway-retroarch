@@ -421,7 +421,15 @@ def run_smoke(args: argparse.Namespace, firefox: str, geckodriver: str) -> int:
             args.timeout,
             lambda: diagnostics(driver).get("status", "").startswith("Ready:"),
         )
-        driver.click(driver.find("#start"))
+        driver.execute(
+            """
+            import("./jc-web-player.js").then(player => player.start(
+              undefined,
+              'johnny_castaway_chapter = "fishing1"\\n',
+            ));
+            return true;
+            """
+        )
         state = wait_until(
             "RetroArch startup",
             args.timeout,
@@ -453,11 +461,17 @@ def run_smoke(args: argparse.Namespace, firefox: str, geckodriver: str) -> int:
                 f"page errors: {state.get('pageErrors')}; rejections: {state.get('rejections')}"
             )
         joined_console = "\n".join(state.get("consoleErrors", []))
-        for expected in ("SET_CORE_OPTIONS_V2", "indexed 5 resources", "640x480"):
+        for expected in (
+            "SET_CORE_OPTIONS_V2",
+            "indexed 5 resources",
+            "Geometry: 640x480",
+        ):
             if expected not in joined_console:
                 raise SmokeFailure(f"RetroArch log did not contain {expected!r}")
         for fatal in (
             "[EMSCRIPTEN/WebGL] Failed",
+            "[libretro ERROR]",
+            "Failed to load content",
             "Aborted(",
             "cannot access property \"GLctx\"",
         ):
@@ -477,6 +491,12 @@ def run_smoke(args: argparse.Namespace, firefox: str, geckodriver: str) -> int:
                 else None
             ),
         )
+        # The first changed frame may be the Ozone transition's black frame.
+        # Allow the menu to settle, then retain the stable rendered view.
+        time.sleep(2.0)
+        menu_hash = driver.screenshot(canvas_element, artifacts / "menu.png")
+        if menu_hash == game_hash:
+            raise SmokeFailure("RetroArch menu returned to the gameplay frame")
         result["screenshots"] = {"game_sha256": game_hash, "menu_sha256": menu_hash}
         result["final"] = diagnostics(driver)
         result["passed"] = True

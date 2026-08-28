@@ -21,6 +21,23 @@ Then:
    audio settings, and runtime information.
 4. Stop the server with Ctrl-C.
 
+For a private development machine, stage a user-owned pair once and the page will
+start it automatically on every refresh:
+
+```sh
+./scripts/stage-local-web-content.sh /path/to/johnny-data
+./scripts/serve-web.sh --bind 0.0.0.0 --port 8000
+```
+
+The generated, ignored files live in `build/web-player/dist/local-content/`.
+Rebuilding the Web Player removes them, after which the staging command may be run
+again. If the source directory also contains the optional original
+`sound0.wav` through `sound24.wav` siblings, the staging command copies the
+available files (IDs 11 and 13 are intentionally absent) and the launcher
+installs them beside the content before starting the core. Missing sound files
+do not block startup. The file picker remains available whenever no staged pair
+is present.
+
 The first build compiles RetroArch and its Emscripten system libraries, so it
 can take several minutes. The cache and generated frontend live under
 `build/web-player/`; later builds are incremental.
@@ -40,6 +57,9 @@ JOBS=8 ./scripts/build-web-player.sh
   `/home/web_user/retroarch/userdata/content/RESOURCE.MAP` and
   `RESOURCE.001` in BrowserFS. This satisfies the core's full-path and sibling
   archive lookup behavior.
+- Locally staged, optional `sound<ID>.wav` files are discovered and installed
+  beside the resource pair. They remain user-supplied data and are never part
+  of the generated Web distribution.
 - The content launches directly, without requiring navigation through
   RetroArch's content browser.
 - The RetroArch menu remains available through the page button, including all
@@ -60,9 +80,18 @@ reads the two selected files directly into the browser's in-memory filesystem;
 the HTTP server receives only requests for the player, assets, JavaScript, and
 WebAssembly. Refreshing or closing the page discards the game data.
 
-Do not put original game files under `web/`, `build/web-player/dist/`, or any
-other served directory. `tools/check_web_dist.py` fails if either original
-resource filename is found in the generated distribution.
+The optional staging command changes that privacy boundary: it copies the
+original pair and any available original sound-effect WAVs into the served
+directory so the browser can fetch and start them automatically. Those files
+are ignored by Git and omitted from generated builds and CI artifacts. The MAP
+and archive are also rejected by `tools/check_web_dist.py`; do not treat that
+checker as a substitute for removing all staged user data. Anyone who can reach
+the server can fetch the staged files, so use staging only on a trusted private
+network, never a public host. Remove `build/web-player/dist/local-content/` or
+rebuild the player before sharing it.
+
+The original-audio provenance and distribution boundary are documented in
+[`OPTIONAL_ORIGINAL_AUDIO.md`](OPTIONAL_ORIGINAL_AUDIO.md).
 
 Binding to another interface with `--bind 0.0.0.0` exposes the player to the
 local network and is intentionally not the default.
@@ -106,7 +135,8 @@ python3 tools/web_smoke_test.py --require-browser
 
 The test serves `build/web-player/dist/` on a random loopback port, starts a
 real Firefox process, loads the JS and WebAssembly runtime, selects two
-embedded synthetic files, and asserts that RetroArch:
+embedded synthetic files, explicitly selects the fixture-backed `fishing1`
+chapter, and asserts that RetroArch:
 
 - registers the core's version 2 option set;
 - indexes all five synthetic resources;

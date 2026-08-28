@@ -20,14 +20,20 @@ CC0 ocean ambience. TTM events now
 drive a bounded indexed renderer for resources, layers, sprites,
 primitives, saved zones, and frame composition. A bounded content-backed runtime
 loads one ADS plus its declared TTM resources and drives the renderer at 50 Hz. That
-runtime is connected to the libretro adapter: all 63 chapters can be selected as live
-graphical previews, captions have complete presentation options, and the embedded ocean
-loop has enable/volume controls. A Holiday Overlay Core Option uses the local date or
-forces any of all 36 catalog entries, rendering its title/date without original artwork.
-High-level day/story cycling, island/walk integration, sprite-faithful holiday decorations,
-original sound-effect extraction, preview navigation controls, and save-state coverage
-for the future director/island runtime remain. This is therefore not yet the complete
-screensaver experience.
+runtime is connected to the libretro adapter: Automatic mode plans and advances the
+original opening/intermediate/walk/final story sequence, while all 63 chapters can be
+selected individually as live graphical previews. Captions have complete presentation
+options, optional user-supplied `sound0.wav`–`sound24.wav` effects are loaded from beside
+the resource pair (IDs 11/13 are absent), and the embedded ocean loop has enable/volume
+controls. A Holiday Overlay Core Option uses the local date or forces any of all 36
+catalog entries, rendering its title/date without original artwork. Tested portable
+modules also implement the PS1-derived five-shape fades and persistent clean-island
+walking/tree occlusion. Automatic playback uses both at scene boundaries, including
+left-island offsets and tree occlusion, and versioned save states deterministically
+restore active walks and fades. Every one of the 63 authentic chapters completes in
+the host runtime regression suite. Sprite-faithful holiday decorations are deliberately
+not distributed because they require original artwork; the asset-free holiday overlay
+and live chapter previews provide the feasible portable equivalents.
 
 ## Why C
 
@@ -58,6 +64,9 @@ For a local browser test using a real RetroArch Web frontend:
 The browser page accepts the user's `.MAP` and `.001` together and keeps both in
 an in-memory filesystem. See `docs/WEB_TESTING.md` for requirements, privacy details,
 the exact pinned RetroArch revisions, automated checks, and known limitations.
+For automatic local startup, stage a private user-owned pair (and optional sibling
+WAVs) into ignored build output with `scripts/stage-local-web-content.sh`; never expose
+that server publicly or include the staged files in a release.
 
 List the staged cross targets with:
 
@@ -66,8 +75,8 @@ List the staged cross targets with:
 ```
 
 A target appearing in that list means the build mapping exists, not that it has
-already passed its compiler and RetroArch runtime gates. The live status is in
-`docs/PORTING_PLAN.md`.
+already passed its compiler and RetroArch runtime gates. The evidence-based target
+inventory and live status are in `docs/PLATFORM_MATRIX.md` and `docs/PORTING_PLAN.md`.
 
 Android builds use the NDK r22-or-newer LLVM toolchain layout and build one ABI at a
 time. Set `ANDROID_NDK_HOME` (or `ANDROID_NDK_ROOT`), then select the ABI:
@@ -98,18 +107,27 @@ RetroArch Apple packaging:
 overridden. The universal macOS command builds separate x86_64 and arm64 slices and
 verifies the merged binary with Xcode's `lipo`.
 
-The `switch`, `wii`, `gamecube`, and `wiiu` aliases use devkitPro and produce static
-core archives for the corresponding statically linked RetroArch frontend. Run them from
-a configured devkitPro shell (`DEVKITPRO`/`DEVKITA64` for Switch or `DEVKITPPC` for the
-PowerPC consoles). Their current compiler/runtime validation status is recorded in the
-porting plan.
+Eight console cores can be reproduced with pinned official SDK containers:
+
+```sh
+./scripts/build-console-cores.sh --pull --all
+```
+
+This builds and validates static RetroArch core archives for PSP, Vita, PlayStation 2,
+Nintendo 3DS, GameCube, Wii, Wii U, and Switch. Static `.a` files are frontend link
+inputs, not installable console applications. PSP has additionally passed a full pinned
+RetroArch link/package into `retroarchpsp.elf` and `EBOOT.PBP`; hardware execution is
+still pending. See `docs/CONSOLE_BUILDS.md` for exact image digests, outputs, validation,
+and current frontend-link boundaries.
 
 ## Data and copyright
 
 No Sierra/Dynamix game data, artwork, or audio is distributed here. Users must provide
-their own original files. The only bundled audio is the separately licensed CC0 ocean
-ambience documented in `docs/licenses/BigSoundBank-0266-CC0.md`. The engine and core
-code are GPLv3; the original game data remains the property of its rights holders.
+their own original resource pair and, optionally, the supported sibling WAVs. The only
+bundled audio is the separately licensed CC0 ocean ambience documented in
+`docs/licenses/BigSoundBank-0266-CC0.md`. The engine and core code are GPLv3; the
+original game data remains the property of its rights holders. See
+`docs/OPTIONAL_ORIGINAL_AUDIO.md` before staging or sharing a Web build.
 
 This port builds on years of community format research and several open-source Johnny
 Castaway engines. See [CREDITS.md](CREDITS.md) for people and project history,
@@ -124,11 +142,15 @@ notices.
 - `external/libretro-common`: pinned official libretro headers
 - `tests/`: host-side deterministic tests
 - `scripts/build-target.sh`: native and cross-build entry point
+- `scripts/build-console-cores.sh`: pinned eight-platform console archive builder
 - `scripts/build-apple-universal.sh`: verified x86_64/arm64 macOS merger
 - `scripts/build-web-player.sh`, `scripts/serve-web.sh`: pinned local RetroArch Web test
 - `web/`: local two-file launcher and Web-specific license notice
 - `docs/`: architecture decisions and staged port plan
 - `docs/RETROARCH_INTEGRATION.md`: menu/options acceptance checklist
 - `docs/WEB_TESTING.md`: browser build, local server, and test workflow
+- `docs/OPTIONAL_ORIGINAL_AUDIO.md`: user-supplied SFX provenance and distribution boundary
+- `docs/CONSOLE_BUILDS.md`: reproducible console SDK images and packaging gates
+- `docs/PLATFORM_MATRIX.md`: source-backed RetroArch platform inventory and coverage
 - `docs/PROVENANCE.md`: exact upstream revisions and file-by-file reuse record
 - `CREDITS.md`: original creators and open-source lineage

@@ -17,6 +17,8 @@ static bool video_category_found;
 static bool audio_category_found;
 static bool accessibility_category_found;
 static bool chapter_option_found;
+static bool automatic_story_option_found;
+static bool chapter_menu_metadata_complete;
 static bool holiday_option_found;
 static unsigned ocean_options_found;
 static unsigned caption_options_found;
@@ -43,6 +45,13 @@ static uint64_t frame_hash;
 static bool last_audio_has_signal;
 static size_t chapter_value_count;
 static size_t holiday_value_count;
+static unsigned automatic_scene_starts;
+static unsigned automatic_walk_starts;
+static unsigned automatic_fade_starts;
+static unsigned runtime_error_logs;
+static retro_core_options_update_display_callback_t option_display_callback;
+static bool initial_screen_option_visible;
+static unsigned initial_screen_visibility_updates;
 
 typedef struct script_buffer {
     uint8_t data[1024];
@@ -278,10 +287,22 @@ static const char *make_synthetic_content(void)
 static void RETRO_CALLCONV mock_log(enum retro_log_level level, const char *format, ...)
 {
     va_list arguments;
-    (void)level;
+    char message[1024];
+
     va_start(arguments, format);
-    vfprintf(stderr, format, arguments);
+    (void)vsnprintf(message, sizeof(message), format, arguments);
     va_end(arguments);
+    fputs(message, stderr);
+    if (strstr(message, "Johnny Castaway automatic scene:") != NULL)
+        ++automatic_scene_starts;
+    if (strstr(message, "Johnny Castaway automatic walk:") != NULL)
+        ++automatic_walk_starts;
+    if (strstr(message, "Johnny Castaway automatic fade:") != NULL)
+        ++automatic_fade_starts;
+    if (level == RETRO_LOG_ERROR &&
+        (strstr(message, "Johnny Castaway runtime:") != NULL ||
+         strstr(message, "Johnny Castaway automatic story:") != NULL))
+        ++runtime_error_logs;
 }
 
 static bool RETRO_CALLCONV environment(unsigned command, void *data)
@@ -308,10 +329,40 @@ static bool RETRO_CALLCONV environment(unsigned command, void *data)
         }
         while (definition != NULL && definition->key != NULL) {
             if (strcmp(definition->key, "johnny_castaway_chapter") == 0) {
+                size_t left;
+                size_t right;
+                bool labels_complete = true;
+                bool values_unique = true;
+
                 chapter_option_found = true;
+                automatic_story_option_found =
+                    definition->values[0].value != NULL &&
+                    strcmp(definition->values[0].value, "automatic") == 0 &&
+                    definition->default_value != NULL &&
+                    strcmp(definition->default_value, "automatic") == 0;
                 while (chapter_value_count < RETRO_NUM_CORE_OPTION_VALUES_MAX &&
                        definition->values[chapter_value_count].value != NULL)
                     ++chapter_value_count;
+                for (left = 0u; left < chapter_value_count; ++left) {
+                    if (definition->values[left].value[0] == '\0' ||
+                        definition->values[left].label == NULL ||
+                        definition->values[left].label[0] == '\0')
+                        labels_complete = false;
+                    for (right = left + 1u; right < chapter_value_count;
+                         ++right) {
+                        if (strcmp(definition->values[left].value,
+                                   definition->values[right].value) == 0)
+                            values_unique = false;
+                    }
+                }
+                chapter_menu_metadata_complete =
+                    labels_complete && values_unique &&
+                    definition->category_key != NULL &&
+                    strcmp(definition->category_key, "story") == 0 &&
+                    definition->info != NULL &&
+                    strstr(definition->info, "live in-game graphical preview") != NULL &&
+                    strstr(definition->info, "do not support per-entry thumbnails") != NULL &&
+                    definition->info_categorized != NULL;
             } else if (strcmp(definition->key,
                               "johnny_castaway_holiday_overlay") == 0) {
                 holiday_option_found = true;
@@ -336,6 +387,20 @@ static bool RETRO_CALLCONV environment(unsigned command, void *data)
                 ++caption_options_found;
             }
             ++definition;
+        }
+        return true;
+    }
+    case RETRO_ENVIRONMENT_SET_CORE_OPTIONS_UPDATE_DISPLAY_CALLBACK:
+        option_display_callback =
+            ((struct retro_core_options_update_display_callback *)data)->callback;
+        return option_display_callback != NULL;
+    case RETRO_ENVIRONMENT_SET_CORE_OPTIONS_DISPLAY: {
+        const struct retro_core_option_display *display =
+            (const struct retro_core_option_display *)data;
+        if (display != NULL && display->key != NULL &&
+            strcmp(display->key, "johnny_castaway_initial_screen") == 0) {
+            initial_screen_option_visible = display->visible;
+            ++initial_screen_visibility_updates;
         }
         return true;
     }
@@ -458,13 +523,22 @@ static int16_t RETRO_CALLCONV input_state(unsigned port, unsigned device,
 }
 
 static void assert_serialized_state_unchanged(const uint8_t *expected,
-                                              size_t state_size)
+                                              size_t state_size,
+                                              const char *case_name)
 {
     uint8_t *actual = (uint8_t *)malloc(state_size);
+    size_t index;
 
     assert(actual != NULL);
     assert(retro_serialize(actual, state_size));
-    assert(memcmp(actual, expected, state_size) == 0);
+    for (index = 0u; index < state_size; ++index) {
+        if (actual[index] != expected[index]) {
+            fprintf(stderr,
+                    "save-state atomicity failure after %s at byte %zu: expected 0x%02x, got 0x%02x\n",
+                    case_name, index, expected[index], actual[index]);
+            assert(actual[index] == expected[index]);
+        }
+    }
     free(actual);
 }
 
@@ -484,6 +558,7 @@ int main(int argc, char **argv)
     uint64_t chapter_hash;
     uint64_t restored_hash;
     bool restored_audio_signal;
+    unsigned preview_startup_frames;
 
     retro_set_environment(environment);
     retro_set_video_refresh(video);
@@ -496,10 +571,21 @@ int main(int argc, char **argv)
     assert(strcmp(system_info.library_name, "Johnny Castaway") == 0);
     assert(options_registered && story_category_found && video_category_found &&
            audio_category_found && accessibility_category_found);
-    assert(chapter_option_found && chapter_value_count == 64u);
+    assert(chapter_option_found && automatic_story_option_found &&
+           chapter_menu_metadata_complete && chapter_value_count == 65u);
     assert(holiday_option_found && holiday_value_count == 38u);
     assert(ocean_options_found == 2u && caption_options_found == 5u);
     assert(controller_registered);
+    assert(option_display_callback != NULL);
+    assert(initial_screen_visibility_updates == 1u &&
+           initial_screen_option_visible);
+    chapter_value = "automatic";
+    assert(option_display_callback());
+    assert(!initial_screen_option_visible);
+    assert(!option_display_callback());
+    chapter_value = "screen";
+    assert(option_display_callback());
+    assert(initial_screen_option_visible);
 
     game.path = argc == 2 ? argv[1] : make_synthetic_content();
     assert(retro_load_game(&game));
@@ -541,12 +627,26 @@ int main(int argc, char **argv)
     retro_run();
     assert(last_audio_has_signal);
 
+    initial_screen_value = "intro";
+    variable_updated = true;
+    retro_run();
+    assert(frame_hash == intro_hash);
+
     chapter_value = "fishing1";
+    variable_updated = true;
+    retro_run();
+    for (preview_startup_frames = 0u;
+         preview_startup_frames < 120u && frame_hash == intro_hash;
+         ++preview_startup_frames)
+        retro_run();
+    chapter_hash = frame_hash;
+    assert(chapter_hash != intro_hash && chapter_hash != diagnostic_hash);
+    assert(!initial_screen_option_visible);
+
     captions_enabled_value = "enabled";
     variable_updated = true;
     retro_run();
-    chapter_hash = frame_hash;
-    assert(chapter_hash != intro_hash && chapter_hash != diagnostic_hash);
+    assert(frame_hash != chapter_hash);
 
     caption_position_value = "top";
     variable_updated = true;
@@ -606,48 +706,48 @@ int main(int argc, char **argv)
     assert(retro_unserialize(state, state_size));
 
     assert(!retro_unserialize(state, state_size - 1u));
-    assert_serialized_state_unchanged(state, state_size);
+    assert_serialized_state_unchanged(state, state_size, "truncated input");
 
     memcpy(oversized, state, state_size);
     oversized[state_size] = 0u;
     assert(!retro_unserialize(oversized, state_size + 1u));
-    assert_serialized_state_unchanged(state, state_size);
+    assert_serialized_state_unchanged(state, state_size, "oversized input");
 
     memcpy(malformed, state, state_size);
     write_u32le(malformed + 4u, 3u);
     assert(!retro_unserialize(malformed, state_size));
-    assert_serialized_state_unchanged(state, state_size);
+    assert_serialized_state_unchanged(state, state_size, "unsupported version");
 
     memcpy(malformed, state, state_size);
     write_u32le(malformed + 12u, (uint32_t)state_size + 1u);
     assert(!retro_unserialize(malformed, state_size));
-    assert_serialized_state_unchanged(state, state_size);
+    assert_serialized_state_unchanged(state, state_size, "declared size mismatch");
 
     memcpy(malformed, state, state_size);
     write_u32le(malformed + 24u,
                 read_u32le(malformed + 24u) | 0x80000000u);
     assert(!retro_unserialize(malformed, state_size));
-    assert_serialized_state_unchanged(state, state_size);
+    assert_serialized_state_unchanged(state, state_size, "unknown flags");
 
     memcpy(malformed, state, state_size);
     write_u32le(malformed + 28u, 999u);
     assert(!retro_unserialize(malformed, state_size));
-    assert_serialized_state_unchanged(state, state_size);
+    assert_serialized_state_unchanged(state, state_size, "chapter index");
 
     memcpy(malformed, state, state_size);
     write_u32le(malformed + 32u, 999u);
     assert(!retro_unserialize(malformed, state_size));
-    assert_serialized_state_unchanged(state, state_size);
+    assert_serialized_state_unchanged(state, state_size, "caption index");
 
     memcpy(malformed, state, state_size);
     write_u32le(malformed + 52u, 1u);
     assert(!retro_unserialize(malformed, state_size));
-    assert_serialized_state_unchanged(state, state_size);
+    assert_serialized_state_unchanged(state, state_size, "legacy reserved word");
 
     memcpy(malformed, state, state_size);
     write_u32le(malformed + 56u, 1u);
     assert(!retro_unserialize(malformed, state_size));
-    assert_serialized_state_unchanged(state, state_size);
+    assert_serialized_state_unchanged(state, state_size, "manual story metadata");
 
     legacy_size = state_size - 64u;
     legacy = (uint8_t *)malloc(legacy_size);
@@ -656,6 +756,87 @@ int main(int argc, char **argv)
     retro_run();
     assert(retro_unserialize(legacy, legacy_size));
     assert(retro_unserialize(state, state_size));
+
+    if (argc == 2) {
+        unsigned frame;
+        unsigned starts_before = automatic_scene_starts;
+        unsigned walks_before = automatic_walk_starts;
+        unsigned fades_before = automatic_fade_starts;
+        uint64_t automatic_next_hash;
+        bool automatic_next_audio;
+
+        chapter_value = "automatic";
+        captions_enabled_value = "enabled";
+        variable_updated = true;
+        for (frame = 0u;
+             frame < 5000u && automatic_walk_starts == walks_before &&
+             runtime_error_logs == 0u;
+             ++frame)
+            retro_run();
+        assert(runtime_error_logs == 0u);
+        assert(automatic_walk_starts == walks_before + 1u);
+        retro_run();
+        assert(retro_serialize(state, state_size));
+        assert(((read_u32le(state + 60u) >> 16) & 0x3u) == 1u);
+        retro_run();
+        automatic_next_hash = frame_hash;
+        automatic_next_audio = last_audio_has_signal;
+        assert(retro_unserialize(state, state_size));
+        retro_run();
+        assert(frame_hash == automatic_next_hash);
+        assert(last_audio_has_signal == automatic_next_audio);
+
+        for (frame = 0u;
+             frame < 5000u &&
+             automatic_scene_starts < starts_before + 2u &&
+             runtime_error_logs == 0u;
+             ++frame)
+            retro_run();
+        assert(runtime_error_logs == 0u);
+        assert(automatic_scene_starts >= starts_before + 2u);
+        assert(retro_serialize(state, state_size));
+        assert((read_u32le(state + 24u) & (1u << 7)) != 0u);
+        assert(read_u32le(state + 56u) != 0u);
+        assert((read_u32le(state + 60u) & 0xffu) >= 1u);
+        assert(retro_serialize(roundtrip, state_size));
+        assert(memcmp(roundtrip, state, state_size) == 0);
+        retro_run();
+        automatic_next_hash = frame_hash;
+        automatic_next_audio = last_audio_has_signal;
+        assert(retro_unserialize(state, state_size));
+        assert(retro_serialize(roundtrip, state_size));
+        assert(memcmp(roundtrip, state, state_size) == 0);
+        retro_run();
+        assert(frame_hash == automatic_next_hash);
+        assert(last_audio_has_signal == automatic_next_audio);
+
+        for (frame = 0u;
+             frame < 30000u && automatic_fade_starts == fades_before &&
+             runtime_error_logs == 0u;
+             ++frame)
+            retro_run();
+        assert(runtime_error_logs == 0u);
+        assert(automatic_fade_starts == fades_before + 1u);
+        assert(retro_serialize(state, state_size));
+        assert(((read_u32le(state + 60u) >> 16) & 0x3u) == 2u);
+        retro_run();
+        automatic_next_hash = frame_hash;
+        automatic_next_audio = last_audio_has_signal;
+        assert(retro_unserialize(state, state_size));
+        retro_run();
+        assert(frame_hash == automatic_next_hash);
+        assert(last_audio_has_signal == automatic_next_audio);
+        starts_before = automatic_scene_starts;
+        for (frame = 0u;
+             frame < 100u && automatic_scene_starts == starts_before &&
+             runtime_error_logs == 0u;
+             ++frame)
+            retro_run();
+        assert(runtime_error_logs == 0u);
+        assert(automatic_scene_starts == starts_before + 1u);
+        fprintf(stderr,
+                "Johnny Castaway real-data automatic acceptance: walk/fade/rollover and state round-trips\n");
+    }
 
     free(legacy);
     free(oversized);

@@ -39,7 +39,9 @@ palette/SCR/BMP decode, ordered layered composition, and final XRGB expansion ar
 and sanitizer-tested. TTM events now drive SCR/PAL/BMP loading, clips, sprites, core
 primitives, background snapshots, saved zones, per-thread layers, and ordered frame
 composition. Content-backed runtime loading and frontend framebuffer handoff are now
-complete. Remaining work is fades and less-common/dump-only image operations.
+complete. The five PS1-derived fade masks are implemented and connected to automatic
+final-scene boundaries. Authentic regression now runs every one of the 63 chapters to
+completion; dump-only diagnostic events remain non-rendering by design.
 
 - Implement indexed surface allocation, clipping, fill, line, circle, blit, color key,
   horizontal flip, saved zones, palette expansion, and final compositing.
@@ -53,8 +55,12 @@ director, corrected weighted path data, and nonblocking walk animation are compl
 The VM-to-render callback bridge, authentic archive binding, one-ADS chapter starts,
 live libretro framebuffer handoff, and deterministic pointer-free save states for the
 current one-ADS chapter mode are complete and tested with synthetic bytecode. Island/
-director assembly, original audio sample loading, save-state coverage for that future
-director state, and deterministic real-data trace comparison remain.
+director assembly now plans and advances automatic ADS scenes with reproducible
+plan/day/index state, and the persistent-island walk compositor is connected to
+automatic scene boundaries with the authentic left-island offsets and tree-cover
+occlusion. Active walk/fade transitions are deterministically reconstructed by
+versioned save states. Synthetic, focused authentic, and all-63-chapter real-data
+regressions cover story rollover, walking, fades, runtime replay, and completion.
 
 - Port TTM, ADS, director/story selection, island state, pathfinding, and walking.
 - Compare deterministic scene traces with Wilson Reborn and the PS1 host harness.
@@ -70,9 +76,13 @@ is embedded and decoded, the mixer loops it at independent gain, and TTM sample 
 dispatched. All 63 chapters start as live-rendered Core Option previews, and caption
 presentation has functional menu controls. Automatic/off/36-force holiday menu values
 drive an asset-free title/date overlay. Versioned chapter-mode save states preserve and
-deterministically reconstruct runtime, renderer, caption, core, and audio state. Original
-sample loading/executable extraction, sprite-faithful holiday decorations, explorer
-controller navigation, and future director/island state remain.
+deterministically reconstruct runtime, renderer, caption, core, and audio state; the
+automatic plan/day/scene identity is also represented without serializing pointers.
+Optional user-supplied `sound0.wav` through `sound24.wav` siblings are now loaded through
+VFS/stdio and dispatched by original TTM sample IDs, with missing/invalid files failing
+softly. Active island/walk/fade transition state is covered. Sprite-faithful holiday
+decorations remain intentionally asset-free, and chapter selection stays in the
+RetroArch menu rather than adding a second controller-driven explorer UI.
 
 - Port sound triggers and deterministic multi-voice mixing.
 - Add core options, reset semantics, robust save states, controller descriptors, and
@@ -90,16 +100,18 @@ Each row advances independently through Build/Load/Run/Regress.
 | Wave | Make platform | Output | Current state |
 |---|---|---|---|
 | 0 | `linux_x86_64` | `.so` | build and mock-frontend validation pass; RetroArch load/run pending |
+| 0 | `linux_x86` | `.so` | real GCC multilib strict build, i386 machine check, and exact 25-symbol ELF export check pass; frontend run pending |
 | 1 | `mingw_x86_64` | `.dll` | cross-build and ABI exports validated; frontend run pending |
-| 1 | `mingw_x86` | `.dll` | build mapping added; compiler unavailable locally |
+| 1 | `mingw_x86` | `.dll` | real MinGW i686 strict build and exact 25-symbol PE export check pass; frontend run pending |
 | 1 | `osx`, `osx_x86_64`, `osx_arm64` | `.dylib` | real Xcode per-architecture builds, exact ABI exports, and verified-`lipo` universal output pass in GitHub `macos-15`; frontend run pending |
-| 1 | `linux_aarch64`, `linux_armv7` | `.so` | build mapping added |
-| 2 | Android arm64/armv7/x86_64/x86 | `.so` | NDK r22+ mappings and compiler dry-runs pass; real NDK builds/frontend runs pending |
+| 1 | `linux_aarch64`, `linux_armv7`, `linux_armv7_neon` | `.so` | real GCC cross-builds and exact 25-symbol ELF export checks pass; ARMv7 variants are verified VFPv3-D16 or NEONv1 hard-float; frontend runs pending |
+| 2 | Android arm64/armv7/x86_64/x86 | `.so` | real NDK r29/API 21 strict builds, machine checks, and exact 25-symbol exports pass; Android frontend/device runs pending |
 | 2 | iOS/tvOS arm64 device + arm64/x86_64 simulators | `.dylib` | real Xcode SDK builds and exact Mach-O ABI exports pass in GitHub `macos-15`; device/frontend runs pending |
 | 2 | `emscripten` | `.bc` static core + RetroArch `.js/.wasm` | archive, pinned real-frontend link/dist, HTTP checks, and real-Firefox synthetic-content run pass; interactive original-data run pending |
-| 3 | `psp1`, `vita`, `ctr`, `ps2` | static `.a` | initial compiler mapping added |
-| 3 | Switch, Wii, GameCube, Wii U | static `.a` | devkitPro mappings and compiler dry-runs pass; real toolchain/frontend runs pending |
-| 4 | PS3, Xbox-family, Haiku/BSD/webOS and other buildbot targets | varies | inventory pending |
+| 3 | `psp1` | static `.a` + RetroArch `.elf`/`EBOOT.PBP` | real official-SDK strict core archive and all 25 entry points pass; pinned RetroArch frontend link/package pass; PSP device run pending |
+| 3 | `vita`, `ctr`, `ps2` | static `.a` | real official-SDK strict core archives, target-machine checks, and all 25 required entry points pass; static frontend links/device runs pending |
+| 3 | Switch, Wii, GameCube, Wii U | static `.a` | real pinned devkitPro strict core archives, target-machine checks, and all 25 required entry points pass; static frontend links/device runs pending |
+| 4 | Dingux, webOS, UWP, Haiku/BSD, PSL1GHT PS3, DOS | varies | official live/source inventory complete; add in this priority order with a real public toolchain and artifact contract |
 
 Dreamcast and original PlayStation ports remain architectural and regression references.
 They become libretro build targets only where a maintained RetroArch frontend/toolchain
@@ -110,14 +122,17 @@ contract exists.
 1. Core shell, content pairing, lazy resource I/O, and first DGDS frame. **Done.**
 2. Bounded BMP/ADS/TTM, director/path/walk, and deterministic mixer foundations. **Done.**
 3. Wire ADS resources to TTM slots and instruction events to the compositor/mixer.
-   **Done for selectable one-ADS chapters; director transitions and original SFX remain.**
+   **Done for selectable chapters and automatic ADS sequencing; optional user-owned
+   original SFX loading and automatic island/walk/fade transitions are wired and
+   save-state tested. All 63 authentic chapters complete.**
 4. Port feasible PS1 additions: captions, 36-holiday calendar, scene explorer previews,
    and the CC0 ocean ambience loop with full attribution. **Captions, chapter previews,
    calendar data, automatic/forced asset-free holiday presentation, and ambience are
    done; original-art sprite presentation remains.**
 5. Browser RetroArch build/link/dist/HTTP and real-Firefox synthetic-content harness.
-   **Done; interactive original-data run remains.** Complete native RetroArch smoke, then expand targets one validated
-   compiler/frontend at a time.
+   **Done; local original-data auto-loading is implemented and is a release gate for
+   the final rebuilt distribution.** Complete native RetroArch smoke, then expand
+   targets one validated compiler/frontend at a time.
 
 The project intentionally adds targets sequentially. A giant untested Makefile is not
 considered platform support.

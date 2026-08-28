@@ -28,6 +28,12 @@ included in these tables. The holiday overlay reuses that port's automatic/off/m
 interaction policy, but its C99 renderer is new and uses only the embedded conventional
 5x7 font; the PS1 port's `HOLIDAY.BMP` sprite media is not included.
 
+The automatic story policy, transition shapes, persistent-island restoration, and
+walk/tree-occlusion behavior were also studied from that pinned GPL PlayStation source.
+The portable director, story controller, fade masks, and island-walk compositor are new
+or rewritten C99 modules; copied and mechanically translated tables are listed
+separately in `PROVENANCE.md`.
+
 ## CC0 ocean ambience source
 
 The optional ocean design identifies BigSoundBank sound 0266, “Sea: Waves,” published
@@ -77,9 +83,40 @@ The reviewed snapshot of `deckarep/Johnny-Castaway-2026-Public` contained no det
 license file. It was used only to evaluate language/runtime suitability; no source was
 copied, translated, or linked. The project is therefore not a dependency of this core.
 
+## Build-only toolchains
+
+Optional reproducible console builds invoke official public container images from
+devkitPro, PSPDEV, VitaSDK, and PS2DEV. These images and SDKs remain external build
+tools: they are neither copied into this repository nor included in core artifacts.
+Their source repositories, revisions, immutable image digests, and tested compiler
+versions are recorded in `PROVENANCE.md` and `CONSOLE_BUILDS.md`. Distributors who
+rebuild with those environments are responsible for the respective upstream SDK and
+container terms; this repository's binary artifact bundles contain the Johnny core,
+its GPL source record, and the notices for material actually embedded by the core.
+
+Other optional builds invoke an external Android NDK, Emscripten SDK, Apple Xcode SDK,
+MinGW-w64 toolchain, or distribution cross compiler. Those tools are not copied into
+the repository or linked into the core as runtime dependencies. Exact pinned CI images,
+versions, and first-party recipes are recorded in `PROVENANCE.md`, the workflow files,
+and the platform/build documents. The generated RetroArch Web frontend is a separate
+GPL-linked distribution and includes its own complete notices as described above.
+
+## Optional original sound effects
+
+The core recognizes user-supplied `sound0.wav` through `sound24.wav` siblings, skipping
+the original data set's absent IDs 11 and 13. The naming/range convention comes from
+Hunter Davis's GPL PlayStation port at revision
+`25c5d84593ac20cbee354eaab7779ab7397d6bbe`; the portable loader is new code. The WAV
+files themselves remain Sierra/Dynamix content and are not covered by this project's
+GPL. They are not committed, embedded, packaged, uploaded as CI artifacts, or licensed
+for redistribution here. See `OPTIONAL_ORIGINAL_AUDIO.md` for the exact boundary.
+
 ## Original game content
 
 Sierra/Dynamix content is not licensed under this repository's GPL. Users provide their
 own original data at runtime. Building or distributing this core does not grant a right
 to redistribute the original data, characters, artwork, animation, or audio. The CC0
-ocean ambience documented above is not Sierra/Dynamix content.
+ocean ambience documented above is not Sierra/Dynamix content. Local Web staging is a
+private convenience that places the user-owned resource pair and optional WAVs beneath
+ignored `build/` output; it does not change ownership or grant redistribution rights.
+Never commit or publish staged files, and remove them before exposing the test server.

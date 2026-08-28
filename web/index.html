@@ -13,8 +13,9 @@
         <h1>Johnny Castaway</h1>
         <p>
           Choose your own <code>RESOURCE.MAP</code> and
-          <code>RESOURCE.001</code>. They are read by this page and kept in the
-          browser's in-memory filesystem; the local server never receives them.
+          <code>RESOURCE.001</code>, or stage them in the generated local test
+          directory for automatic startup. Selected files stay in the browser's
+          in-memory filesystem.
         </p>
       </header>
 
@@ -29,7 +30,7 @@
         <button id="fullscreen" disabled>Fullscreen</button>
       </section>
 
-      <p id="status" class="status" role="status">Choose both data files to begin.</p>
+      <p id="status" class="status" role="status">Checking for locally staged Johnny data…</p>
       <div class="screen">
         <canvas id="canvas" tabindex="0" aria-label="RetroArch video output"></canvas>
       </div>
@@ -39,6 +40,7 @@
         <ul>
           <li>The first build is slow because it compiles RetroArch; later builds are incremental.</li>
           <li>Use “RetroArch menu” to inspect every core option exposed by the port.</li>
+          <li>Locally staged original data is served to anyone who can reach this test server; do not expose it publicly.</li>
           <li>Audio may require one additional click after browser permission or autoplay prompts.</li>
           <li>See <a href="WEB_PLAYER_NOTICE.md">credits, licenses, and provenance</a>.</li>
         </ul>

@@ -5,11 +5,12 @@ BUILD_DIR := build/$(platform)
 SOURCES := src/jc_ads.c src/jc_audio.c src/jc_bmp.c src/jc_caption_render.c \
            src/jc_captions.c \
            src/jc_chapters.c src/jc_compositor.c src/jc_content.c src/jc_core.c \
-           src/jc_decompress.c src/jc_director.c src/jc_extras.c \
-           src/jc_holiday_overlay.c \
+           src/jc_decompress.c src/jc_director.c src/jc_extras.c src/jc_fade.c \
+           src/jc_holiday_overlay.c src/jc_island_walk.c \
            src/jc_ocean.c src/jc_palette.c src/jc_path.c \
            src/jc_resource_map.c src/jc_rng.c src/jc_runtime.c \
-           src/jc_scr.c src/jc_script_vm.c src/jc_surface.c src/jc_ttm.c \
+           src/jc_scr.c src/jc_script_vm.c src/jc_sfx.c src/jc_story_player.c \
+           src/jc_surface.c src/jc_ttm.c \
            src/jc_ttm_renderer.c src/jc_vag.c src/jc_walk.c src/jc_wav.c \
            src/libretro_core.c
 OBJECTS := $(patsubst %.c,$(BUILD_DIR)/%.o,$(SOURCES))
@@ -35,6 +36,12 @@ ifeq ($(platform),linux_x86_64)
   TARGET := $(BUILD_DIR)/$(TARGET_NAME)_libretro.so
   PLATFORM_CFLAGS := -fPIC
   SHARED := -shared
+else ifeq ($(platform),linux_x86)
+  CC := gcc
+  TARGET := $(BUILD_DIR)/$(TARGET_NAME)_libretro.so
+  PLATFORM_CFLAGS := -fPIC -m32
+  LDFLAGS += -m32
+  SHARED := -shared
 else ifeq ($(platform),linux_aarch64)
   CC := aarch64-linux-gnu-gcc
   TARGET := $(BUILD_DIR)/$(TARGET_NAME)_libretro.so
@@ -43,7 +50,12 @@ else ifeq ($(platform),linux_aarch64)
 else ifeq ($(platform),linux_armv7)
   CC := arm-linux-gnueabihf-gcc
   TARGET := $(BUILD_DIR)/$(TARGET_NAME)_libretro.so
-  PLATFORM_CFLAGS := -fPIC -march=armv7-a
+  PLATFORM_CFLAGS := -fPIC -march=armv7-a -mfpu=vfpv3-d16
+  SHARED := -shared
+else ifeq ($(platform),linux_armv7_neon)
+  CC := arm-linux-gnueabihf-gcc
+  TARGET := $(BUILD_DIR)/$(TARGET_NAME)_libretro.so
+  PLATFORM_CFLAGS := -fPIC -march=armv7-a -mfpu=neon
   SHARED := -shared
 else ifeq ($(platform),mingw_x86_64)
   CC := x86_64-w64-mingw32-gcc
@@ -165,19 +177,19 @@ else ifneq (,$(filter $(platform),android_arm64 android_armv7 android_x86_64 and
 else ifeq ($(platform),psp1)
   CC := psp-gcc
   AR := psp-ar
-  TARGET := $(BUILD_DIR)/$(TARGET_NAME)_libretro.a
+  TARGET := $(BUILD_DIR)/$(TARGET_NAME)_libretro_psp1.a
   PLATFORM_CFLAGS := -G0 -DPSP
   STATIC_LINKING := 1
 else ifeq ($(platform),vita)
   CC := arm-vita-eabi-gcc
   AR := arm-vita-eabi-ar
-  TARGET := $(BUILD_DIR)/$(TARGET_NAME)_libretro.a
+  TARGET := $(BUILD_DIR)/$(TARGET_NAME)_libretro_vita.a
   PLATFORM_CFLAGS := -DVITA
   STATIC_LINKING := 1
 else ifeq ($(platform),ctr)
   CC := $(DEVKITARM)/bin/arm-none-eabi-gcc
   AR := $(DEVKITARM)/bin/arm-none-eabi-ar
-  TARGET := $(BUILD_DIR)/$(TARGET_NAME)_libretro.a
+  TARGET := $(BUILD_DIR)/$(TARGET_NAME)_libretro_ctr.a
   PLATFORM_CFLAGS := -D_3DS -DARM11 -march=armv6k -mtune=mpcore -mfloat-abi=hard
   STATIC_LINKING := 1
 else ifneq (,$(filter $(platform),ngc wii wiiu))
@@ -214,7 +226,7 @@ else ifeq ($(platform),libnx)
 else ifeq ($(platform),ps2)
   CC := mips64r5900el-ps2-elf-gcc
   AR := mips64r5900el-ps2-elf-ar
-  TARGET := $(BUILD_DIR)/$(TARGET_NAME)_libretro.a
+  TARGET := $(BUILD_DIR)/$(TARGET_NAME)_libretro_ps2.a
   PLATFORM_CFLAGS := -DPS2 -G0
   STATIC_LINKING := 1
 else
@@ -242,9 +254,13 @@ MAP_TEST_TARGET := build/tests/test_resource_map
 GRAPHICS_TEST_TARGET := build/tests/test_graphics
 BMP_TEST_TARGET := build/tests/test_bmp_compositor
 DIRECTOR_TEST_TARGET := build/tests/test_director
+STORY_PLAYER_TEST_TARGET := build/tests/test_story_player
+FADE_TEST_TARGET := build/tests/test_fade
+ISLAND_WALK_TEST_TARGET := build/tests/test_island_walk
 PATH_TEST_TARGET := build/tests/test_path
 WALK_TEST_TARGET := build/tests/test_walk
 AUDIO_TEST_TARGET := build/tests/test_audio
+SFX_TEST_TARGET := build/tests/test_sfx
 SCRIPT_TEST_TARGET := build/tests/test_script_vm
 EXTRAS_TEST_TARGET := build/tests/test_extras
 CAPTION_RENDER_TEST_TARGET := build/tests/test_caption_render
@@ -280,6 +296,28 @@ $(DIRECTOR_TEST_TARGET): src/jc_director.c src/jc_rng.c \
 	$(HOST_CC) -std=c99 $(WARNINGS) -Iinclude -Isrc -O2 -o $@ \
 		src/jc_director.c src/jc_rng.c tests/test_director.c
 
+$(STORY_PLAYER_TEST_TARGET): src/jc_chapters.c src/jc_director.c src/jc_rng.c \
+                             src/jc_story_player.c src/jc_story_data.inc \
+                             tests/test_story_player.c
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c99 $(WARNINGS) -Iinclude -Isrc -O2 -o $@ \
+		src/jc_chapters.c src/jc_director.c src/jc_rng.c \
+		src/jc_story_player.c tests/test_story_player.c
+
+$(FADE_TEST_TARGET): src/jc_fade.c tests/test_fade.c include/jc_fade.h
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c99 $(WARNINGS) -Iinclude -O2 -o $@ \
+		src/jc_fade.c tests/test_fade.c
+
+$(ISLAND_WALK_TEST_TARGET): src/jc_compositor.c src/jc_island_walk.c \
+                            src/jc_path.c src/jc_path_data.inc src/jc_rng.c \
+                            src/jc_surface.c src/jc_walk.c \
+                            src/jc_walk_data.inc tests/test_island_walk.c
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c99 $(WARNINGS) -Iinclude -Isrc -O2 -o $@ \
+		src/jc_compositor.c src/jc_island_walk.c src/jc_path.c src/jc_rng.c \
+		src/jc_surface.c src/jc_walk.c tests/test_island_walk.c
+
 $(PATH_TEST_TARGET): src/jc_path.c src/jc_path_data.inc src/jc_rng.c \
                      tests/test_path.c
 	@mkdir -p $(dir $@)
@@ -296,6 +334,13 @@ $(AUDIO_TEST_TARGET): src/jc_audio.c src/jc_wav.c tests/test_audio.c
 	@mkdir -p $(dir $@)
 	$(HOST_CC) -std=c99 $(WARNINGS) -Iinclude -O2 -o $@ \
 		src/jc_audio.c src/jc_wav.c tests/test_audio.c
+
+$(SFX_TEST_TARGET): src/jc_audio.c src/jc_sfx.c src/jc_wav.c \
+                    tests/test_sfx.c include/jc_sfx.h
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c99 $(WARNINGS) -Iinclude \
+		-Iexternal/libretro-common/include -O2 -o $@ \
+		src/jc_audio.c src/jc_sfx.c src/jc_wav.c tests/test_sfx.c
 
 $(SCRIPT_TEST_TARGET): src/jc_ads.c src/jc_decompress.c src/jc_script_vm.c \
                        src/jc_ttm.c tests/test_script_vm.c
@@ -367,7 +412,10 @@ $(LIBRETRO_TEST_TARGET): $(SOURCES) tests/test_libretro.c
 HOST_CC ?= cc
 test: $(TEST_TARGET) $(MAP_TEST_TARGET) $(GRAPHICS_TEST_TARGET) \
       $(BMP_TEST_TARGET) $(DIRECTOR_TEST_TARGET) $(PATH_TEST_TARGET) \
-      $(WALK_TEST_TARGET) $(AUDIO_TEST_TARGET) $(SCRIPT_TEST_TARGET) \
+      $(STORY_PLAYER_TEST_TARGET) $(FADE_TEST_TARGET) \
+      $(ISLAND_WALK_TEST_TARGET) \
+      $(WALK_TEST_TARGET) $(AUDIO_TEST_TARGET) $(SFX_TEST_TARGET) \
+      $(SCRIPT_TEST_TARGET) \
       $(EXTRAS_TEST_TARGET) $(CAPTION_RENDER_TEST_TARGET) \
       $(HOLIDAY_OVERLAY_TEST_TARGET) \
       $(TTM_RENDERER_TEST_TARGET) \
@@ -378,9 +426,13 @@ test: $(TEST_TARGET) $(MAP_TEST_TARGET) $(GRAPHICS_TEST_TARGET) \
 	./$(GRAPHICS_TEST_TARGET)
 	./$(BMP_TEST_TARGET)
 	./$(DIRECTOR_TEST_TARGET)
+	./$(STORY_PLAYER_TEST_TARGET)
+	./$(FADE_TEST_TARGET)
+	./$(ISLAND_WALK_TEST_TARGET)
 	./$(PATH_TEST_TARGET)
 	./$(WALK_TEST_TARGET)
 	./$(AUDIO_TEST_TARGET)
+	./$(SFX_TEST_TARGET)
 	./$(SCRIPT_TEST_TARGET)
 	./$(EXTRAS_TEST_TARGET)
 	./$(CAPTION_RENDER_TEST_TARGET)
@@ -400,9 +452,30 @@ $(INSPECT_TARGET): src/jc_content.c src/jc_resource_map.c tools/jc_inspect.c
 
 inspect: $(INSPECT_TARGET)
 
+AUTHENTIC_TEST_TARGET := build/tools/check_all_chapters
+$(AUTHENTIC_TEST_TARGET): src/jc_ads.c src/jc_bmp.c src/jc_chapters.c \
+                            src/jc_compositor.c src/jc_content.c \
+                            src/jc_decompress.c src/jc_palette.c \
+                            src/jc_resource_map.c src/jc_runtime.c src/jc_scr.c \
+                            src/jc_script_vm.c src/jc_surface.c src/jc_ttm.c \
+                            src/jc_ttm_renderer.c tools/check_all_chapters.c
+	@mkdir -p $(dir $@)
+	$(HOST_CC) -std=c99 $(WARNINGS) -Iinclude \
+		-Iexternal/libretro-common/include -O2 -o $@ \
+		src/jc_ads.c src/jc_bmp.c src/jc_chapters.c src/jc_compositor.c \
+		src/jc_content.c src/jc_decompress.c src/jc_palette.c \
+		src/jc_resource_map.c src/jc_runtime.c src/jc_scr.c \
+		src/jc_script_vm.c src/jc_surface.c src/jc_ttm.c \
+		src/jc_ttm_renderer.c tools/check_all_chapters.c
+
+authentic-test: $(AUTHENTIC_TEST_TARGET)
+	@test -n "$(CONTENT)" || \
+		{ echo "Set CONTENT=/path/to/RESOURCE.MAP" >&2; exit 2; }
+	./$(AUTHENTIC_TEST_TARGET) "$(CONTENT)"
+
 clean:
 	rm -rf build
 
 -include $(OBJECTS:.o=.d)
 
-.PHONY: all clean inspect test
+.PHONY: all authentic-test clean inspect test

@@ -7,6 +7,9 @@
 #   https://github.com/actions/upload-artifact/releases/tag/v7.0.1
 # - emsdk 3.1.69 tag commit a36df02dc438e8b02f91122a4c62eeecb6784272:
 #   https://github.com/emscripten-core/emsdk/releases/tag/3.1.69
+# - ubuntu-24.04 runner inventory reviewed at
+#   fe6859a246ddeeb78fc8698ec1ff37b628394fe0, including NDK r29:
+#   https://github.com/actions/runner-images/blob/fe6859a246ddeeb78fc8698ec1ff37b628394fe0/images/ubuntu/Ubuntu2404-Readme.md
 
 name: CI
 
@@ -87,6 +90,46 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  linux-x86-core:
+    name: Linux x86 core
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out source and libretro-common
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Install i386 multilib toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends gcc-multilib
+
+      - name: Build and verify i386 shared core
+        run: |
+          make -j2 platform=linux_x86 WARNINGS="$STRICT_WARNINGS"
+          readelf -h build/linux_x86/johnny_castaway_libretro.so | \
+            grep -E 'Machine:.*Intel 80386$'
+          python3 tools/check_core_exports.py \
+            --format elf --tool nm \
+            build/linux_x86/johnny_castaway_libretro.so
+
+      - name: Upload Linux x86 core
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: johnny-castaway-linux-x86
+          path: |
+            build/linux_x86/johnny_castaway_libretro.so
+            johnny_castaway_libretro.info
+            LICENSE
+            CREDITS.md
+            docs/PROVENANCE.md
+            docs/THIRD_PARTY_NOTICES.md
+            docs/licenses/BigSoundBank-0266-CC0.md
+          if-no-files-found: error
+          retention-days: 14
+
   windows-core:
     name: Windows x64 core
     runs-on: ubuntu-24.04
@@ -119,6 +162,135 @@ jobs:
           name: johnny-castaway-windows-x64
           path: |
             build/mingw_x86_64/johnny_castaway_libretro.dll
+            johnny_castaway_libretro.info
+            LICENSE
+            CREDITS.md
+            docs/PROVENANCE.md
+            docs/THIRD_PARTY_NOTICES.md
+            docs/licenses/BigSoundBank-0266-CC0.md
+          if-no-files-found: error
+          retention-days: 14
+
+  android-cores:
+    name: Android arm64, armv7, x86_64, and x86 cores
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out source and libretro-common
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Report runner-provided pinned Android NDK
+        run: |
+          test -x "$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
+          cat "$ANDROID_NDK_LATEST_HOME/source.properties"
+
+      - name: Build all four supported Android ABIs
+        run: |
+          for platform in android_arm64 android_armv7 android_x86_64 android_x86; do
+            make -j2 platform="$platform" \
+              ANDROID_NDK_HOME="$ANDROID_NDK_LATEST_HOME" \
+              WARNINGS="$STRICT_WARNINGS"
+          done
+
+      - name: Check Android ELF machines and libretro exports
+        run: |
+          while IFS=: read -r machine core; do
+            readelf -h "$core" | grep -E "Machine:.*${machine}$"
+            python3 tools/check_core_exports.py \
+              --format elf --tool nm "$core"
+          done <<'EOF'
+          AArch64:build/android_arm64/johnny_castaway_libretro.so
+          ARM:build/android_armv7/johnny_castaway_libretro.so
+          Advanced Micro Devices X86-64:build/android_x86_64/johnny_castaway_libretro.so
+          Intel 80386:build/android_x86/johnny_castaway_libretro.so
+          EOF
+
+      - name: Upload Android cores
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: johnny-castaway-android-all-abis
+          path: |
+            build/android_arm64/johnny_castaway_libretro.so
+            build/android_armv7/johnny_castaway_libretro.so
+            build/android_x86_64/johnny_castaway_libretro.so
+            build/android_x86/johnny_castaway_libretro.so
+            johnny_castaway_libretro.info
+            LICENSE
+            CREDITS.md
+            docs/PROVENANCE.md
+            docs/THIRD_PARTY_NOTICES.md
+            docs/licenses/BigSoundBank-0266-CC0.md
+          if-no-files-found: error
+          retention-days: 14
+
+  portable-cross-cores:
+    name: Linux ARM and Windows x86 cross-cores
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out source and libretro-common
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Install distribution cross-toolchains
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends \
+            gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu \
+            libc6-dev-arm64-cross \
+            gcc-arm-linux-gnueabihf binutils-arm-linux-gnueabihf \
+            libc6-dev-armhf-cross \
+            gcc-mingw-w64-i686-posix binutils-mingw-w64-i686
+
+      - name: Build Linux ARM and Windows x86 cores
+        run: |
+          make -j2 platform=linux_aarch64 WARNINGS="$STRICT_WARNINGS"
+          make -j2 platform=linux_armv7 WARNINGS="$STRICT_WARNINGS"
+          make -j2 platform=linux_armv7_neon WARNINGS="$STRICT_WARNINGS"
+          make -j2 platform=mingw_x86 \
+            CC=i686-w64-mingw32-gcc-posix WARNINGS="$STRICT_WARNINGS"
+
+      - name: Check machines and exact libretro exports
+        run: |
+          aarch64-linux-gnu-readelf -h \
+            build/linux_aarch64/johnny_castaway_libretro.so | grep -F 'Machine:                           AArch64'
+          arm-linux-gnueabihf-readelf -h \
+            build/linux_armv7/johnny_castaway_libretro.so | grep -F 'Machine:                           ARM'
+          arm-linux-gnueabihf-readelf -A \
+            build/linux_armv7/johnny_castaway_libretro.so | grep -F 'Tag_ABI_VFP_args: VFP registers'
+          arm-linux-gnueabihf-readelf -A \
+            build/linux_armv7_neon/johnny_castaway_libretro.so | grep -F 'Tag_Advanced_SIMD_arch: NEONv1'
+          arm-linux-gnueabihf-readelf -A \
+            build/linux_armv7_neon/johnny_castaway_libretro.so | grep -F 'Tag_ABI_VFP_args: VFP registers'
+          i686-w64-mingw32-objdump -f \
+            build/mingw_x86/johnny_castaway_libretro.dll | grep -F 'architecture: i386'
+          python3 tools/check_core_exports.py \
+            --format elf --tool aarch64-linux-gnu-nm \
+            build/linux_aarch64/johnny_castaway_libretro.so
+          python3 tools/check_core_exports.py \
+            --format elf --tool arm-linux-gnueabihf-nm \
+            build/linux_armv7/johnny_castaway_libretro.so
+          python3 tools/check_core_exports.py \
+            --format elf --tool arm-linux-gnueabihf-nm \
+            build/linux_armv7_neon/johnny_castaway_libretro.so
+          python3 tools/check_core_exports.py \
+            --format pe --tool i686-w64-mingw32-objdump \
+            build/mingw_x86/johnny_castaway_libretro.dll
+
+      - name: Upload portable cross-cores
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: johnny-castaway-linux-arm-and-windows-x86
+          path: |
+            build/linux_aarch64/johnny_castaway_libretro.so
+            build/linux_armv7/johnny_castaway_libretro.so
+            build/linux_armv7_neon/johnny_castaway_libretro.so
+            build/mingw_x86/johnny_castaway_libretro.dll
             johnny_castaway_libretro.info
             LICENSE
             CREDITS.md

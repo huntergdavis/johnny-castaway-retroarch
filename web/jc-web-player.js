@@ -20,6 +20,14 @@ const corePath = `${retroarchRoot}/cores/johnny_castaway_libretro.core`;
 const contentDirectory = `${retroarchRoot}/userdata/content`;
 const mapPath = `${contentDirectory}/RESOURCE.MAP`;
 const configPath = `${retroarchRoot}/userdata/retroarch.cfg`;
+const coreOptionsPath = `${retroarchRoot}/userdata/retroarch-core-options.cfg`;
+const localContentPaths = {
+  map: "local-content/RESOURCE.MAP",
+  archive: "local-content/RESOURCE.001",
+};
+const originalSoundIds = Array.from({ length: 25 }, (_, id) => id).filter(
+  (id) => id !== 11 && id !== 13,
+);
 
 let moduleInstance = null;
 let running = false;
@@ -38,6 +46,44 @@ function selectedPair() {
 
 function readFile(file) {
   return file.arrayBuffer().then((buffer) => new Uint8Array(buffer));
+}
+
+async function localServerPair() {
+  const responses = await Promise.all([
+    fetch(localContentPaths.map, { cache: "no-store" }),
+    fetch(localContentPaths.archive, { cache: "no-store" }),
+  ]);
+  if (!responses.every((response) => response.ok)) return null;
+  const [mapBuffer, archiveBuffer] = await Promise.all(
+    responses.map((response) => response.arrayBuffer()),
+  );
+  const sounds = (
+    await Promise.all(
+      originalSoundIds.map(async (id) => {
+        try {
+          const response = await fetch(`local-content/sound${id}.wav`, {
+            cache: "no-store",
+          });
+          if (!response.ok) return null;
+          return {
+            id,
+            name: `local-content/sound${id}.wav`,
+            data: new Uint8Array(await response.arrayBuffer()),
+          };
+        } catch (error) {
+          console.warn(`Could not load optional sound${id}.wav:`, error);
+          return null;
+        }
+      }),
+    )
+  ).filter(Boolean);
+  return {
+    map: { name: "local-content/RESOURCE.MAP" },
+    archive: { name: "local-content/RESOURCE.001" },
+    mapData: new Uint8Array(mapBuffer),
+    archiveData: new Uint8Array(archiveBuffer),
+    sounds,
+  };
 }
 
 function createZipFileSystem(buffer) {
@@ -94,11 +140,17 @@ function mountBrowserFileSystem(module, zipFileSystem) {
   module.FS.writeFile(corePath, new Uint8Array());
 }
 
-function installContent(module, pair, mapData, archiveData) {
+function installContent(module, pair, mapData, archiveData, sounds, coreOptions) {
   // Normalizing names makes the core's sibling-file lookup work even when the
   // user's source filesystem used lowercase names.
   module.FS.writeFile(`${contentDirectory}/RESOURCE.MAP`, mapData);
   module.FS.writeFile(`${contentDirectory}/RESOURCE.001`, archiveData);
+  sounds.forEach((sound) => {
+    module.FS.writeFile(
+      `${contentDirectory}/sound${sound.id}.wav`,
+      sound.data,
+    );
+  });
   module.FS.writeFile(
     configPath,
     [
@@ -111,13 +163,14 @@ function installContent(module, pair, mapData, archiveData) {
       "menu_show_load_core = false",
       "menu_show_load_content = false",
       `# Loaded locally from ${pair.map.name} and ${pair.archive.name}`,
+      `# Installed ${sounds.length} optional original sound-effect WAVs`,
       "",
     ].join("\n"),
   );
+  if (coreOptions) module.FS.writeFile(coreOptionsPath, coreOptions);
 }
 
-async function start() {
-  const pair = selectedPair();
+export async function start(pair = selectedPair(), coreOptions = null) {
   if (!pair || running) return;
 
   startButton.disabled = true;
@@ -130,20 +183,30 @@ async function start() {
         if (!response.ok) throw new Error(`asset bundle HTTP ${response.status}`);
         return response.arrayBuffer();
       }),
-      readFile(pair.map),
-      readFile(pair.archive),
+      pair.mapData || readFile(pair.map),
+      pair.archiveData || readFile(pair.archive),
       createModule(),
     ]);
     const zipFileSystem = await createZipFileSystem(bundleResponse);
     moduleInstance = module;
     mountBrowserFileSystem(module, zipFileSystem);
-    installContent(module, pair, mapData, archiveData);
+    installContent(
+      module,
+      pair,
+      mapData,
+      archiveData,
+      pair.sounds || [],
+      coreOptions,
+    );
 
     running = true;
     menuButton.disabled = false;
     resetButton.disabled = false;
     fullscreenButton.disabled = false;
-    setStatus("Running. Use RetroArch menu to inspect core options.");
+    const soundStatus = pair.sounds?.length
+      ? ` Loaded ${pair.sounds.length} optional sound effects.`
+      : "";
+    setStatus(`Running.${soundStatus} Use RetroArch menu to inspect core options.`);
     module.callMain(module.arguments);
     canvas.focus();
   } catch (error) {
@@ -152,6 +215,21 @@ async function start() {
     startButton.disabled = false;
     contentInput.disabled = false;
   }
+}
+
+async function autoStartLocalContent() {
+  setStatus("Checking for locally staged Johnny data…");
+  try {
+    const pair = await localServerPair();
+    if (pair) {
+      setStatus("Found locally staged data; starting Johnny…");
+      await start(pair);
+      return;
+    }
+  } catch (error) {
+    console.warn("Local Johnny data auto-detection failed:", error);
+  }
+  setStatus("Choose both data files to begin.");
 }
 
 function sendCommand(command) {
@@ -171,7 +249,9 @@ contentInput.addEventListener("change", () => {
   );
 });
 
-startButton.addEventListener("click", start);
+startButton.addEventListener("click", () => start());
 menuButton.addEventListener("click", () => sendCommand("MENU_TOGGLE"));
 resetButton.addEventListener("click", () => sendCommand("RESET"));
 fullscreenButton.addEventListener("click", () => sendCommand("FULLSCREEN_TOGGLE"));
+
+autoStartLocalContent();

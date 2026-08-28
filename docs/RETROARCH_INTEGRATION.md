@@ -7,9 +7,11 @@ Menu integration is a release gate for every platform, not a post-port task.
 - **Main Menu / Load Core**: core name, version, license, authors, and `.map|.001`
   content extensions are provided by the core and `.info` metadata.
 - **Quick Menu / Core Options / Story**: Initial Screen selects Intro, day/night
-  island, office, Suzy beach, or ending. Chapter exposes Static Screen plus all 63
-  audited PS1 scene-explorer records; selecting a chapter starts its original ADS/tag
-  and the first live-rendered frame acts as the graphical preview. Holiday Overlay
+  island, office, Suzy beach, or ending. Story Playback / Chapter defaults to Automatic,
+  which plans and advances the original opening/intermediate/walk/final sequence across
+  story days. It also exposes Static Screen plus all 63 audited PS1 Scene Explorer
+  records; selecting a chapter starts its original ADS/tag and the first live-rendered
+  frame acts as the graphical preview. Holiday Overlay
   provides Automatic (frontend device local date), Off, and 36 explicit force/preview
   values. A forced or date-matched holiday immediately draws an asset-free title/date
   band, opposite top-positioned captions. These options all apply immediately.
@@ -18,8 +20,9 @@ Menu integration is a release gate for every platform, not a post-port task.
 - **Quick Menu / Core Options / Audio**: master Enable/Volume and independent Ocean
   Ambience enable/volume controls apply immediately. The exact CC0 loop is decoded once,
   trimmed to its VAG loop markers, registered at the PS1 default 56% gain, and mixed by
-  the deterministic eight-voice mixer. TTM sample events are dispatched; original SFX
-  remain silent until owned sample extraction/loading is implemented.
+  the deterministic eight-voice mixer. TTM sample events play any valid user-supplied
+  `sound<ID>.wav` siblings loaded beside the resource pair; all 23 possible files are
+  optional and absent/invalid files fail softly. No original sample is bundled.
 - **Quick Menu / Core Options / Accessibility**: Closed Captions enable, size,
   background (none/box/full-width bar), background opacity, and top/center/bottom
   position apply immediately. Captions use the audited 79-entry PS1 catalog and a
@@ -27,8 +30,10 @@ Menu integration is a release gate for every platform, not a post-port task.
 - **Quick Menu / Controls / Port 1**: the port declares a RetroPad; Start restarts
   the current core timeline.
 - **Quick Menu / State**: the versioned, pointer-free v2 envelope covers the base
-  timeline, mixer (including ocean loop position), selected chapter, deterministic
-  ADS/TTM runtime position, renderer output, and active caption/timing. Loading rebuilds
+  timeline, mixer (including ocean loop position), automatic plan/day/scene identity or
+  selected chapter, deterministic ADS/TTM runtime position, renderer output, and active
+  caption/timing. Automatic states additionally preserve the transition phase and
+  deterministically rebuild an in-progress island walk or fade. Loading rebuilds
   owned runtime resources from the indexed content archive and silently replays the
   bounded timeline before atomically accepting the state. Same-build legacy base-plus-
   mixer states remain loadable; they predate chapter/runtime/caption persistence.
@@ -40,11 +45,12 @@ Menu integration is a release gate for every platform, not a post-port task.
 The following option groups are required before the story-runtime milestone is done,
 but they must not appear as nonfunctional menu entries:
 
-- **Story**: normal cycle, deterministic seed, simulated calendar override,
-  tide/raft stage, and playback speed. Automatic local-date and explicit holiday
-  override presentation are implemented.
-- **Audio**: original SFX sample extraction and voice policy after multiple authentic
-  policies exist.
+- **Story**: user-selectable deterministic seed, simulated calendar override,
+  tide/raft stage, and playback speed. Automatic local-date story cycling and explicit
+  holiday override presentation are implemented.
+- **Audio**: an optional voice-stealing policy selector only if multiple authentic
+  policies are implemented. User-owned original SFX sibling loading already exists and
+  deliberately has no enable menu separate from master audio.
 - **Accessibility**: high contrast and reduced flashing after their rendering behavior
   exists.
 - **Video**: crop/overscan policy, palette mode, aspect policy, and optional filters

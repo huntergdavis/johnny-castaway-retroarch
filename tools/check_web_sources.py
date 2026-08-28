@@ -17,6 +17,7 @@ GENERATED_LOCAL_REFERENCES = {"browserfs.min.js"}
 REQUIRED_FILES = (
     "scripts/build-web-player.sh",
     "scripts/serve-web.sh",
+    "scripts/stage-local-web-content.sh",
     "tools/check_web_dist.py",
     "tools/serve_web.py",
     "tools/web_smoke_test.py",

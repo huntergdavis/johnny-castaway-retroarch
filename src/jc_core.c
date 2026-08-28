@@ -137,6 +137,7 @@ bool jc_core_serialize(const jc_core_t *core, void *data, size_t size)
     if (data == NULL || size < sizeof(state))
         return false;
 
+    memset(&state, 0, sizeof(state));
     state.magic = JC_STATE_MAGIC;
     state.version = JC_STATE_VERSION;
     state.frame_number = core->frame_number;

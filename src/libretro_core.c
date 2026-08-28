@@ -2,14 +2,19 @@
 #include "jc_content.h"
 #include "jc_core.h"
 #include "jc_audio.h"
+#include "jc_bmp.h"
 #include "jc_caption_render.h"
 #include "jc_captions.h"
 #include "jc_chapters.h"
+#include "jc_fade.h"
 #include "jc_holiday_overlay.h"
+#include "jc_island_walk.h"
 #include "jc_ocean.h"
 #include "jc_palette.h"
 #include "jc_runtime.h"
 #include "jc_scr.h"
+#include "jc_sfx.h"
+#include "jc_story_player.h"
 #include "jc_wav.h"
 #include "libretro.h"
 
@@ -29,12 +34,33 @@
 #define LEGACY_CHAPTER_INDEX 1u
 #define LEGACY_HOLIDAY_INDEX 2u
 #define CHAPTER_RUNTIME_SEED 0x4a435241u
+#define STORY_PLAN_SEED 24u
+#define WALK_RUNTIME_SEED_XOR 0x57414c4bu
+
+typedef enum jc_automatic_transition {
+    JC_AUTOMATIC_TRANSITION_NONE = 0,
+    JC_AUTOMATIC_TRANSITION_WALK,
+    JC_AUTOMATIC_TRANSITION_FADE_OUT
+} jc_automatic_transition_t;
 
 #define JC_LIBRETRO_STATE_MAGIC 0x3253434au
 #define JC_LIBRETRO_STATE_VERSION 2u
 #define JC_LIBRETRO_STATE_HEADER_SIZE 64u
 #define JC_LIBRETRO_STATE_NO_INDEX UINT32_MAX
 #define JC_LIBRETRO_STATE_MAX_RUNTIME_TICKS 65536u
+#define JC_STORY_STATE_TRANSITION_SHIFT 16u
+#define JC_STORY_STATE_FADE_SEQUENCE_SHIFT 18u
+#define JC_STORY_STATE_PROGRESS_SHIFT 21u
+#define JC_STORY_STATE_TRANSITION_MASK 0x3u
+#define JC_STORY_STATE_FADE_SEQUENCE_MASK 0x7u
+#define JC_STORY_STATE_PROGRESS_MASK 0x7ffu
+
+enum jc_story_state_transition {
+    JC_STORY_STATE_PLAYING = 0,
+    JC_STORY_STATE_WALKING,
+    JC_STORY_STATE_FADING,
+    JC_STORY_STATE_FADE_COMPLETE
+};
 
 #define JC_LIBRETRO_STATE_FLAG_CHAPTER (1u << 0)
 #define JC_LIBRETRO_STATE_FLAG_RUNTIME_SCENE (1u << 1)
@@ -43,6 +69,7 @@
 #define JC_LIBRETRO_STATE_FLAG_CAPTION_ACTIVE (1u << 4)
 #define JC_LIBRETRO_STATE_FLAG_DIAGNOSTIC (1u << 5)
 #define JC_LIBRETRO_STATE_FLAG_RESET_PRESSED (1u << 6)
+#define JC_LIBRETRO_STATE_FLAG_AUTOMATIC_STORY (1u << 7)
 #define JC_LIBRETRO_STATE_FLAGS_ALL \
     (JC_LIBRETRO_STATE_FLAG_CHAPTER | \
      JC_LIBRETRO_STATE_FLAG_RUNTIME_SCENE | \
@@ -50,7 +77,8 @@
      JC_LIBRETRO_STATE_FLAG_CAPTIONS_ENABLED | \
      JC_LIBRETRO_STATE_FLAG_CAPTION_ACTIVE | \
      JC_LIBRETRO_STATE_FLAG_DIAGNOSTIC | \
-     JC_LIBRETRO_STATE_FLAG_RESET_PRESSED)
+     JC_LIBRETRO_STATE_FLAG_RESET_PRESSED | \
+     JC_LIBRETRO_STATE_FLAG_AUTOMATIC_STORY)
 
 static retro_environment_t environment_cb;
 static retro_video_refresh_t video_cb;
@@ -65,11 +93,26 @@ static jc_content_t content;
 static bool game_loaded;
 static bool reset_pressed;
 static jc_audio_t audio;
+static jc_sfx_t sfx;
 static int16_t audio_output[AUDIO_FRAMES_PER_VIDEO_FRAME * 2u];
 static uint32_t video_output[JC_FRAME_WIDTH * JC_FRAME_HEIGHT];
 static bool diagnostic_display;
 static char selected_screen[JC_RESOURCE_NAME_BYTES + 1u] = "INTRO.SCR";
 static const jc_chapter_t *selected_chapter;
+static bool automatic_story;
+static jc_story_player_t story_player;
+static jc_automatic_transition_t automatic_transition;
+static uint32_t automatic_transition_ticks;
+static uint32_t fade_sequence;
+static jc_fade_t scene_fade;
+static jc_island_walk_t island_walk;
+static jc_bmp_t johnny_walk_sprites;
+static jc_bmp_t island_sprites;
+static uint8_t *walk_frame_pixels;
+static jc_surface_t walk_frame;
+static bool walk_resources_ready;
+static jc_palette_t walk_palette;
+static bool walk_palette_ready;
 static jc_runtime_t *runtime;
 static bool runtime_ready;
 static bool runtime_failed;
@@ -85,6 +128,8 @@ static char legacy_chapter_value[LEGACY_CHAPTER_BYTES];
 static bool holiday_options_populated;
 static char legacy_holiday_value[LEGACY_HOLIDAY_BYTES];
 static jc_holiday_overlay_selection_t holiday_selection;
+static bool initial_screen_visibility_known;
+static bool initial_screen_option_visible;
 
 static const char *const serialized_screen_names[] = {
     "INTRO.SCR", "ISLAND2.SCR", "NIGHT.SCR", "JOFFICE.SCR",
@@ -118,7 +163,7 @@ static uint64_t read_u64le(const uint8_t *data)
 }
 
 static struct retro_core_option_v2_category option_categories[] = {
-    {"story", "Story", "Choose how the Johnny Castaway story begins and progresses."},
+    {"story", "Story", "Choose automatic playback, a static screen, a holiday overlay, or any of 63 titled scenes."},
     {"video", "Video", "Select the software-rendered image shown by the core."},
     {"audio", "Audio", "Configure the deterministic Johnny Castaway sound mixer."},
     {"accessibility", "Accessibility", "Configure closed captions and presentation aids."},
@@ -146,13 +191,13 @@ static struct retro_core_option_v2_definition option_definitions[] = {
     },
     {
         "johnny_castaway_chapter",
-        "Story Chapter",
-        "Chapter",
-        "Start a specific original scene and use its first live-rendered frame as the graphical preview. Select Static Screen to use Initial Screen instead. Changes apply immediately.",
-        NULL,
+        "Story Playback / Chapter",
+        "Playback / Chapter",
+        "Play the story automatically, show the selected static screen, or select any of 63 titled scenes. A selected scene starts immediately as a live in-game graphical preview. If the frontend pauses while its menu is open, return to the game view to see the preview; libretro core-option menus do not support per-entry thumbnails.",
+        "Play automatically, use Initial Screen, or select any of 63 titled scenes. A selected scene starts immediately as a live in-game graphical preview. If the frontend pauses while its menu is open, return to the game view to see the preview; libretro core-option menus do not support per-entry thumbnails.",
         "story",
         {{NULL, NULL}},
-        "screen"
+        "automatic"
     },
     {
         "johnny_castaway_holiday_overlay",
@@ -394,20 +439,23 @@ static void populate_chapter_options(void)
 
     if (chapter_options_populated)
         return;
-    values[0].value = "screen";
-    values[0].label = "Static Screen";
-    if (count + 2u <= RETRO_NUM_CORE_OPTION_VALUES_MAX) {
+    values[0].value = "automatic";
+    values[0].label = "Automatic Story";
+    values[1].value = "screen";
+    values[1].label = "Static Screen";
+    if (count + 3u <= RETRO_NUM_CORE_OPTION_VALUES_MAX) {
         for (index = 0u; index < count; ++index) {
             const jc_chapter_t *chapter = jc_chapter_at(index);
-            values[index + 1u].value = chapter->slug;
-            values[index + 1u].label = chapter->title;
+            values[index + 2u].value = chapter->slug;
+            values[index + 2u].label = chapter->title;
         }
-        values[count + 1u].value = NULL;
-        values[count + 1u].label = NULL;
+        values[count + 2u].value = NULL;
+        values[count + 2u].label = NULL;
     }
 
     legacy_chapter_value[0] = '\0';
-    if (!append_legacy_chapter("Story Chapter; screen", &legacy_length))
+    if (!append_legacy_chapter("Story Playback / Chapter; automatic|screen",
+                               &legacy_length))
         return;
     for (index = 0u; index < count; ++index) {
         const jc_chapter_t *chapter = jc_chapter_at(index);
@@ -454,6 +502,30 @@ static void populate_holiday_options(void)
     holiday_options_populated = true;
 }
 
+static bool RETRO_CALLCONV update_option_visibility(void)
+{
+    struct retro_variable variable = {
+        "johnny_castaway_chapter", NULL
+    };
+    struct retro_core_option_display display = {
+        "johnny_castaway_initial_screen", false
+    };
+
+    if (environment_cb == NULL)
+        return false;
+    if (environment_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &variable) &&
+        variable.value != NULL)
+        display.visible = strcmp(variable.value, "screen") == 0;
+    if (initial_screen_visibility_known &&
+        initial_screen_option_visible == display.visible)
+        return false;
+    if (!environment_cb(RETRO_ENVIRONMENT_SET_CORE_OPTIONS_DISPLAY, &display))
+        return false;
+    initial_screen_visibility_known = true;
+    initial_screen_option_visible = display.visible;
+    return true;
+}
+
 static void register_core_options(retro_environment_t cb)
 {
     unsigned version = 0u;
@@ -469,6 +541,8 @@ static void read_core_options(void)
 {
     struct retro_variable variable;
     const char *value;
+    const jc_chapter_t *active_chapter = selected_chapter;
+    bool was_automatic_story = automatic_story;
 
     variable.key = "johnny_castaway_initial_screen";
     variable.value = NULL;
@@ -489,10 +563,16 @@ static void read_core_options(void)
 
     variable.key = "johnny_castaway_chapter";
     variable.value = NULL;
+    automatic_story = false;
     selected_chapter = NULL;
     if (environment_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &variable) &&
-        variable.value != NULL && strcmp(variable.value, "screen") != 0)
-        selected_chapter = jc_chapter_lookup(variable.value);
+        variable.value != NULL) {
+        automatic_story = strcmp(variable.value, "automatic") == 0;
+        if (automatic_story && was_automatic_story)
+            selected_chapter = active_chapter;
+        else if (!automatic_story && strcmp(variable.value, "screen") != 0)
+            selected_chapter = jc_chapter_lookup(variable.value);
+    }
 
     variable.key = "johnny_castaway_holiday_overlay";
     variable.value = NULL;
@@ -747,6 +827,10 @@ static bool load_frame_into(jc_core_t *target, const char *screen_name,
                        error, error_size) ||
         !jc_core_set_content_frame(target, &screen, &palette))
         goto cleanup;
+    if (target == &core) {
+        walk_palette = palette;
+        walk_palette_ready = true;
+    }
     success = true;
 
 cleanup:
@@ -760,6 +844,113 @@ static bool load_selected_frame(char *error, size_t error_size)
 {
     return load_frame_into(&core, selected_screen, diagnostic_display,
                            error, error_size);
+}
+
+static const char *chapter_location_screen(const jc_chapter_t *chapter)
+{
+    if (chapter != NULL && strcmp(chapter->ads_name, "JOHNNY") == 0) {
+        if (chapter->ads_tag == 1u)
+            return "THEEND.SCR";
+        if (chapter->ads_tag == 6u)
+            return "JOFFICE.SCR";
+    }
+    if (chapter != NULL && strcmp(chapter->ads_name, "SUZY") == 0)
+        return "SUZBEACH.SCR";
+    return "ISLAND2.SCR";
+}
+
+static bool load_chapter_location(const jc_chapter_t *chapter,
+                                  char *error, size_t error_size)
+{
+    return chapter != NULL &&
+           load_frame_into(&core, chapter_location_screen(chapter), false,
+                           error, error_size);
+}
+
+static void reset_automatic_transition(void)
+{
+    automatic_transition = JC_AUTOMATIC_TRANSITION_NONE;
+    automatic_transition_ticks = 0u;
+    jc_fade_init(&scene_fade);
+    jc_island_walk_cancel(&island_walk);
+}
+
+static void unload_walk_resources(void)
+{
+    reset_automatic_transition();
+    jc_island_walk_destroy(&island_walk);
+    jc_bmp_free(&island_sprites);
+    jc_bmp_free(&johnny_walk_sprites);
+    free(walk_frame_pixels);
+    walk_frame_pixels = NULL;
+    memset(&walk_frame, 0, sizeof(walk_frame));
+    walk_resources_ready = false;
+    memset(&walk_palette, 0, sizeof(walk_palette));
+    walk_palette_ready = false;
+}
+
+static bool load_content_bmp(const char *name, jc_bmp_t *bmp,
+                             char *error, size_t error_size)
+{
+    jc_resource_info_t resource;
+    uint8_t *data;
+    bool success;
+
+    if (!jc_content_find_resource(&content, name, vfs, &resource,
+                                  error, error_size))
+        return false;
+    if (resource.body_size == 0u ||
+        resource.body_size > JC_RUNTIME_MAX_RESOURCE_BYTES) {
+        snprintf(error, error_size, "%s exceeds the walk resource limit",
+                 name);
+        return false;
+    }
+    data = (uint8_t *)malloc(resource.body_size);
+    if (data == NULL) {
+        snprintf(error, error_size, "not enough memory to decode %s", name);
+        return false;
+    }
+    success = jc_content_read_resource(&content, &resource, vfs, data,
+                                       resource.body_size, error,
+                                       error_size) &&
+              jc_bmp_parse(bmp, data, resource.body_size, error, error_size);
+    free(data);
+    return success;
+}
+
+static bool load_walk_resources(char *error, size_t error_size)
+{
+    bool have_island_sprites;
+
+    unload_walk_resources();
+    if (!load_content_bmp("JOHNWALK.BMP", &johnny_walk_sprites,
+                          error, error_size))
+        return false;
+    have_island_sprites = load_content_bmp("BACKGRND.BMP", &island_sprites,
+                                           error, error_size);
+    if (!have_island_sprites) {
+        jc_bmp_free(&island_sprites);
+        if (error != NULL && error_size > 0u)
+            error[0] = '\0';
+    }
+    walk_frame_pixels =
+        (uint8_t *)malloc((size_t)JC_FRAME_WIDTH * JC_FRAME_HEIGHT);
+    if (walk_frame_pixels == NULL ||
+        !jc_surface_init(&walk_frame, walk_frame_pixels,
+                         (size_t)JC_FRAME_WIDTH * JC_FRAME_HEIGHT,
+                         JC_FRAME_WIDTH, JC_FRAME_HEIGHT, JC_FRAME_WIDTH) ||
+        !jc_island_walk_init(&island_walk, JC_FRAME_WIDTH, JC_FRAME_HEIGHT,
+                             5) ||
+        !jc_island_walk_bind_sprites(
+            &island_walk, &johnny_walk_sprites,
+            have_island_sprites ? &island_sprites : NULL)) {
+        snprintf(error, error_size, "could not initialize island walking: %s",
+                 jc_island_walk_error(&island_walk));
+        unload_walk_resources();
+        return false;
+    }
+    walk_resources_ready = true;
+    return true;
 }
 
 static bool initialize_story_runtime(char *error, size_t error_size)
@@ -797,17 +988,113 @@ static bool initialize_story_runtime(char *error, size_t error_size)
     return true;
 }
 
+static void current_story_calendar(int *yday, uint8_t *hour,
+                                   uint8_t *month, uint8_t *month_day)
+{
+    time_t now = time(NULL);
+    struct tm *calendar = now == (time_t)-1 ? NULL : localtime(&now);
+
+    *yday = 0;
+    *hour = 12u;
+    *month = 1u;
+    *month_day = 1u;
+    if (calendar != NULL) {
+        *yday = calendar->tm_yday;
+        *hour = (uint8_t)calendar->tm_hour;
+        *month = (uint8_t)(calendar->tm_mon + 1);
+        *month_day = (uint8_t)calendar->tm_mday;
+    }
+}
+
+static bool start_automatic_scene(char *error, size_t error_size)
+{
+    const jc_scene_play_t *play = jc_story_player_current(&story_player);
+    const jc_chapter_t *chapter;
+    jc_script_error_t script_error;
+    int offset_x = 0;
+    int offset_y = 0;
+
+    if (play == NULL) {
+        snprintf(error, error_size, "automatic story has no current scene");
+        return false;
+    }
+    chapter = jc_chapter_for_ads(play->scene.ads_name,
+                                 play->scene.ads_tag);
+    if (chapter == NULL) {
+        snprintf(error, error_size,
+                 "automatic scene %s:%u has no chapter mapping",
+                 play->scene.ads_name, (unsigned)play->scene.ads_tag);
+        return false;
+    }
+    if (!load_chapter_location(chapter, error, error_size))
+        return false;
+    if (!jc_runtime_start_ads(runtime, play->scene.ads_name,
+                              play->scene.ads_tag,
+                              jc_story_player_runtime_seed(&story_player),
+                              &script_error)) {
+        snprintf(error, error_size, "automatic scene %s:%u: %s",
+                 play->scene.ads_name, (unsigned)play->scene.ads_tag,
+                 script_error.message);
+        return false;
+    }
+    if ((play->scene.flags & JC_SCENE_ISLAND) != 0u) {
+        offset_x = story_player.run.island.x +
+                   (play->left_island ? 272 : 0);
+        offset_y = story_player.run.island.y;
+    }
+    if (!jc_ttm_renderer_set_offset(&runtime->renderer, offset_x, offset_y,
+                                    &script_error)) {
+        snprintf(error, error_size, "automatic scene offset: %s",
+                 script_error.message);
+        return false;
+    }
+    selected_chapter = chapter;
+    (void)jc_captions_show_ads(&captions, play->scene.ads_name,
+                               play->scene.ads_tag,
+                               JC_CAPTION_DEFAULT_TICKS);
+    if (log_cb != NULL)
+        log_cb(RETRO_LOG_INFO,
+               "Johnny Castaway automatic scene: day=%u plan=%u scene=%u/%u %s:%u\n",
+               (unsigned)story_player.director.current_day,
+               (unsigned)story_player.plan_seed,
+               (unsigned)(story_player.scene_index + 1u),
+               (unsigned)story_player.run.scene_count,
+               play->scene.ads_name, (unsigned)play->scene.ads_tag);
+    return true;
+}
+
+static bool restart_automatic_story(char *error, size_t error_size)
+{
+    int yday;
+    uint8_t hour;
+    uint8_t month;
+    uint8_t month_day;
+
+    current_story_calendar(&yday, &hour, &month, &month_day);
+    if (!jc_story_player_start(&story_player, STORY_PLAN_SEED, 1u, yday,
+                               hour, month, month_day)) {
+        snprintf(error, error_size, "could not plan automatic story");
+        return false;
+    }
+    fade_sequence = 0u;
+    reset_automatic_transition();
+    return start_automatic_scene(error, error_size);
+}
+
 static bool start_selected_presentation(char *error, size_t error_size)
 {
     jc_script_error_t script_error;
 
     runtime_failed = false;
+    reset_automatic_transition();
     jc_captions_clear(&captions);
     if (!runtime_ready || runtime == NULL) {
         snprintf(error, error_size, "story runtime is unavailable");
         return false;
     }
     if (diagnostic_display) {
+        memset(&story_player, 0, sizeof(story_player));
+        selected_chapter = NULL;
         if (!jc_runtime_reset(runtime, &script_error)) {
             snprintf(error, error_size, "runtime reset: %s",
                      script_error.message);
@@ -816,6 +1103,9 @@ static bool start_selected_presentation(char *error, size_t error_size)
         jc_core_clear_content_frame(&core);
         return true;
     }
+    if (automatic_story)
+        return restart_automatic_story(error, error_size);
+    memset(&story_player, 0, sizeof(story_player));
     if (selected_chapter != NULL) {
         char ads_name[JC_RESOURCE_NAME_BYTES + 1u];
         int written = snprintf(ads_name, sizeof(ads_name), "%s.ADS",
@@ -824,6 +1114,8 @@ static bool start_selected_presentation(char *error, size_t error_size)
             snprintf(error, error_size, "chapter ADS name is too long");
             return false;
         }
+        if (!load_chapter_location(selected_chapter, error, error_size))
+            return false;
         if (!jc_runtime_start_ads(runtime, ads_name,
                                   selected_chapter->ads_tag,
                                   CHAPTER_RUNTIME_SEED, &script_error)) {
@@ -846,25 +1138,170 @@ static bool start_selected_presentation(char *error, size_t error_size)
     return load_selected_frame(error, error_size);
 }
 
+static bool advance_automatic_scene(char *error, size_t error_size)
+{
+    int yday;
+    uint8_t hour;
+    uint8_t month;
+    uint8_t month_day;
+
+    current_story_calendar(&yday, &hour, &month, &month_day);
+    if (!jc_story_player_advance(&story_player, yday, hour, month,
+                                 month_day)) {
+        snprintf(error, error_size,
+                 "could not advance the automatic story plan");
+        return false;
+    }
+    return start_automatic_scene(error, error_size);
+}
+
+static bool begin_automatic_walk(const jc_scene_play_t *next,
+                                 char *error, size_t error_size)
+{
+    const jc_surface_t *clean_island;
+    jc_rng_t walk_rng;
+
+    if (next == NULL || !next->has_walk_from ||
+        next->scene.spot_start >= JC_SPOT_COUNT ||
+        next->scene.heading_start >= JC_HEADING_COUNT) {
+        snprintf(error, error_size, "next scene has invalid walk metadata");
+        return false;
+    }
+    clean_island = &runtime->renderer.background;
+    jc_rng_init(&walk_rng,
+                jc_story_player_runtime_seed(&story_player) ^
+                    WALK_RUNTIME_SEED_XOR ^
+                    (uint32_t)(story_player.scene_index + 1u));
+    if (!jc_island_walk_capture(&island_walk, clean_island) ||
+        !jc_island_walk_begin(
+            &island_walk, next->walk_from_spot, next->walk_from_heading,
+            next->scene.spot_start, next->scene.heading_start,
+            story_player.run.island.x, story_player.run.island.y,
+            &walk_rng)) {
+        snprintf(error, error_size, "%s", jc_island_walk_error(&island_walk));
+        return false;
+    }
+    automatic_transition = JC_AUTOMATIC_TRANSITION_WALK;
+    automatic_transition_ticks = 0u;
+    if (log_cb != NULL)
+        log_cb(RETRO_LOG_INFO,
+               "Johnny Castaway automatic walk: %u/%u -> %u/%u\n",
+               (unsigned)next->walk_from_spot,
+               (unsigned)next->walk_from_heading,
+               (unsigned)next->scene.spot_start,
+               (unsigned)next->scene.heading_start);
+    return true;
+}
+
+static bool begin_automatic_fade(char *error, size_t error_size)
+{
+    jc_fade_style_t style = jc_fade_style_for_sequence(fade_sequence);
+
+    if (!jc_fade_begin(&scene_fade, JC_FADE_OUT, style)) {
+        snprintf(error, error_size, "could not start sequence fade");
+        return false;
+    }
+    automatic_transition = JC_AUTOMATIC_TRANSITION_FADE_OUT;
+    automatic_transition_ticks = 0u;
+    if (log_cb != NULL)
+        log_cb(RETRO_LOG_INFO,
+               "Johnny Castaway automatic fade: style=%u steps=%u\n",
+               (unsigned)style,
+               (unsigned)jc_fade_default_steps(style));
+    return true;
+}
+
 static void tick_story_runtime(void)
 {
     jc_script_error_t error;
     jc_script_tick_result_t result;
+    char message[256];
 
     if (!runtime_ready || runtime == NULL || runtime_failed || diagnostic_display ||
         selected_chapter == NULL)
         return;
+    if (automatic_story &&
+        automatic_transition == JC_AUTOMATIC_TRANSITION_WALK) {
+        jc_island_walk_result_t walk_result =
+            jc_island_walk_tick(&island_walk, &walk_frame);
+        const jc_palette_t *palette =
+            walk_palette_ready ? &walk_palette : jc_runtime_palette(runtime);
+
+        ++automatic_transition_ticks;
+        if ((walk_result == JC_ISLAND_WALK_ACTIVE ||
+             walk_result == JC_ISLAND_WALK_ARRIVED) && palette != NULL &&
+            jc_core_update_content_frame(&core, &walk_frame, palette)) {
+            if (walk_result == JC_ISLAND_WALK_ARRIVED) {
+                reset_automatic_transition();
+                if (!advance_automatic_scene(message, sizeof(message)))
+                    runtime_failed = true;
+            }
+        } else if (walk_result == JC_ISLAND_WALK_ERROR) {
+            snprintf(message, sizeof(message), "island walk: %s",
+                     jc_island_walk_error(&island_walk));
+            runtime_failed = true;
+        } else if (palette == NULL) {
+            snprintf(message, sizeof(message),
+                     "island walk lost the scene palette");
+            runtime_failed = true;
+        } else {
+            snprintf(message, sizeof(message),
+                     "island walk frame conversion failed");
+            runtime_failed = true;
+        }
+        if (runtime_failed && log_cb != NULL)
+            log_cb(RETRO_LOG_ERROR,
+                   "Johnny Castaway automatic story: %s\n", message);
+        return;
+    }
+    if (automatic_story &&
+        automatic_transition == JC_AUTOMATIC_TRANSITION_FADE_OUT) {
+        if (jc_fade_is_active(&scene_fade))
+            return;
+        reset_automatic_transition();
+        fade_sequence = (fade_sequence + 1u) % JC_FADE_STYLE_COUNT;
+        if (!advance_automatic_scene(message, sizeof(message))) {
+            runtime_failed = true;
+            if (log_cb != NULL)
+                log_cb(RETRO_LOG_ERROR,
+                       "Johnny Castaway automatic story: %s\n", message);
+        }
+        return;
+    }
     result = jc_runtime_tick(runtime, &error);
     if (result == JC_SCRIPT_TICK_FRAME) {
         const jc_surface_t *surface = jc_runtime_output(runtime);
         const jc_palette_t *palette = jc_runtime_palette(runtime);
-        if (surface != NULL && palette != NULL)
+        if (surface != NULL && palette != NULL) {
+            walk_palette = *palette;
+            walk_palette_ready = true;
             (void)jc_core_update_content_frame(&core, surface, palette);
+        }
     } else if (result == JC_SCRIPT_TICK_ERROR) {
         runtime_failed = true;
         if (log_cb != NULL)
             log_cb(RETRO_LOG_ERROR, "Johnny Castaway runtime: %s\n",
                    error.message);
+    } else if (result == JC_SCRIPT_TICK_FINISHED && automatic_story) {
+        bool is_final = story_player.scene_index + 1u >=
+                        story_player.run.scene_count;
+
+        if (is_final) {
+            if (!begin_automatic_fade(message, sizeof(message)))
+                runtime_failed = true;
+        } else {
+            const jc_scene_play_t *next =
+                &story_player.run.scenes[story_player.scene_index + 1u];
+            if (next->has_walk_from && walk_resources_ready) {
+                if (!begin_automatic_walk(next, message, sizeof(message)))
+                    runtime_failed = true;
+            } else if (!advance_automatic_scene(message, sizeof(message))) {
+                runtime_failed = true;
+            }
+        }
+        if (runtime_failed && log_cb != NULL)
+            log_cb(RETRO_LOG_ERROR,
+                   "Johnny Castaway automatic story: %s\n", message);
     }
 }
 
@@ -898,6 +1335,13 @@ static void present_video_frame(void)
         (void)jc_holiday_overlay_render_anchored(
             video_output, JC_FRAME_WIDTH, JC_FRAME_HEIGHT, JC_FRAME_WIDTH,
             holiday, holiday_anchor, NULL);
+    }
+    if (automatic_transition == JC_AUTOMATIC_TRANSITION_FADE_OUT &&
+        jc_fade_is_active(&scene_fade)) {
+        (void)jc_fade_apply(&scene_fade, video_output, JC_FRAME_WIDTH,
+                            JC_FRAME_HEIGHT, JC_FRAME_WIDTH, 0x00000000u);
+        jc_fade_advance(&scene_fade);
+        ++automatic_transition_ticks;
     }
     video_cb(video_output, JC_FRAME_WIDTH, JC_FRAME_HEIGHT,
              JC_FRAME_WIDTH * sizeof(uint32_t));
@@ -951,10 +1395,16 @@ void retro_set_environment(retro_environment_t cb)
         {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_START, "Restart story"},
         {0, 0, 0, 0, NULL}
     };
+    static const struct retro_core_options_update_display_callback
+        display_callback = {update_option_visibility};
     bool support_no_game = false;
 
     environment_cb = cb;
+    initial_screen_visibility_known = false;
     register_core_options(cb);
+    cb(RETRO_ENVIRONMENT_SET_CORE_OPTIONS_UPDATE_DISPLAY_CALLBACK,
+       (void *)&display_callback);
+    (void)update_option_visibility();
     cb(RETRO_ENVIRONMENT_SET_CONTROLLER_INFO, (void *)controller_ports);
     if (cb(RETRO_ENVIRONMENT_GET_LOG_INTERFACE, &logging))
         log_cb = logging.log;
@@ -1003,11 +1453,26 @@ void retro_init(void)
     runtime_failed = false;
     runtime_replay_silent = false;
     selected_chapter = NULL;
+    automatic_story = false;
+    memset(&story_player, 0, sizeof(story_player));
+    automatic_transition = JC_AUTOMATIC_TRANSITION_NONE;
+    automatic_transition_ticks = 0u;
+    fade_sequence = 0u;
+    jc_fade_init(&scene_fade);
+    memset(&island_walk, 0, sizeof(island_walk));
+    memset(&johnny_walk_sprites, 0, sizeof(johnny_walk_sprites));
+    memset(&island_sprites, 0, sizeof(island_sprites));
+    walk_frame_pixels = NULL;
+    memset(&walk_frame, 0, sizeof(walk_frame));
+    walk_resources_ready = false;
+    memset(&walk_palette, 0, sizeof(walk_palette));
+    walk_palette_ready = false;
     holiday_selection.mode = JC_HOLIDAY_OVERLAY_AUTO;
     holiday_selection.holiday_id = 0;
     ocean_enabled = true;
     ocean_volume = 56u;
     jc_audio_init(&audio);
+    jc_sfx_init(&sfx);
     jc_captions_init(&captions);
     jc_caption_render_options_init(&caption_render_options);
     jc_core_init(&core);
@@ -1021,7 +1486,9 @@ void retro_deinit(void)
         runtime = NULL;
     }
     runtime_ready = false;
+    unload_walk_resources();
     unload_ocean_ambience();
+    jc_sfx_unload(&sfx, &audio);
     jc_audio_clear_samples(&audio);
     if (content.ready)
         jc_content_unload(&content);
@@ -1086,14 +1553,17 @@ void retro_run(void)
         char previous_screen[sizeof(selected_screen)];
         bool previous_diagnostic = diagnostic_display;
         const jc_chapter_t *previous_chapter = selected_chapter;
+        bool previous_automatic_story = automatic_story;
         bool previous_ocean_enabled = ocean_enabled;
         unsigned previous_ocean_volume = ocean_volume;
         bool previous_captions_enabled = captions.enabled;
         char error[256];
         memcpy(previous_screen, selected_screen, sizeof(previous_screen));
         read_core_options();
+        (void)update_option_visibility();
         if (game_loaded &&
             (previous_diagnostic != diagnostic_display ||
+             previous_automatic_story != automatic_story ||
              previous_chapter != selected_chapter ||
              (selected_chapter == NULL &&
               strcmp(previous_screen, selected_screen) != 0)) &&
@@ -1190,7 +1660,8 @@ static bool restore_runtime_candidate(jc_runtime_t *candidate,
                                       const jc_chapter_t *chapter,
                                       bool diagnostic, bool has_scene,
                                       bool finished, uint64_t ticks,
-                                      uint32_t seed)
+                                      uint32_t seed, int offset_x,
+                                      int offset_y)
 {
     jc_script_error_t error;
     char ads_name[JC_RESOURCE_NAME_BYTES + 1u];
@@ -1212,6 +1683,9 @@ static bool restore_runtime_candidate(jc_runtime_t *candidate,
     runtime_replay_silent = true;
     if (!jc_runtime_start_ads(candidate, ads_name, chapter->ads_tag,
                               seed, &error))
+        goto failed;
+    if (!jc_ttm_renderer_set_offset(&candidate->renderer, offset_x, offset_y,
+                                    &error))
         goto failed;
     for (index = 0u; index < ticks; ++index) {
         if (jc_runtime_tick(candidate, &error) == JC_SCRIPT_TICK_ERROR)
@@ -1251,8 +1725,10 @@ static bool restore_candidate_frame(jc_core_t *candidate_core,
         if (surface != NULL && palette != NULL)
             return jc_core_update_content_frame(candidate_core, surface,
                                                 palette);
+        return load_frame_into(candidate_core,
+                               chapter_location_screen(chapter), false,
+                               error, sizeof(error));
     }
-    return true;
 }
 
 static bool retro_unserialize_legacy(const uint8_t *bytes, size_t size)
@@ -1297,6 +1773,11 @@ bool retro_serialize(void *data, size_t size)
     uint32_t chapter_index;
     uint32_t caption_index = JC_LIBRETRO_STATE_NO_INDEX;
     uint32_t screen_index;
+    uint32_t runtime_seed = CHAPTER_RUNTIME_SEED;
+    uint32_t story_plan_seed = 0u;
+    uint32_t story_position = 0u;
+    uint32_t story_transition = JC_STORY_STATE_PLAYING;
+    uint32_t story_progress = 0u;
     uint64_t runtime_ticks = 0u;
 
     if (data == NULL || size < total_size || !game_loaded ||
@@ -1310,6 +1791,59 @@ bool retro_serialize(void *data, size_t size)
          chapter_index == JC_LIBRETRO_STATE_NO_INDEX) ||
         screen_index == JC_LIBRETRO_STATE_NO_INDEX)
         return false;
+    if (automatic_story) {
+        flags |= JC_LIBRETRO_STATE_FLAG_AUTOMATIC_STORY;
+        if (!diagnostic_display) {
+            const jc_scene_play_t *play =
+                jc_story_player_current(&story_player);
+            if (play == NULL || selected_chapter == NULL ||
+                story_player.director.current_day < 1u ||
+                story_player.director.current_day > 11u ||
+                story_player.scene_index > UINT8_MAX ||
+                jc_chapter_for_ads(play->scene.ads_name,
+                                   play->scene.ads_tag) != selected_chapter)
+                return false;
+            story_plan_seed = story_player.plan_seed;
+            story_position =
+                (uint32_t)story_player.director.current_day |
+                ((uint32_t)story_player.scene_index << 8);
+            runtime_seed = jc_story_player_runtime_seed(&story_player);
+            if (fade_sequence >= JC_FADE_STYLE_COUNT)
+                return false;
+            if (automatic_transition == JC_AUTOMATIC_TRANSITION_WALK) {
+                if (!runtime->scene_finished || !island_walk.active ||
+                    automatic_transition_ticks == 0u ||
+                    automatic_transition_ticks > JC_STORY_STATE_PROGRESS_MASK ||
+                    story_player.scene_index + 1u >=
+                        story_player.run.scene_count)
+                    return false;
+                story_transition = JC_STORY_STATE_WALKING;
+                story_progress = automatic_transition_ticks;
+            } else if (automatic_transition ==
+                       JC_AUTOMATIC_TRANSITION_FADE_OUT) {
+                if (!runtime->scene_finished || scene_fade.step == 0u ||
+                    scene_fade.step > JC_STORY_STATE_PROGRESS_MASK ||
+                    story_player.scene_index + 1u !=
+                        story_player.run.scene_count)
+                    return false;
+                story_transition = jc_fade_is_active(&scene_fade)
+                                       ? JC_STORY_STATE_FADING
+                                       : JC_STORY_STATE_FADE_COMPLETE;
+                story_progress = scene_fade.step;
+            } else if (automatic_transition !=
+                       JC_AUTOMATIC_TRANSITION_NONE) {
+                return false;
+            }
+            story_position |=
+                story_transition << JC_STORY_STATE_TRANSITION_SHIFT;
+            story_position |=
+                (fade_sequence & JC_STORY_STATE_FADE_SEQUENCE_MASK)
+                << JC_STORY_STATE_FADE_SEQUENCE_SHIFT;
+            story_position |=
+                (story_progress & JC_STORY_STATE_PROGRESS_MASK)
+                << JC_STORY_STATE_PROGRESS_SHIFT;
+        }
+    }
     if (selected_chapter != NULL) {
         flags |= JC_LIBRETRO_STATE_FLAG_CHAPTER;
         if (!diagnostic_display) {
@@ -1350,9 +1884,11 @@ bool retro_serialize(void *data, size_t size)
     write_u32le(bytes + 28u, chapter_index);
     write_u32le(bytes + 32u, caption_index);
     write_u32le(bytes + 36u, screen_index);
-    write_u32le(bytes + 40u, CHAPTER_RUNTIME_SEED);
+    write_u32le(bytes + 40u, runtime_seed);
     write_u32le(bytes + 44u, captions.remaining_ticks);
     write_u64le(bytes + 48u, runtime_ticks);
+    write_u32le(bytes + 56u, story_plan_seed);
+    write_u32le(bytes + 60u, story_position);
     return jc_core_serialize(&core,
                              bytes + JC_LIBRETRO_STATE_HEADER_SIZE,
                              core_size) &&
@@ -1374,6 +1910,11 @@ bool retro_unserialize(const void *data, size_t size)
     uint32_t screen_index;
     uint32_t seed;
     uint32_t caption_ticks;
+    uint32_t story_plan_seed;
+    uint32_t story_position;
+    uint32_t saved_story_transition = JC_STORY_STATE_PLAYING;
+    uint32_t saved_fade_sequence = 0u;
+    uint32_t saved_transition_progress = 0u;
     uint64_t runtime_ticks;
     const jc_chapter_t *candidate_chapter = NULL;
     jc_captions_t candidate_captions;
@@ -1381,6 +1922,17 @@ bool retro_unserialize(const void *data, size_t size)
     jc_core_t *candidate_core = NULL;
     jc_runtime_t *candidate_runtime = NULL;
     jc_runtime_t *old_runtime;
+    jc_story_player_t candidate_story_player;
+    jc_fade_t candidate_fade;
+    jc_island_walk_t candidate_island_walk;
+    uint8_t *candidate_walk_pixels = NULL;
+    jc_surface_t candidate_walk_frame;
+    jc_automatic_transition_t candidate_transition =
+        JC_AUTOMATIC_TRANSITION_NONE;
+    bool candidate_walk_initialized = false;
+    int runtime_offset_x = 0;
+    int runtime_offset_y = 0;
+    bool automatic;
     bool diagnostic;
     bool has_scene;
     bool finished;
@@ -1396,9 +1948,7 @@ bool retro_unserialize(const void *data, size_t size)
         read_u32le(bytes + 8u) != JC_LIBRETRO_STATE_HEADER_SIZE ||
         read_u32le(bytes + 12u) != expected_size ||
         read_u32le(bytes + 16u) != core_size ||
-        read_u32le(bytes + 20u) != audio_size || size != expected_size ||
-        read_u32le(bytes + 56u) != 0u ||
-        read_u32le(bytes + 60u) != 0u)
+        read_u32le(bytes + 20u) != audio_size || size != expected_size)
         return false;
     flags = read_u32le(bytes + 24u);
     chapter_index = read_u32le(bytes + 28u);
@@ -1407,12 +1957,15 @@ bool retro_unserialize(const void *data, size_t size)
     seed = read_u32le(bytes + 40u);
     caption_ticks = read_u32le(bytes + 44u);
     runtime_ticks = read_u64le(bytes + 48u);
+    story_plan_seed = read_u32le(bytes + 56u);
+    story_position = read_u32le(bytes + 60u);
     diagnostic = (flags & JC_LIBRETRO_STATE_FLAG_DIAGNOSTIC) != 0u;
+    automatic =
+        (flags & JC_LIBRETRO_STATE_FLAG_AUTOMATIC_STORY) != 0u;
     has_scene = (flags & JC_LIBRETRO_STATE_FLAG_RUNTIME_SCENE) != 0u;
     finished = (flags & JC_LIBRETRO_STATE_FLAG_RUNTIME_FINISHED) != 0u;
 
     if ((flags & ~JC_LIBRETRO_STATE_FLAGS_ALL) != 0u ||
-        seed != CHAPTER_RUNTIME_SEED ||
         screen_index >= sizeof(serialized_screen_names) /
                             sizeof(serialized_screen_names[0]) ||
         runtime_ticks > JC_LIBRETRO_STATE_MAX_RUNTIME_TICKS)
@@ -1422,6 +1975,85 @@ bool retro_unserialize(const void *data, size_t size)
             return false;
         candidate_chapter = jc_chapter_at(chapter_index);
     } else if (chapter_index != JC_LIBRETRO_STATE_NO_INDEX) {
+        return false;
+    }
+    memset(&candidate_story_player, 0, sizeof(candidate_story_player));
+    jc_fade_init(&candidate_fade);
+    memset(&candidate_island_walk, 0, sizeof(candidate_island_walk));
+    memset(&candidate_walk_frame, 0, sizeof(candidate_walk_frame));
+    if (automatic && !diagnostic) {
+        int yday;
+        uint8_t hour;
+        uint8_t month;
+        uint8_t month_day;
+        uint8_t story_day = (uint8_t)(story_position & 0xffu);
+        size_t story_scene_index = (size_t)((story_position >> 8) & 0xffu);
+        const jc_scene_play_t *play;
+
+        saved_story_transition =
+            (story_position >> JC_STORY_STATE_TRANSITION_SHIFT) &
+            JC_STORY_STATE_TRANSITION_MASK;
+        saved_fade_sequence =
+            (story_position >> JC_STORY_STATE_FADE_SEQUENCE_SHIFT) &
+            JC_STORY_STATE_FADE_SEQUENCE_MASK;
+        saved_transition_progress =
+            (story_position >> JC_STORY_STATE_PROGRESS_SHIFT) &
+            JC_STORY_STATE_PROGRESS_MASK;
+        if (candidate_chapter == NULL || story_day < 1u || story_day > 11u ||
+            saved_fade_sequence >= JC_FADE_STYLE_COUNT)
+            return false;
+        current_story_calendar(&yday, &hour, &month, &month_day);
+        if (!jc_story_player_restore(
+                &candidate_story_player, story_plan_seed, story_day,
+                story_scene_index, yday, hour, month, month_day))
+            return false;
+        play = jc_story_player_current(&candidate_story_player);
+        if (play == NULL ||
+            jc_chapter_for_ads(play->scene.ads_name,
+                               play->scene.ads_tag) != candidate_chapter ||
+            jc_story_player_runtime_seed(&candidate_story_player) != seed)
+            return false;
+        if ((play->scene.flags & JC_SCENE_ISLAND) != 0u) {
+            runtime_offset_x = candidate_story_player.run.island.x +
+                               (play->left_island ? 272 : 0);
+            runtime_offset_y = candidate_story_player.run.island.y;
+        }
+        if (saved_story_transition == JC_STORY_STATE_PLAYING) {
+            if (saved_transition_progress != 0u)
+                return false;
+        } else if (saved_story_transition == JC_STORY_STATE_WALKING) {
+            const jc_scene_play_t *next;
+            if (!finished || !walk_resources_ready ||
+                saved_transition_progress == 0u ||
+                story_scene_index + 1u >=
+                    candidate_story_player.run.scene_count)
+                return false;
+            next = &candidate_story_player.run.scenes[story_scene_index + 1u];
+            if (!next->has_walk_from)
+                return false;
+            candidate_transition = JC_AUTOMATIC_TRANSITION_WALK;
+        } else if (saved_story_transition == JC_STORY_STATE_FADING ||
+                   saved_story_transition == JC_STORY_STATE_FADE_COMPLETE) {
+            jc_fade_style_t style =
+                jc_fade_style_for_sequence(saved_fade_sequence);
+            if (!finished || story_scene_index + 1u !=
+                                 candidate_story_player.run.scene_count ||
+                saved_transition_progress == 0u ||
+                saved_transition_progress > jc_fade_default_steps(style) ||
+                !jc_fade_begin(&candidate_fade, JC_FADE_OUT, style))
+                return false;
+            candidate_fade.step = saved_transition_progress;
+            candidate_fade.active =
+                saved_story_transition == JC_STORY_STATE_FADING;
+            if (!candidate_fade.active &&
+                candidate_fade.step != candidate_fade.step_count)
+                return false;
+            candidate_transition = JC_AUTOMATIC_TRANSITION_FADE_OUT;
+        } else {
+            return false;
+        }
+    } else if (story_plan_seed != 0u || story_position != 0u ||
+               seed != CHAPTER_RUNTIME_SEED) {
         return false;
     }
     if (candidate_chapter == NULL || diagnostic) {
@@ -1461,7 +2093,8 @@ bool retro_unserialize(const void *data, size_t size)
                               audio_size) ||
         !restore_runtime_candidate(candidate_runtime, candidate_chapter,
                                    diagnostic, has_scene, finished,
-                                   runtime_ticks, seed) ||
+                                   runtime_ticks, seed, runtime_offset_x,
+                                   runtime_offset_y) ||
         !restore_candidate_frame(candidate_core, candidate_runtime,
                                  candidate_chapter,
                                  serialized_screen_names[screen_index],
@@ -1470,6 +2103,57 @@ bool retro_unserialize(const void *data, size_t size)
                              bytes + JC_LIBRETRO_STATE_HEADER_SIZE,
                              core_size))
         goto cleanup;
+
+    if (candidate_transition == JC_AUTOMATIC_TRANSITION_WALK) {
+        const jc_scene_play_t *next =
+            &candidate_story_player.run.scenes[
+                candidate_story_player.scene_index + 1u];
+        jc_rng_t walk_rng;
+        uint32_t tick;
+
+        candidate_walk_pixels =
+            (uint8_t *)malloc((size_t)JC_FRAME_WIDTH * JC_FRAME_HEIGHT);
+        if (candidate_walk_pixels == NULL ||
+            !jc_surface_init(&candidate_walk_frame, candidate_walk_pixels,
+                             (size_t)JC_FRAME_WIDTH * JC_FRAME_HEIGHT,
+                             JC_FRAME_WIDTH, JC_FRAME_HEIGHT,
+                             JC_FRAME_WIDTH) ||
+            !jc_island_walk_init(&candidate_island_walk, JC_FRAME_WIDTH,
+                                 JC_FRAME_HEIGHT, 5))
+            goto cleanup;
+        candidate_walk_initialized = true;
+        jc_rng_init(&walk_rng,
+                    jc_story_player_runtime_seed(&candidate_story_player) ^
+                        WALK_RUNTIME_SEED_XOR ^
+                        (uint32_t)(candidate_story_player.scene_index + 1u));
+        if (!jc_island_walk_bind_sprites(
+                &candidate_island_walk, &johnny_walk_sprites,
+                island_sprites.image_count != 0u ? &island_sprites : NULL) ||
+            !jc_island_walk_capture(&candidate_island_walk,
+                                    &candidate_runtime->renderer.background) ||
+            !jc_island_walk_begin(
+                &candidate_island_walk, next->walk_from_spot,
+                next->walk_from_heading, next->scene.spot_start,
+                next->scene.heading_start,
+                candidate_story_player.run.island.x,
+                candidate_story_player.run.island.y, &walk_rng))
+            goto cleanup;
+        for (tick = 0u; tick < saved_transition_progress; ++tick) {
+            jc_island_walk_result_t walk_result =
+                jc_island_walk_tick(&candidate_island_walk,
+                                    &candidate_walk_frame);
+            if (walk_result != JC_ISLAND_WALK_ACTIVE)
+                goto cleanup;
+        }
+        if (!walk_palette_ready ||
+            !jc_core_update_content_frame(candidate_core,
+                                          &candidate_walk_frame,
+                                          &walk_palette) ||
+            !jc_core_unserialize(candidate_core,
+                                 bytes + JC_LIBRETRO_STATE_HEADER_SIZE,
+                                 core_size))
+            goto cleanup;
+    }
 
     old_runtime = runtime;
     runtime = candidate_runtime;
@@ -1480,6 +2164,23 @@ bool retro_unserialize(const void *data, size_t size)
     audio = candidate_audio;
     captions = candidate_captions;
     selected_chapter = candidate_chapter;
+    automatic_story = automatic;
+    story_player = candidate_story_player;
+    reset_automatic_transition();
+    fade_sequence = saved_fade_sequence;
+    automatic_transition = candidate_transition;
+    automatic_transition_ticks = saved_transition_progress;
+    scene_fade = candidate_fade;
+    if (candidate_transition == JC_AUTOMATIC_TRANSITION_WALK) {
+        jc_island_walk_destroy(&island_walk);
+        island_walk = candidate_island_walk;
+        memset(&candidate_island_walk, 0, sizeof(candidate_island_walk));
+        candidate_walk_initialized = false;
+        free(walk_frame_pixels);
+        walk_frame_pixels = candidate_walk_pixels;
+        candidate_walk_pixels = NULL;
+        walk_frame = candidate_walk_frame;
+    }
     snprintf(selected_screen, sizeof(selected_screen), "%s",
              serialized_screen_names[screen_index]);
     diagnostic_display = diagnostic;
@@ -1493,6 +2194,9 @@ bool retro_unserialize(const void *data, size_t size)
 
 cleanup:
     runtime_replay_silent = false;
+    if (candidate_walk_initialized)
+        jc_island_walk_destroy(&candidate_island_walk);
+    free(candidate_walk_pixels);
     if (candidate_runtime != NULL) {
         if (candidate_runtime->initialized)
             jc_runtime_destroy(candidate_runtime);
@@ -1517,6 +2221,7 @@ bool retro_load_game(const struct retro_game_info *game)
 {
     enum retro_pixel_format pixel_format = RETRO_PIXEL_FORMAT_XRGB8888;
     struct retro_vfs_interface_info vfs_info;
+    jc_sfx_report_t sfx_report;
     char error[256];
 
     if (game == NULL || game->path == NULL || game->path[0] == '\0')
@@ -1545,6 +2250,27 @@ bool retro_load_game(const struct retro_game_info *game)
                "Johnny Castaway: indexed %u resources from %s\n",
                (unsigned)content.map.entry_count, content.archive_path);
 
+    if (!load_walk_resources(error, sizeof(error))) {
+        if (log_cb != NULL)
+            log_cb(RETRO_LOG_WARN,
+                   "Johnny Castaway optional island walking: %s\n", error);
+    } else if (log_cb != NULL) {
+        log_cb(RETRO_LOG_INFO,
+               "Johnny Castaway island walking: JOHNWALK and BACKGRND ready\n");
+    }
+
+    if (jc_sfx_load(&sfx, &audio, game->path, vfs, &sfx_report) != JC_SFX_OK) {
+        if (log_cb != NULL)
+            log_cb(RETRO_LOG_WARN,
+                   "Johnny Castaway optional sound effects: %s\n",
+                   jc_sfx_status_string(sfx_report.status));
+    } else if (log_cb != NULL) {
+        log_cb(RETRO_LOG_INFO,
+               "Johnny Castaway optional sound effects: %u loaded, %u missing, %u invalid\n",
+               sfx_report.loaded_count, sfx_report.missing_count,
+               sfx_report.invalid_count);
+    }
+
     jc_core_reset(&core);
     if (!initialize_story_runtime(error, sizeof(error)) ||
         !start_selected_presentation(error, sizeof(error))) {
@@ -1556,6 +2282,8 @@ bool retro_load_game(const struct retro_game_info *game)
             runtime = NULL;
         }
         runtime_ready = false;
+        unload_walk_resources();
+        jc_sfx_unload(&sfx, &audio);
         jc_content_unload(&content);
         return false;
     }
@@ -1586,7 +2314,9 @@ void retro_unload_game(void)
         runtime = NULL;
     }
     runtime_ready = false;
+    unload_walk_resources();
     unload_ocean_ambience();
+    jc_sfx_unload(&sfx, &audio);
     jc_audio_clear_samples(&audio);
     jc_core_clear_content_frame(&core);
     jc_content_unload(&content);

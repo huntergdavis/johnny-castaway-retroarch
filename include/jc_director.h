@@ -77,6 +77,7 @@ typedef struct jc_director {
     uint8_t current_day;
     int stored_yday;
     jc_daynight_mode_t daynight_mode;
+    bool first_sequence;
 } jc_director_t;
 
 void jc_director_init(jc_director_t *director, uint8_t story_day,

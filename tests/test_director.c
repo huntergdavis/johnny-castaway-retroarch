@@ -50,6 +50,16 @@ static void test_calendar(void)
 
 static void test_plan(void)
 {
+    static const char *const expected_names[] = {
+        "WALKSTUF.ADS", "STAND.ADS", "ACTIVITY.ADS", "FISHING.ADS",
+        "STAND.ADS", "VISITOR.ADS", "STAND.ADS", "STAND.ADS",
+        "STAND.ADS", "STAND.ADS", "BUILDING.ADS", "WALKSTUF.ADS",
+        "FISHING.ADS", "STAND.ADS", "WALKSTUF.ADS", "ACTIVITY.ADS"
+    };
+    static const uint16_t expected_tags[] = {
+        3u, 16u, 4u, 2u, 12u, 4u, 4u, 8u,
+        9u, 2u, 1u, 3u, 2u, 16u, 3u, 12u
+    };
     jc_director_t first;
     jc_director_t second;
     jc_story_run_t a;
@@ -64,16 +74,34 @@ static void test_plan(void)
     assert(jc_director_plan(&first, 200, 12u, 6u, 14u, &rng_a, &a));
     assert(jc_director_plan(&second, 200, 12u, 6u, 14u, &rng_b, &b));
     assert(a.scene_count > 0u && a.scene_count <= JC_DIRECTOR_MAX_SCENES);
+    assert(a.scene_count >= 7u);
+    assert(a.scene_count == sizeof(expected_tags) / sizeof(expected_tags[0]));
     assert(a.scene_count == b.scene_count);
+    assert(!first.first_sequence && !second.first_sequence);
     assert(a.island.holiday == JC_HOLIDAY_NONE);
     for (index = 0u; index < a.scene_count; ++index) {
         assert(strcmp(a.scenes[index].scene.ads_name,
                       b.scenes[index].scene.ads_name) == 0);
         assert(a.scenes[index].scene.ads_tag == b.scenes[index].scene.ads_tag);
-        if (index + 1u < a.scene_count)
+        assert(strcmp(a.scenes[index].scene.ads_name,
+                      expected_names[index]) == 0);
+        assert(a.scenes[index].scene.ads_tag == expected_tags[index]);
+        if (index + 1u < a.scene_count) {
             assert((a.scenes[index].scene.flags & JC_SCENE_FINAL) == 0u);
+            assert(a.scenes[index].scene.spot_end <= 5u);
+            assert(a.scenes[index].scene.heading_end <= 7u);
+            if (index > 0u) {
+                assert(a.scenes[index].scene.spot_start <= 5u);
+                assert(a.scenes[index].scene.heading_start <= 7u);
+                assert(strcmp(a.scenes[index - 1u].scene.ads_name,
+                              a.scenes[index].scene.ads_name) != 0 ||
+                       a.scenes[index - 1u].scene.ads_tag !=
+                           a.scenes[index].scene.ads_tag);
+            }
+        }
     }
     assert((a.scenes[a.scene_count - 1u].scene.flags & JC_SCENE_FINAL) != 0u);
+    assert((a.scenes[a.scene_count - 1u].scene.flags & JC_SCENE_FIRST) == 0u);
 }
 
 int main(void)

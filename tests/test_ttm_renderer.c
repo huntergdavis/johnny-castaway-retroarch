@@ -435,10 +435,22 @@ static void test_background_snapshot_and_errors(void)
     event = event_base(JC_SCRIPT_EVENT_INSTRUCTION, 0xa504u);
     event.arg_count = 4u;
     memcpy(event.args, bad_sprite, sizeof(bad_sprite));
+    require(jc_ttm_renderer_event(&renderer, &event, &error),
+            "in-range unloaded sprite slot was not treated as a no-op");
+    require(error.code == JC_SCRIPT_ERROR_NONE,
+            "in-range unloaded sprite no-op returned an error");
+    event.args[3] = JC_SCRIPT_MAX_BMP_SLOTS;
     require(!jc_ttm_renderer_event(&renderer, &event, &error),
-            "unloaded sprite slot was accepted");
-    require(error.code == JC_SCRIPT_ERROR_UNBOUND_RESOURCE,
-            "unloaded sprite did not return a structured error");
+            "out-of-range sprite slot was accepted");
+    require(error.code == JC_SCRIPT_ERROR_BAD_OPERAND,
+            "out-of-range sprite slot did not return a structured error");
+    send_string(&renderer, 0xf02fu, "S.BMP", 0u);
+    event.args[2] = 1u;
+    event.args[3] = 0u;
+    require(jc_ttm_renderer_event(&renderer, &event, &error),
+            "out-of-range frame in a loaded sprite was not a safe no-op");
+    require(error.code == JC_SCRIPT_ERROR_NONE,
+            "out-of-range loaded sprite no-op returned an error");
     require(!jc_ttm_renderer_set_offset(&renderer, INT_MAX, 0, &error),
             "oversized drawing offset was accepted");
     require(error.code == JC_SCRIPT_ERROR_LIMIT,

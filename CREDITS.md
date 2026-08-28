@@ -44,6 +44,17 @@ of their respective rights holders. This repository distributes none of that con
   Davis in PS1 commit `bb32de68aad33ecd1b8a7fbdc0a9278a35971238`, co-authored there
   with Claude Opus 4.7, and completed in commit
   `c194f1bf5716b460ba7276dcb8116b24a690c636`.
+- The automatic story sequence, five software fade shapes, and persistent island/walk
+  compositor were behaviorally derived from the PlayStation port's GPLv3 story,
+  graphics, island, and walk implementations at revision
+  `25c5d84593ac20cbee354eaab7779ab7397d6bbe`. The libretro implementations replace
+  blocking/platform drawing with new deterministic, bounded C99 state machines; the
+  exact copied or translated data tables remain identified separately in
+  `docs/PROVENANCE.md`.
+- The optional `sound0.wav` through `sound24.wav` sibling convention (with IDs 11 and
+  13 absent) also follows that PlayStation revision. The portable VFS/stdio loader is
+  new code. No original Sierra/Dynamix WAV is bundled, licensed, or redistributable by
+  this project; users may supply those files from their own lawful copy.
 - Ralph Caraveo (`deckarep`) created the 2026
   [Go/Raylib port](https://github.com/deckarep/Johnny-Castaway-2026-Public). It was
   evaluated for this core; its runtime/toolchain tradeoffs informed the C99 decision,
@@ -74,6 +85,12 @@ The local browser test additionally uses the official RetroArch Emscripten front
 RetroArch menu assets, and BrowserFS. John Vilk and the BrowserFS contributors created
 the in-browser filesystem used by the official frontend. Exact revisions and notices
 ship with the generated player and are recorded below.
+
+The reproducible console builds use the public toolchain work of the devkitPro,
+PSPDEV/PSPSDK, VitaSDK, and PS2DEV contributors. Their pinned build-only container
+sources and immutable image digests are recorded in `docs/PROVENANCE.md` and
+`docs/CONSOLE_BUILDS.md`; those SDKs and Docker images are not copied into this
+repository or distributed as part of the core.
 
 ## Additional open media and algorithms
 

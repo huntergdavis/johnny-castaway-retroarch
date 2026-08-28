@@ -1,0 +1,57 @@
+name: Console cross-builds
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: console-cross-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  console-cores:
+    name: Validated console core archives
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Check out source and libretro-common
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Report Docker runtime
+        run: |
+          docker version
+          docker info
+
+      - name: Build and validate every console core archive
+        env:
+          JOBS: 2
+        run: ./scripts/build-console-cores.sh --all
+
+      - name: Verify complete archive set
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t archives < <(find build/console -type f -name '*.a' -print | sort)
+          printf '%s\n' "${archives[@]}"
+          test "${#archives[@]}" -eq 8
+
+      - name: Upload validated console cores
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: johnny-castaway-console-cores
+          path: |
+            build/console/**/*.a
+            johnny_castaway_libretro.info
+            LICENSE
+            CREDITS.md
+            docs/CONSOLE_BUILDS.md
+            docs/PROVENANCE.md
+            docs/THIRD_PARTY_NOTICES.md
+            docs/licenses/
+          if-no-files-found: error
+          retention-days: 14
