@@ -162,9 +162,9 @@ jobs:
       - name: Check Mach-O architectures and libretro exports
         shell: bash
         run: |
-          xcrun lipo -verify_arch x86_64 arm64 build/osx_universal/johnny_castaway_libretro.dylib
+          xcrun lipo build/osx_universal/johnny_castaway_libretro.dylib -verify_arch x86_64 arm64
           while IFS=: read -r architecture core; do
-            xcrun lipo -verify_arch "$architecture" "$core"
+            xcrun lipo "$core" -verify_arch "$architecture"
             python3 tools/check_core_exports.py --format macho --tool nm "$core"
           done <<'EOF'
           arm64:build/ios_arm64/johnny_castaway_libretro_ios.dylib

@@ -25,6 +25,6 @@ make -C "${project_root}" platform=osx_x86_64 -j"${jobs}"
 make -C "${project_root}" platform=osx_arm64 -j"${jobs}"
 mkdir -p "${output_dir}"
 xcrun lipo -create "${x86_slice}" "${arm_slice}" -output "${output}"
-xcrun lipo -verify_arch x86_64 arm64 "${output}"
+xcrun lipo "${output}" -verify_arch x86_64 arm64
 
 echo "Universal macOS core ready: ${output}"
