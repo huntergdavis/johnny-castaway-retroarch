@@ -14,14 +14,15 @@ RetroPad input, correctly paced silent audio, and save-state round trips are wor
 The repository now contains bounded ADS/TTM parsers and a resumable 50 Hz script VM,
 an indexed sprite compositor, the deterministic story/walking runtime, and an eight-voice
 sound mixer. It also includes the PS1 port's audited 79-caption/63-chapter catalogs,
-36-holiday calendar, and CC0 ocean-ambience descriptor/configuration. TTM events now
+36-holiday calendar, and embedded CC0 ocean ambience. TTM events now
 drive a bounded indexed renderer for resources, layers, sprites,
-primitives, saved zones, and frame composition. The content-backed loader, ADS scene
-orchestration, preview controls, caption timing/menu integration, audio event dispatch, and
-ambience sample loading are still being connected to the libretro adapter. The mixer
-already supports the reserved ambience ID, 56% per-sample gain, and deterministic
-seamless looping, but no CC0 audio binary is distributed yet. This is therefore not yet
-the complete screensaver experience.
+primitives, saved zones, and frame composition. A bounded content-backed runtime now
+loads one ADS plus its declared TTM resources and drives the renderer at 50 Hz. That
+runtime, high-level story orchestration, preview controls, caption timing/menu
+integration, audio sample resolution, and ambience playback are still being connected
+to the libretro adapter. The embedded ocean asset, decoder, reserved mixer ID, 56%
+gain, and deterministic seamless loop path are individually complete. This is therefore
+not yet the complete screensaver experience.
 
 ## Why C
 
