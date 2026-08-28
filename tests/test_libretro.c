@@ -14,12 +14,106 @@ static unsigned audio_frames;
 static bool options_registered;
 static bool story_category_found;
 static bool video_category_found;
+static bool audio_category_found;
 static bool controller_registered;
 static bool frame_has_color;
 static bool variable_updated;
 static const char *initial_screen_value = "intro";
 static const char *display_source_value = "original";
+static const char *audio_enabled_value = "enabled";
+static const char *audio_volume_value = "100";
 static uint64_t frame_hash;
+
+static void write_u16le(uint8_t *data, uint16_t value)
+{
+    data[0] = (uint8_t)value;
+    data[1] = (uint8_t)(value >> 8);
+}
+
+static void write_u32le(uint8_t *data, uint32_t value)
+{
+    data[0] = (uint8_t)value;
+    data[1] = (uint8_t)(value >> 8);
+    data[2] = (uint8_t)(value >> 16);
+    data[3] = (uint8_t)(value >> 24);
+}
+
+static size_t make_palette(uint8_t *body)
+{
+    memset(body, 0, 16u + 256u * 3u);
+    memcpy(body, "PAL:", 4u);
+    memcpy(body + 8u, "VGA:", 4u);
+    body[16u + 1u * 3u] = 63u;
+    body[16u + 2u * 3u + 1u] = 63u;
+    body[16u + 3u * 3u + 2u] = 63u;
+    body[16u + 4u * 3u] = 63u;
+    body[16u + 4u * 3u + 1u] = 63u;
+    body[16u + 4u * 3u + 2u] = 63u;
+    return 16u + 256u * 3u;
+}
+
+static size_t make_screen(uint8_t *body, uint8_t first, uint8_t second)
+{
+    memset(body, 0, 35u);
+    memcpy(body, "SCR:", 4u);
+    memcpy(body + 8u, "DIM:", 4u);
+    write_u32le(body + 12u, 4u);
+    write_u16le(body + 16u, 2u);
+    write_u16le(body + 18u, 2u);
+    memcpy(body + 20u, "BIN:", 4u);
+    write_u32le(body + 24u, 7u);
+    body[28u] = 0u;
+    write_u32le(body + 29u, 2u);
+    body[33u] = (uint8_t)((first << 4) | first);
+    body[34u] = (uint8_t)((second << 4) | second);
+    return 35u;
+}
+
+static void write_archive_entry(FILE *archive, uint8_t *map_entry,
+                                const char *name, const uint8_t *body,
+                                size_t body_size)
+{
+    long offset = ftell(archive);
+    uint8_t header[17] = {0};
+    assert(offset >= 0 && body_size <= UINT32_MAX);
+    assert(strlen(name) < 13u);
+    memcpy(header, name, strlen(name));
+    write_u32le(header + 13u, (uint32_t)body_size);
+    assert(fwrite(header, 1u, sizeof(header), archive) == sizeof(header));
+    assert(fwrite(body, 1u, body_size, archive) == body_size);
+    write_u32le(map_entry, (uint32_t)(sizeof(header) + body_size));
+    write_u32le(map_entry + 4u, (uint32_t)offset);
+}
+
+static const char *make_synthetic_content(void)
+{
+    static const char map_path[] = "build/tests/RESOURCE.MAP";
+    uint8_t map[21u + 3u * 8u] = {0};
+    uint8_t palette[16u + 256u * 3u];
+    uint8_t intro[35];
+    uint8_t island[35];
+    FILE *archive;
+    FILE *map_file;
+
+    memcpy(map + 6u, "RESOURCE.001", 13u);
+    write_u16le(map + 19u, 3u);
+    make_palette(palette);
+    make_screen(intro, 1u, 1u);
+    make_screen(island, 2u, 3u);
+    archive = fopen("build/tests/RESOURCE.001", "wb");
+    assert(archive != NULL);
+    write_archive_entry(archive, map + 21u, "JOHNCAST.PAL", palette,
+                        sizeof(palette));
+    write_archive_entry(archive, map + 29u, "INTRO.SCR", intro, sizeof(intro));
+    write_archive_entry(archive, map + 37u, "ISLAND2.SCR", island,
+                        sizeof(island));
+    assert(fclose(archive) == 0);
+    map_file = fopen(map_path, "wb");
+    assert(map_file != NULL);
+    assert(fwrite(map, 1u, sizeof(map), map_file) == sizeof(map));
+    assert(fclose(map_file) == 0);
+    return map_path;
+}
 
 static void RETRO_CALLCONV mock_log(enum retro_log_level level, const char *format, ...)
 {
@@ -45,6 +139,8 @@ static bool RETRO_CALLCONV environment(unsigned command, void *data)
                 story_category_found = true;
             if (strcmp(category->key, "video") == 0)
                 video_category_found = true;
+            if (strcmp(category->key, "audio") == 0)
+                audio_category_found = true;
             ++category;
         }
         return true;
@@ -61,6 +157,10 @@ static bool RETRO_CALLCONV environment(unsigned command, void *data)
             variable->value = initial_screen_value;
         else if (strcmp(variable->key, "johnny_castaway_display_source") == 0)
             variable->value = display_source_value;
+        else if (strcmp(variable->key, "johnny_castaway_audio_enabled") == 0)
+            variable->value = audio_enabled_value;
+        else if (strcmp(variable->key, "johnny_castaway_audio_volume") == 0)
+            variable->value = audio_volume_value;
         else
             variable->value = NULL;
         return true;
@@ -137,11 +237,6 @@ int main(int argc, char **argv)
     uint64_t intro_hash;
     uint64_t diagnostic_hash;
 
-    if (argc != 2) {
-        puts("libretro integration test skipped (no RESOURCE.MAP path)");
-        return 0;
-    }
-
     retro_set_environment(environment);
     retro_set_video_refresh(video);
     retro_set_audio_sample(audio_sample);
@@ -151,10 +246,11 @@ int main(int argc, char **argv)
     retro_init();
     retro_get_system_info(&system_info);
     assert(strcmp(system_info.library_name, "Johnny Castaway") == 0);
-    assert(options_registered && story_category_found && video_category_found);
+    assert(options_registered && story_category_found && video_category_found &&
+           audio_category_found);
     assert(controller_registered);
 
-    game.path = argv[1];
+    game.path = argc == 2 ? argv[1] : make_synthetic_content();
     assert(retro_load_game(&game));
     retro_run();
     assert(video_calls == 1u && frame_has_color);
@@ -172,6 +268,11 @@ int main(int argc, char **argv)
     variable_updated = true;
     retro_run();
     assert(frame_hash != intro_hash && frame_hash != diagnostic_hash);
+
+    audio_enabled_value = "disabled";
+    audio_volume_value = "25";
+    variable_updated = true;
+    retro_run();
 
     state_size = retro_serialize_size();
     state = malloc(state_size);

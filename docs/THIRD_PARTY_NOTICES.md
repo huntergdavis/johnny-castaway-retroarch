@@ -1,0 +1,45 @@
+# Third-party notices
+
+## GPL engine references
+
+This project is licensed under the GNU General Public License version 3 or later. It
+contains or adapts GPLv3/GPL-3.0-or-later material from Johnny Reborn and Wilson Reborn
+as detailed in `PROVENANCE.md`. The complete GPLv3 text is in the repository-root
+`LICENSE` file. Source files that retain a longer upstream copyright block keep it in
+place in addition to SPDX identifiers used by newly written files.
+
+Johnny Reborn copyright notices identify:
+
+> Copyright (C) 2019 Jeremie GUILLAUME
+
+Wilson Reborn is attributed to Wilson Reborn contributors; the reviewed Git history is
+authored by André Felício and its workspace declares `GPL-3.0-or-later`.
+
+Hunter Davis's PS1 audio backend was consulted at introducing commit
+`1f97b08ca0f48e8a2f2b785acefc3a7fedab3342` in the GPLv3
+`huntergdavis/jc_reborn` repository. The new mixer copies no platform backend code; the
+design lineage is recorded because its eight-channel limit was deliberately retained.
+
+## libretro API header
+
+`external/libretro-common` is a Git submodule pinned to revision
+`09b55b683764d49ae1e640d7db5069931d6d2d40`. The only submodule file currently included
+by this core is `include/libretro.h`. That file contains its own MIT license notice and
+states:
+
+> Copyright (C) 2010-2024 The RetroArch team
+
+The complete permission and warranty text remains verbatim at the top of the pinned
+header and must remain included in redistributions of that header.
+
+## Evaluated but not incorporated
+
+The reviewed snapshot of `deckarep/Johnny-Castaway-2026-Public` contained no detected
+license file. It was used only to evaluate language/runtime suitability; no source was
+copied, translated, or linked. The project is therefore not a dependency of this core.
+
+## Original game content
+
+Sierra/Dynamix content is not licensed under this repository's GPL. Users provide their
+own original data at runtime. Building or distributing this core does not grant a right
+to redistribute the original data, characters, artwork, animation, or audio.

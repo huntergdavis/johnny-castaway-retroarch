@@ -10,6 +10,9 @@ Menu integration is a release gate for every platform, not a post-port task.
   island, office, Suzy beach, or ending and applies immediately.
 - **Quick Menu / Core Options / Video**: Display Source switches between original
   user data and the built-in diagnostic frame and applies immediately.
+- **Quick Menu / Core Options / Audio**: Enable and Volume control the deterministic
+  eight-voice mixer immediately. Mixer phase/configuration is included in save states;
+  actual sound cues land with the ADS/TTM runtime and owned WAV loading.
 - **Quick Menu / Controls / Port 1**: the port declares a RetroPad; Start restarts
   the current core timeline.
 - **Quick Menu / State**: serialize/unserialize is implemented for deterministic
@@ -24,7 +27,7 @@ but they must not appear as nonfunctional menu entries:
 
 - **Story**: normal cycle vs scene explorer, initial day/scene, deterministic seed,
   real/simulated calendar, holiday override, tide/raft stage, and playback speed.
-- **Audio**: enable, volume, ambience, and voice/mixer policy.
+- **Audio**: ambience and voice/mixer policy after multiple authentic policies exist.
 - **Accessibility**: captions, scene descriptions, high contrast, reduced flashing,
   and caption size/background.
 - **Video**: crop/overscan policy, palette mode, aspect policy, and optional filters

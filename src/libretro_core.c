@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 #include "jc_content.h"
 #include "jc_core.h"
+#include "jc_audio.h"
 #include "jc_palette.h"
 #include "jc_scr.h"
 #include "libretro.h"
@@ -26,13 +27,15 @@ static jc_core_t core;
 static jc_content_t content;
 static bool game_loaded;
 static bool reset_pressed;
-static int16_t silence[AUDIO_FRAMES_PER_VIDEO_FRAME * 2u];
+static jc_audio_t audio;
+static int16_t audio_output[AUDIO_FRAMES_PER_VIDEO_FRAME * 2u];
 static bool diagnostic_display;
 static char selected_screen[JC_RESOURCE_NAME_BYTES + 1u] = "INTRO.SCR";
 
 static struct retro_core_option_v2_category option_categories[] = {
     {"story", "Story", "Choose how the Johnny Castaway story begins and progresses."},
     {"video", "Video", "Select the software-rendered image shown by the core."},
+    {"audio", "Audio", "Configure the deterministic Johnny Castaway sound mixer."},
     {NULL, NULL, NULL}
 };
 
@@ -69,6 +72,37 @@ static struct retro_core_option_v2_definition option_definitions[] = {
         },
         "original"
     },
+    {
+        "johnny_castaway_audio_enabled",
+        "Audio Enable",
+        "Audio",
+        "Enable sound effects produced by the deterministic core mixer. Changes apply immediately.",
+        NULL,
+        "audio",
+        {
+            {"enabled", "Enabled"},
+            {"disabled", "Disabled"},
+            {NULL, NULL}
+        },
+        "enabled"
+    },
+    {
+        "johnny_castaway_audio_volume",
+        "Audio Volume",
+        "Volume",
+        "Set sound-effect volume. Changes apply immediately.",
+        NULL,
+        "audio",
+        {
+            {"100", "100%"},
+            {"75", "75%"},
+            {"50", "50%"},
+            {"25", "25%"},
+            {"0", "0%"},
+            {NULL, NULL}
+        },
+        "100"
+    },
     {0}
 };
 
@@ -82,6 +116,10 @@ static struct retro_variable legacy_options[] = {
      "Story Initial Screen; intro|island_day|island_night|office|suzy_beach|ending"},
     {"johnny_castaway_display_source",
      "Video Display Source; original|diagnostic"},
+    {"johnny_castaway_audio_enabled",
+     "Audio Enable; enabled|disabled"},
+    {"johnny_castaway_audio_volume",
+     "Audio Volume; 100|75|50|25|0"},
     {NULL, NULL}
 };
 
@@ -120,6 +158,28 @@ static void read_core_options(void)
     diagnostic_display = environment_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &variable) &&
                          variable.value != NULL &&
                          strcmp(variable.value, "diagnostic") == 0;
+
+    variable.key = "johnny_castaway_audio_enabled";
+    variable.value = NULL;
+    jc_audio_set_muted(&audio,
+        environment_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &variable) &&
+        variable.value != NULL && strcmp(variable.value, "disabled") == 0);
+
+    variable.key = "johnny_castaway_audio_volume";
+    variable.value = NULL;
+    if (environment_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &variable) &&
+        variable.value != NULL) {
+        unsigned volume = 100u;
+        if (strcmp(variable.value, "75") == 0)
+            volume = 75u;
+        else if (strcmp(variable.value, "50") == 0)
+            volume = 50u;
+        else if (strcmp(variable.value, "25") == 0)
+            volume = 25u;
+        else if (strcmp(variable.value, "0") == 0)
+            volume = 0u;
+        jc_audio_set_volume(&audio, volume);
+    }
 }
 
 static bool load_selected_frame(char *error, size_t error_size)
@@ -262,7 +322,8 @@ void retro_init(void)
     audio_batch_cb = audio_batch_cb != NULL ? audio_batch_cb : null_audio_batch;
     input_poll_cb = input_poll_cb != NULL ? input_poll_cb : null_input_poll;
     input_state_cb = input_state_cb != NULL ? input_state_cb : null_input_state;
-    memset(silence, 0, sizeof(silence));
+    memset(audio_output, 0, sizeof(audio_output));
+    jc_audio_init(&audio);
     jc_core_init(&core);
 }
 
@@ -307,6 +368,7 @@ void retro_set_controller_port_device(unsigned port, unsigned device)
 void retro_reset(void)
 {
     jc_core_reset(&core);
+    jc_audio_reset(&audio);
 }
 
 void retro_run(void)
@@ -341,22 +403,33 @@ void retro_run(void)
 
     video_cb(jc_core_framebuffer(&core), JC_FRAME_WIDTH, JC_FRAME_HEIGHT,
              JC_FRAME_WIDTH * sizeof(uint32_t));
-    audio_batch_cb(silence, AUDIO_FRAMES_PER_VIDEO_FRAME);
+    jc_audio_mix(&audio, audio_output, AUDIO_FRAMES_PER_VIDEO_FRAME);
+    audio_batch_cb(audio_output, AUDIO_FRAMES_PER_VIDEO_FRAME);
 }
 
 size_t retro_serialize_size(void)
 {
-    return jc_core_serialize_size();
+    return jc_core_serialize_size() + jc_audio_serialize_size();
 }
 
 bool retro_serialize(void *data, size_t size)
 {
-    return jc_core_serialize(&core, data, size);
+    size_t core_size = jc_core_serialize_size();
+    if (data == NULL || size < retro_serialize_size())
+        return false;
+    return jc_core_serialize(&core, data, core_size) &&
+           jc_audio_serialize(&audio, (uint8_t *)data + core_size,
+                              size - core_size);
 }
 
 bool retro_unserialize(const void *data, size_t size)
 {
-    return jc_core_unserialize(&core, data, size);
+    size_t core_size = jc_core_serialize_size();
+    if (data == NULL || size < retro_serialize_size())
+        return false;
+    return jc_core_unserialize(&core, data, core_size) &&
+           jc_audio_unserialize(&audio, (const uint8_t *)data + core_size,
+                                size - core_size);
 }
 
 void retro_cheat_reset(void)
@@ -425,6 +498,7 @@ bool retro_load_game_special(unsigned game_type,
 void retro_unload_game(void)
 {
     game_loaded = false;
+    jc_audio_clear_samples(&audio);
     jc_core_clear_content_frame(&core);
     jc_content_unload(&content);
 }

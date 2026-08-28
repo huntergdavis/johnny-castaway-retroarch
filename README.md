@@ -49,6 +49,12 @@ No Sierra/Dynamix game data, artwork, or audio is distributed here. Users must p
 their own original files. The engine and core code are GPLv3; the original game data
 remains the property of its rights holders.
 
+This port builds on years of community format research and several open-source Johnny
+Castaway engines. See [CREDITS.md](CREDITS.md) for people and project history,
+[docs/PROVENANCE.md](docs/PROVENANCE.md) for file-level derivation, and
+[docs/THIRD_PARTY_NOTICES.md](docs/THIRD_PARTY_NOTICES.md) for dependency licenses and
+notices.
+
 ## Repository layout
 
 - `src/libretro_core.c`: libretro ABI and frontend callbacks
@@ -58,3 +64,5 @@ remains the property of its rights holders.
 - `scripts/build-target.sh`: native and cross-build entry point
 - `docs/`: architecture decisions and staged port plan
 - `docs/RETROARCH_INTEGRATION.md`: menu/options acceptance checklist
+- `docs/PROVENANCE.md`: exact upstream revisions and file-by-file reuse record
+- `CREDITS.md`: original creators and open-source lineage
