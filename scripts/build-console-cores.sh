@@ -194,7 +194,7 @@ build_target()
             -e JC_BUILD_DIR="$output_dir" -e JC_JOBS="$jobs" \
             -e JC_PLATFORM="$platform" -e JC_WARNINGS="$warnings" \
             -v "$root:/src" -w /src "$image" \
-            sh -lc '
+            sh -c '
                 make -j"$JC_JOBS" platform="$JC_PLATFORM" ARFLAGS=rcsD \
                     BUILD_DIR="$JC_BUILD_DIR" WARNINGS="$JC_WARNINGS"
             '
