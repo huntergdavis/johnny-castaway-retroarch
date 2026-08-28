@@ -20,12 +20,12 @@
 
 static bool direction_valid(jc_fade_direction_t direction)
 {
-    return direction >= JC_FADE_OUT && direction < JC_FADE_DIRECTION_COUNT;
+    return direction < JC_FADE_DIRECTION_COUNT;
 }
 
 static bool style_valid(jc_fade_style_t style)
 {
-    return style >= JC_FADE_IRIS && style < JC_FADE_STYLE_COUNT;
+    return style < JC_FADE_STYLE_COUNT;
 }
 
 static bool state_valid(const jc_fade_t *fade)
