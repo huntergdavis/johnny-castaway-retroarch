@@ -444,6 +444,7 @@ test: $(TEST_TARGET) $(MAP_TEST_TARGET) $(GRAPHICS_TEST_TARGET) \
 	./$(OCEAN_TEST_TARGET)
 	./$(RUNTIME_TEST_TARGET)
 	./$(LIBRETRO_TEST_TARGET)
+	python3 tools/test_release_assembler.py
 
 INSPECT_TARGET := build/tools/jc_inspect
 $(INSPECT_TARGET): src/jc_content.c src/jc_resource_map.c tools/jc_inspect.c

@@ -892,16 +892,17 @@ done
 for frontend_target in "${frontend_targets[@]}"; do
     expected_release_zips+=("johnny-castaway-${frontend_target}-frontend.zip")
 done
+expected_release_zip_count=17
 mapfile -t expected_release_zips_sorted < <(
     printf '%s\n' "${expected_release_zips[@]}" | sort
 )
 mapfile -t actual_release_zips < <(
     find "${assets_dir}" -maxdepth 1 -type f -name '*.zip' -printf '%f\n' | sort
 )
-((${#actual_release_zips[@]} == 16)) ||
-    fail "release ZIP count is ${#actual_release_zips[@]}, expected 16"
-((${#expected_release_zips_sorted[@]} == ${#actual_release_zips[@]})) ||
-    fail 'expected release ZIP list has the wrong size'
+((${#expected_release_zips_sorted[@]} == expected_release_zip_count)) ||
+    fail "release ZIP contract has ${#expected_release_zips_sorted[@]} entries, expected ${expected_release_zip_count}"
+((${#actual_release_zips[@]} == ${#expected_release_zips_sorted[@]})) ||
+    fail "release ZIP count is ${#actual_release_zips[@]}, expected ${#expected_release_zips_sorted[@]}"
 for index in "${!expected_release_zips_sorted[@]}"; do
     [[ "${expected_release_zips_sorted[index]}" = "${actual_release_zips[index]}" ]] ||
         fail 'release ZIP set does not match the seventeen-ZIP contract'
