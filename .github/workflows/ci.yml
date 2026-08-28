@@ -430,6 +430,8 @@ jobs:
           python3 tools/check_web_sources.py .
           python3 tools/check_web_dist.py --help >/dev/null
           python3 tools/test_web_dist_validator.py
+          python3 tools/test_web_chapter_matrix.py
+          python3 tools/web_chapter_matrix.py --help >/dev/null
           python3 tools/web_smoke_test.py --help >/dev/null
 
       - name: Upload Emscripten core and web source kit
@@ -441,8 +443,10 @@ jobs:
             johnny_castaway_libretro.info
             scripts/build-web-player.sh
             scripts/serve-web.sh
+            src/jc_chapters.c
             tools/check_web_dist.py
             tools/serve_web.py
+            tools/web_chapter_matrix.py
             tools/web_smoke_test.py
             web/
             LICENSE

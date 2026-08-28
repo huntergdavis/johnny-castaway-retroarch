@@ -217,6 +217,57 @@ python3 tools/web_smoke_test.py \
 recorded in `result.json`; it does not alter the production page's automatic-load
 behavior.
 
+### All 63 authentic chapters
+
+`tools/web_chapter_matrix.py` applies that same strict real-Firefox gate to the
+exact ordered 63-entry catalog compiled from `src/jc_chapters.c`. It invokes
+`tools/web_smoke_test.py --chapter --scene-visual-only` for each selected slug;
+the visual-only mode still requires authentic content and still enforces temporal
+playfield motion, frame quality and color-key rejection, WebGL activity, and audio
+cadence. It skips only the repeated Quick Menu/Core Options navigation, which the
+normal smoke command above continues to cover once.
+
+Run the full catalog sequentially with:
+
+```sh
+python3 tools/web_chapter_matrix.py \
+  --dist build/web-player/dist \
+  --content-dir /path/to/johnny-data \
+  --results build/web-chapter-matrix \
+  --resume --timeout 180
+```
+
+For three concurrent balanced shards, run these commands in separate terminals.
+Shard indexes are zero-based; with the current 63-entry catalog each command owns
+one non-overlapping contiguous group of 21 scenes:
+
+```sh
+python3 tools/web_chapter_matrix.py --dist build/web-player/dist \
+  --content-dir /path/to/johnny-data --results build/web-chapter-matrix \
+  --shard-index 0 --shard-count 3 --resume --timeout 180
+
+python3 tools/web_chapter_matrix.py --dist build/web-player/dist \
+  --content-dir /path/to/johnny-data --results build/web-chapter-matrix \
+  --shard-index 1 --shard-count 3 --resume --timeout 180
+
+python3 tools/web_chapter_matrix.py --dist build/web-player/dist \
+  --content-dir /path/to/johnny-data --results build/web-chapter-matrix \
+  --shard-index 2 --shard-count 3 --resume --timeout 180
+```
+
+Use `--start 21 --count 21` for an explicit catalog range instead. Every scene
+gets its own `build/web-chapter-matrix/chapters/<slug>/` artifact directory.
+`--resume` reuses only a passing result whose catalog, complete Web distribution,
+smoke-runner code, and user-owned resource pair still match; failed, stale,
+malformed, or changed-input entries run again. Each range or shard writes uniquely
+named atomic JSON and CSV summaries. Both contain status metadata only, account for
+every selected slug exactly once, and report success only when every selected smoke
+process exits zero with a fresh matching `passed=true` result.
+
+The matrix refuses to place artifacts outside ignored `build/`, because the
+per-scene PNGs come from user-owned game data. Do not add those local screenshots,
+logs, resource files, or result directories to Git or release artifacts.
+
 After using `scripts/stage-local-web-content.sh`, test the page's automatic
 server-local path without a browser file upload:
 

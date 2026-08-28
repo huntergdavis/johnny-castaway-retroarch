@@ -11,7 +11,13 @@ import tempfile
 import unittest
 import zipfile
 
-from web_smoke_test import frame_has_color_key_failure, frame_quality
+from web_smoke_test import (
+    SmokeFailure,
+    complete_scene_visual_only_result,
+    frame_has_color_key_failure,
+    frame_quality,
+    validate_scene_visual_only_args,
+)
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -163,6 +169,55 @@ class WebDistributionValidatorTests(unittest.TestCase):
 
 
 class WebDiagnosticProbeSourceTests(unittest.TestCase):
+    def test_scene_visual_only_requires_fixed_authentic_content(self) -> None:
+        import argparse
+
+        invalid = argparse.Namespace(
+            scene_visual_only=True, chapter=None, content_dir=None
+        )
+        with self.assertRaisesRegex(
+            SmokeFailure, "requires --chapter and --content-dir"
+        ):
+            validate_scene_visual_only_args(invalid)
+        invalid.chapter = "fishing1"
+        with self.assertRaisesRegex(
+            SmokeFailure, "requires --chapter and --content-dir"
+        ):
+            validate_scene_visual_only_args(invalid)
+        invalid.content_dir = pathlib.Path("fixture")
+        validate_scene_visual_only_args(invalid)
+
+    def test_scene_visual_only_result_has_explicit_reduced_schema(self) -> None:
+        result = {
+            "chapter": "fishing1",
+            "scene_visual_only": True,
+            "temporal_gameplay": {"passed": True},
+        }
+        complete_scene_visual_only_result(
+            result,
+            [pathlib.Path("game-01.png"), pathlib.Path("game-02.png")],
+            ["a" * 64, "b" * 64],
+            {"pageErrors": [], "rejections": []},
+        )
+        self.assertTrue(result["passed"])
+        self.assertEqual(
+            result["menu_navigation"],
+            {"performed": False, "reason": "scene-visual-only"},
+        )
+        self.assertEqual(
+            sorted(result["screenshots"]["gameplay_sequence_sha256"]),
+            ["game-01.png", "game-02.png"],
+        )
+        self.assertNotIn("core_options_sha256", result["screenshots"])
+
+        with self.assertRaisesRegex(SmokeFailure, "passing temporal evidence"):
+            complete_scene_visual_only_result(
+                {"temporal_gameplay": {"passed": False}},
+                [pathlib.Path("game.png")],
+                ["a" * 64],
+                {},
+            )
+
     def test_audio_unlock_is_visible_tracks_real_contexts_and_is_browser_tested(self) -> None:
         html = (ROOT / "web/index.html").read_text(encoding="utf-8")
         player = (ROOT / "web/jc-web-player.js").read_text(encoding="utf-8")

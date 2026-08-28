@@ -288,7 +288,45 @@ def parse_args() -> argparse.Namespace:
             "prove that visuals run before the Enable Audio gesture"
         ),
     )
+    parser.add_argument(
+        "--scene-visual-only",
+        action="store_true",
+        help=(
+            "with --chapter and --content-dir, stop after strict temporal "
+            "gameplay, frame-quality, WebGL, and audio acceptance"
+        ),
+    )
     return parser.parse_args()
+
+
+def validate_scene_visual_only_args(args: argparse.Namespace) -> None:
+    if args.scene_visual_only and (not args.chapter or args.content_dir is None):
+        raise SmokeFailure(
+            "--scene-visual-only requires --chapter and --content-dir"
+        )
+
+
+def complete_scene_visual_only_result(
+    result: dict[str, Any],
+    game_paths: list[pathlib.Path],
+    game_hashes: list[str],
+    final_state: dict[str, Any],
+) -> None:
+    temporal = result.get("temporal_gameplay")
+    if not isinstance(temporal, dict) or temporal.get("passed") is not True:
+        raise SmokeFailure("scene visual-only result lacks passing temporal evidence")
+    result["screenshots"] = {
+        "game_sha256": game_hashes[0],
+        "gameplay_sequence_sha256": {
+            path.name: digest for path, digest in zip(game_paths, game_hashes)
+        },
+    }
+    result["menu_navigation"] = {
+        "performed": False,
+        "reason": "scene-visual-only",
+    }
+    result["final"] = final_state
+    result["passed"] = True
 
 
 def wait_until(description: str, timeout: float, operation: Any) -> Any:
@@ -1045,6 +1083,7 @@ def run_smoke(args: argparse.Namespace, firefox: str, geckodriver: str) -> int:
     missing = [str(path) for path in required if not path.is_file()]
     if missing:
         raise SmokeFailure("generated Web distribution is incomplete: " + ", ".join(missing))
+    validate_scene_visual_only_args(args)
     if args.chapter and args.content_dir is None:
         raise SmokeFailure("--chapter requires --content-dir")
     if args.test_audio_unlock and not args.staged_local_content:
@@ -1119,6 +1158,7 @@ def run_smoke(args: argparse.Namespace, firefox: str, geckodriver: str) -> int:
         "smoke_probe_enabled": True,
         "chapter": args.chapter or "automatic",
         "autoplay_blocked": args.test_audio_unlock,
+        "scene_visual_only": args.scene_visual_only,
     }
     if args.staged_local_content:
         result["staged_local_content"] = [path.name for path in staged_files]
@@ -1352,6 +1392,34 @@ def run_smoke(args: argparse.Namespace, firefox: str, geckodriver: str) -> int:
             game_paths = [artifacts / "game.png"]
             game_hashes = [driver.screenshot(canvas_element, game_paths[0])]
         game_hash = game_hashes[0]
+        if args.scene_visual_only:
+            final_state = diagnostics(driver)
+            if final_state.get("pageErrors") or final_state.get("rejections"):
+                raise SmokeFailure(
+                    "post-gameplay page errors: "
+                    f"{final_state.get('pageErrors')}; "
+                    f"rejections: {final_state.get('rejections')}"
+                )
+            final_console = "\n".join(final_state.get("consoleErrors", []))
+            for fatal_message in fatal_messages:
+                if fatal_message in final_console:
+                    raise SmokeFailure(
+                        "post-gameplay RetroArch log contains fatal error: "
+                        f"{fatal_message}"
+                    )
+            complete_scene_visual_only_result(
+                result, game_paths, game_hashes, final_state
+            )
+            (artifacts / "result.json").write_text(
+                json.dumps(result, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            print(
+                "PASS: strict scene visual/audio/WebGL gate passed for "
+                f"{args.chapter}"
+            )
+            print(f"Artifacts: {artifacts.relative_to(ROOT)}")
+            return 0
         driver.click(driver.find("#menu"))
         menu_hash = wait_until(
             "RetroArch menu to change the canvas",
