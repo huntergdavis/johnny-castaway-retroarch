@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
+#include "jc_story_options.h"
 #include "libretro.h"
 
 #include <assert.h>
@@ -22,6 +23,7 @@ static bool chapter_menu_metadata_complete;
 static bool holiday_option_found;
 static unsigned ocean_options_found;
 static unsigned caption_options_found;
+static unsigned story_control_options_found;
 static bool controller_registered;
 static bool frame_has_color;
 static size_t holiday_bar_pixels;
@@ -31,6 +33,14 @@ static bool variable_updated;
 static const char *initial_screen_value = "intro";
 static const char *chapter_value = "screen";
 static const char *holiday_value = "off";
+static const char *story_seed_value = "24";
+static const char *story_calendar_value = "system";
+static const char *simulated_month_value = "1";
+static const char *simulated_day_value = "1";
+static const char *simulated_hour_value = "12";
+static const char *playback_speed_value = "1";
+static const char *tide_value = "auto";
+static const char *raft_stage_value = "auto";
 static const char *display_source_value = "original";
 static const char *audio_enabled_value = "enabled";
 static const char *audio_volume_value = "100";
@@ -52,6 +62,12 @@ static unsigned runtime_error_logs;
 static retro_core_options_update_display_callback_t option_display_callback;
 static bool initial_screen_option_visible;
 static unsigned initial_screen_visibility_updates;
+static unsigned automatic_options_visible_mask;
+static unsigned automatic_options_visibility_updates;
+static unsigned simulated_options_visible_mask;
+static unsigned simulated_options_visibility_updates;
+static bool playback_speed_option_visible;
+static unsigned playback_speed_visibility_updates;
 
 typedef struct script_buffer {
     uint8_t data[1024];
@@ -76,6 +92,12 @@ static uint32_t read_u32le(const uint8_t *data)
 {
     return (uint32_t)data[0] | ((uint32_t)data[1] << 8) |
            ((uint32_t)data[2] << 16) | ((uint32_t)data[3] << 24);
+}
+
+static uint64_t read_u64le(const uint8_t *data)
+{
+    return (uint64_t)read_u32le(data) |
+           ((uint64_t)read_u32le(data + 4u) << 32);
 }
 
 static void append_u8(script_buffer_t *buffer, uint8_t value)
@@ -370,6 +392,23 @@ static bool RETRO_CALLCONV environment(unsigned command, void *data)
                        definition->values[holiday_value_count].value != NULL)
                     ++holiday_value_count;
             } else if (strcmp(definition->key,
+                              "johnny_castaway_story_seed") == 0 ||
+                       strcmp(definition->key,
+                              "johnny_castaway_story_calendar") == 0 ||
+                       strcmp(definition->key,
+                              "johnny_castaway_simulated_month") == 0 ||
+                       strcmp(definition->key,
+                              "johnny_castaway_simulated_day") == 0 ||
+                       strcmp(definition->key,
+                              "johnny_castaway_simulated_hour") == 0 ||
+                       strcmp(definition->key,
+                              "johnny_castaway_playback_speed") == 0 ||
+                       strcmp(definition->key,
+                              "johnny_castaway_tide") == 0 ||
+                       strcmp(definition->key,
+                              "johnny_castaway_raft_stage") == 0) {
+                ++story_control_options_found;
+            } else if (strcmp(definition->key,
                               "johnny_castaway_ocean_enabled") == 0 ||
                        strcmp(definition->key,
                               "johnny_castaway_ocean_volume") == 0) {
@@ -401,6 +440,59 @@ static bool RETRO_CALLCONV environment(unsigned command, void *data)
             strcmp(display->key, "johnny_castaway_initial_screen") == 0) {
             initial_screen_option_visible = display->visible;
             ++initial_screen_visibility_updates;
+        } else if (display != NULL && display->key != NULL &&
+                   strcmp(display->key,
+                          "johnny_castaway_story_seed") == 0) {
+            automatic_options_visible_mask =
+                (automatic_options_visible_mask & ~1u) |
+                (display->visible ? 1u : 0u);
+            ++automatic_options_visibility_updates;
+        } else if (display != NULL && display->key != NULL &&
+                   strcmp(display->key,
+                          "johnny_castaway_story_calendar") == 0) {
+            automatic_options_visible_mask =
+                (automatic_options_visible_mask & ~2u) |
+                (display->visible ? 2u : 0u);
+            ++automatic_options_visibility_updates;
+        } else if (display != NULL && display->key != NULL &&
+                   strcmp(display->key, "johnny_castaway_tide") == 0) {
+            automatic_options_visible_mask =
+                (automatic_options_visible_mask & ~4u) |
+                (display->visible ? 4u : 0u);
+            ++automatic_options_visibility_updates;
+        } else if (display != NULL && display->key != NULL &&
+                   strcmp(display->key,
+                          "johnny_castaway_raft_stage") == 0) {
+            automatic_options_visible_mask =
+                (automatic_options_visible_mask & ~8u) |
+                (display->visible ? 8u : 0u);
+            ++automatic_options_visibility_updates;
+        } else if (display != NULL && display->key != NULL &&
+                   strcmp(display->key,
+                          "johnny_castaway_simulated_month") == 0) {
+            simulated_options_visible_mask =
+                (simulated_options_visible_mask & ~1u) |
+                (display->visible ? 1u : 0u);
+            ++simulated_options_visibility_updates;
+        } else if (display != NULL && display->key != NULL &&
+                   strcmp(display->key,
+                          "johnny_castaway_simulated_day") == 0) {
+            simulated_options_visible_mask =
+                (simulated_options_visible_mask & ~2u) |
+                (display->visible ? 2u : 0u);
+            ++simulated_options_visibility_updates;
+        } else if (display != NULL && display->key != NULL &&
+                   strcmp(display->key,
+                          "johnny_castaway_simulated_hour") == 0) {
+            simulated_options_visible_mask =
+                (simulated_options_visible_mask & ~4u) |
+                (display->visible ? 4u : 0u);
+            ++simulated_options_visibility_updates;
+        } else if (display != NULL && display->key != NULL &&
+                   strcmp(display->key,
+                          "johnny_castaway_playback_speed") == 0) {
+            playback_speed_option_visible = display->visible;
+            ++playback_speed_visibility_updates;
         }
         return true;
     }
@@ -419,6 +511,28 @@ static bool RETRO_CALLCONV environment(unsigned command, void *data)
         else if (strcmp(variable->key,
                         "johnny_castaway_holiday_overlay") == 0)
             variable->value = holiday_value;
+        else if (strcmp(variable->key, "johnny_castaway_story_seed") == 0)
+            variable->value = story_seed_value;
+        else if (strcmp(variable->key,
+                        "johnny_castaway_story_calendar") == 0)
+            variable->value = story_calendar_value;
+        else if (strcmp(variable->key,
+                        "johnny_castaway_simulated_month") == 0)
+            variable->value = simulated_month_value;
+        else if (strcmp(variable->key,
+                        "johnny_castaway_simulated_day") == 0)
+            variable->value = simulated_day_value;
+        else if (strcmp(variable->key,
+                        "johnny_castaway_simulated_hour") == 0)
+            variable->value = simulated_hour_value;
+        else if (strcmp(variable->key,
+                        "johnny_castaway_playback_speed") == 0)
+            variable->value = playback_speed_value;
+        else if (strcmp(variable->key, "johnny_castaway_tide") == 0)
+            variable->value = tide_value;
+        else if (strcmp(variable->key,
+                        "johnny_castaway_raft_stage") == 0)
+            variable->value = raft_stage_value;
         else if (strcmp(variable->key, "johnny_castaway_display_source") == 0)
             variable->value = display_source_value;
         else if (strcmp(variable->key, "johnny_castaway_audio_enabled") == 0)
@@ -559,6 +673,8 @@ int main(int argc, char **argv)
     uint64_t restored_hash;
     bool restored_audio_signal;
     unsigned preview_startup_frames;
+    unsigned audio_frames_before;
+    unsigned automatic_starts_before;
 
     retro_set_environment(environment);
     retro_set_video_refresh(video);
@@ -575,17 +691,38 @@ int main(int argc, char **argv)
            chapter_menu_metadata_complete && chapter_value_count == 65u);
     assert(holiday_option_found && holiday_value_count == 38u);
     assert(ocean_options_found == 2u && caption_options_found == 5u);
+    assert(story_control_options_found == 8u);
+    assert(jc_story_effective_raft_stage(3u, 5,
+                                         JC_SCENE_NO_RAFT) == 0u);
+    assert(jc_story_effective_raft_stage(3u, 5, 0u) == 5u);
+    assert(jc_story_effective_raft_stage(3u, -1, 0u) == 3u);
     assert(controller_registered);
     assert(option_display_callback != NULL);
     assert(initial_screen_visibility_updates == 1u &&
            initial_screen_option_visible);
+    assert(automatic_options_visibility_updates == 4u &&
+           automatic_options_visible_mask == 0u);
+    assert(simulated_options_visibility_updates == 3u &&
+           simulated_options_visible_mask == 0u);
+    assert(playback_speed_visibility_updates == 1u &&
+           !playback_speed_option_visible);
     chapter_value = "automatic";
     assert(option_display_callback());
     assert(!initial_screen_option_visible);
+    assert(automatic_options_visible_mask == 15u);
+    assert(simulated_options_visible_mask == 0u);
+    assert(playback_speed_option_visible);
     assert(!option_display_callback());
+    story_calendar_value = "simulated";
+    assert(option_display_callback());
+    assert(simulated_options_visible_mask == 7u);
     chapter_value = "screen";
     assert(option_display_callback());
     assert(initial_screen_option_visible);
+    assert(automatic_options_visible_mask == 0u);
+    assert(simulated_options_visible_mask == 0u);
+    assert(!playback_speed_option_visible);
+    story_calendar_value = "system";
 
     game.path = argc == 2 ? argv[1] : make_synthetic_content();
     assert(retro_load_game(&game));
@@ -632,6 +769,19 @@ int main(int argc, char **argv)
     retro_run();
     assert(frame_hash == intro_hash);
 
+    automatic_starts_before = automatic_scene_starts;
+    story_seed_value = "42";
+    story_calendar_value = "simulated";
+    simulated_month_value = "2";
+    simulated_day_value = "31";
+    simulated_hour_value = "23";
+    tide_value = "low";
+    raft_stage_value = "5";
+    variable_updated = true;
+    retro_run();
+    assert(frame_hash == intro_hash);
+    assert(automatic_scene_starts == automatic_starts_before);
+
     chapter_value = "fishing1";
     variable_updated = true;
     retro_run();
@@ -642,6 +792,24 @@ int main(int argc, char **argv)
     chapter_hash = frame_hash;
     assert(chapter_hash != intro_hash && chapter_hash != diagnostic_hash);
     assert(!initial_screen_option_visible);
+
+    automatic_starts_before = automatic_scene_starts;
+    story_seed_value = "24";
+    simulated_month_value = "12";
+    simulated_day_value = "31";
+    simulated_hour_value = "0";
+    tide_value = "high";
+    raft_stage_value = "0";
+    playback_speed_value = "4";
+    audio_frames_before = audio_frames;
+    variable_updated = true;
+    retro_run();
+    assert(audio_frames == audio_frames_before + 882u);
+    assert(automatic_scene_starts == automatic_starts_before);
+    playback_speed_value = "1";
+    variable_updated = true;
+    retro_run();
+    assert(automatic_scene_starts == automatic_starts_before);
 
     captions_enabled_value = "enabled";
     variable_updated = true;
@@ -764,10 +932,102 @@ int main(int argc, char **argv)
         unsigned fades_before = automatic_fade_starts;
         uint64_t automatic_next_hash;
         bool automatic_next_audio;
+        uint32_t flags;
+        uint32_t compact_position;
+        uint32_t old_position;
+        uint64_t runtime_ticks_before;
 
         chapter_value = "automatic";
         captions_enabled_value = "enabled";
         variable_updated = true;
+        retro_run();
+        assert(automatic_scene_starts == starts_before + 1u);
+
+        starts_before = automatic_scene_starts;
+        story_seed_value = "42";
+        variable_updated = true;
+        retro_run();
+        assert(automatic_scene_starts == starts_before + 1u);
+
+        starts_before = automatic_scene_starts;
+        story_calendar_value = "system";
+        variable_updated = true;
+        retro_run();
+        assert(automatic_scene_starts == starts_before + 1u);
+
+        starts_before = automatic_scene_starts;
+        story_calendar_value = "simulated";
+        simulated_month_value = "2";
+        simulated_day_value = "31";
+        simulated_hour_value = "23";
+        variable_updated = true;
+        retro_run();
+        assert(automatic_scene_starts == starts_before + 1u);
+
+        starts_before = automatic_scene_starts;
+        tide_value = "low";
+        variable_updated = true;
+        retro_run();
+        assert(automatic_scene_starts == starts_before + 1u);
+
+        starts_before = automatic_scene_starts;
+        raft_stage_value = "5";
+        variable_updated = true;
+        retro_run();
+        assert(automatic_scene_starts == starts_before + 1u);
+
+        assert(retro_serialize(state, state_size));
+        runtime_ticks_before = read_u64le(state + 48u);
+        playback_speed_value = "4";
+        audio_frames_before = audio_frames;
+        variable_updated = true;
+        retro_run();
+        assert(audio_frames == audio_frames_before + 882u);
+        assert(automatic_scene_starts == starts_before + 1u);
+        assert(retro_serialize(state, state_size));
+        assert(read_u64le(state + 48u) == runtime_ticks_before + 4u);
+        flags = read_u32le(state + 24u);
+        compact_position = read_u32le(state + 60u);
+        assert((flags & 0x80000000u) != 0u);
+        assert(((flags >> 8) & 0x1ffu) == 58u);
+        assert(((flags >> 17) & 0x1fu) == 23u);
+        assert(((flags >> 22) & 0x0fu) == 2u);
+        assert(((flags >> 26) & 0x1fu) == 28u);
+        assert(((compact_position >> 25) & 1u) == 1u);
+        assert(((compact_position >> 26) & 7u) == 5u);
+
+        starts_before = automatic_scene_starts;
+        story_seed_value = "24";
+        story_calendar_value = "system";
+        tide_value = "high";
+        raft_stage_value = "0";
+        variable_updated = true;
+        retro_run();
+        assert(automatic_scene_starts == starts_before + 1u);
+        assert(retro_unserialize(state, state_size));
+        assert(retro_serialize(roundtrip, state_size));
+        assert(memcmp(roundtrip, state, state_size) == 0);
+
+        memcpy(malformed, state, state_size);
+        write_u32le(malformed + 24u, flags & 0xffu);
+        old_position = (compact_position & 0x0fu) |
+                       (((compact_position >> 4) & 0x1fu) << 8) |
+                       (((compact_position >> 9) & 0x03u) << 16) |
+                       (((compact_position >> 11) & 0x07u) << 18) |
+                       (((compact_position >> 14) & 0x7ffu) << 21);
+        write_u32le(malformed + 60u, old_position);
+        story_seed_value = "42";
+        story_calendar_value = "simulated";
+        simulated_month_value = "2";
+        simulated_day_value = "31";
+        simulated_hour_value = "23";
+        tide_value = "low";
+        raft_stage_value = "5";
+        variable_updated = true;
+        retro_run();
+        assert(retro_unserialize(malformed, state_size));
+        assert(retro_unserialize(state, state_size));
+
         for (frame = 0u;
              frame < 5000u && automatic_walk_starts == walks_before &&
              runtime_error_logs == 0u;
@@ -777,7 +1037,7 @@ int main(int argc, char **argv)
         assert(automatic_walk_starts == walks_before + 1u);
         retro_run();
         assert(retro_serialize(state, state_size));
-        assert(((read_u32le(state + 60u) >> 16) & 0x3u) == 1u);
+        assert(((read_u32le(state + 60u) >> 9) & 0x3u) == 1u);
         retro_run();
         automatic_next_hash = frame_hash;
         automatic_next_audio = last_audio_has_signal;
@@ -797,7 +1057,7 @@ int main(int argc, char **argv)
         assert(retro_serialize(state, state_size));
         assert((read_u32le(state + 24u) & (1u << 7)) != 0u);
         assert(read_u32le(state + 56u) != 0u);
-        assert((read_u32le(state + 60u) & 0xffu) >= 1u);
+        assert((read_u32le(state + 60u) & 0x0fu) >= 1u);
         assert(retro_serialize(roundtrip, state_size));
         assert(memcmp(roundtrip, state, state_size) == 0);
         retro_run();
@@ -818,7 +1078,7 @@ int main(int argc, char **argv)
         assert(runtime_error_logs == 0u);
         assert(automatic_fade_starts == fades_before + 1u);
         assert(retro_serialize(state, state_size));
-        assert(((read_u32le(state + 60u) >> 16) & 0x3u) == 2u);
+        assert(((read_u32le(state + 60u) >> 9) & 0x3u) == 2u);
         retro_run();
         automatic_next_hash = frame_hash;
         automatic_next_audio = last_audio_has_signal;
@@ -834,6 +1094,16 @@ int main(int argc, char **argv)
             retro_run();
         assert(runtime_error_logs == 0u);
         assert(automatic_scene_starts == starts_before + 1u);
+        assert(retro_serialize(state, state_size));
+        assert(((read_u32le(state + 60u) >> 26) & 7u) == 5u);
+        assert(((read_u32le(state + 60u) >> 29) & 1u) == 1u);
+        retro_run();
+        automatic_next_hash = frame_hash;
+        assert(retro_unserialize(state, state_size));
+        assert(retro_serialize(roundtrip, state_size));
+        assert(memcmp(roundtrip, state, state_size) == 0);
+        retro_run();
+        assert(frame_hash == automatic_next_hash);
         fprintf(stderr,
                 "Johnny Castaway real-data automatic acceptance: walk/fade/rollover and state round-trips\n");
     }

@@ -142,14 +142,32 @@ chapter, and asserts that RetroArch:
 - indexes all five synthetic resources;
 - reports the core's 640x480 geometry;
 - enables the menu button without a page error or unhandled rejection; and
-- renders a canvas whose screenshot changes after the Quick Menu opens.
+- renders stable, distinct gameplay, Quick Menu, selected Core Options, Core
+  Options category, and Story top/end screenshots after deterministic keyboard
+  navigation.
 
 Evidence is written to `build/web-smoke/`: `result.json`,
-`geckodriver.log`, `game.png`, and `menu.png`. The embedded 61-byte MAP and
-1,126-byte archive are exact, checksum-verified outputs of
+`geckodriver.log`, `game.png`, `menu.png`, `core-options-selected.png`,
+`core-options.png`, `story-options-top.png`, and `story-options-bottom.png`.
+The embedded 61-byte MAP and 1,126-byte archive are exact, checksum-verified outputs of
 `make_synthetic_content()` in `tests/test_libretro.c`. They contain only the
-project's tiny generated palette, screens, and scripts. The automated test
+project’s tiny generated palette, screens, and scripts. The automated test
 does not find, read, copy, or require original Johnny Castaway data.
+
+For the local authentic release gate, explicitly point the same runner at a
+user-owned source directory instead of staging or embedding those files:
+
+```sh
+python3 tools/web_smoke_test.py \
+  --content-dir /path/to/johnny-data \
+  --artifacts build/web-smoke-authentic-options \
+  --require-browser --timeout 90
+```
+
+This leaves Automatic Story active, navigates to its Calendar control, selects
+Simulated Calendar, and captures the expanded Story menu at its top and bottom.
+The source files are uploaded only to the test browser’s in-memory filesystem;
+all screenshots, logs, and result metadata remain in ignored `build/` output.
 
 Firefox's native headless mode did not expose a usable WebGL context in the
 development environment. When no display is already set, the runner therefore

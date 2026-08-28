@@ -61,10 +61,15 @@ automatic scene boundaries with the authentic left-island offsets and tree-cover
 occlusion. Active walk/fade transitions are deterministically reconstructed by
 versioned save states. Synthetic, focused authentic, and all-63-chapter real-data
 regressions cover story rollover, walking, fades, runtime replay, and completion.
+Functional Core Options now expose deterministic plan seed, system/simulated calendar,
+automatic/forced tide and raft stage, and 1x–4x playback speed. New automatic states
+preserve the exact planning calendar and effective tide/raft while retaining old v2
+state compatibility.
 
 - Port TTM, ADS, director/story selection, island state, pathfinding, and walking.
 - Compare deterministic scene traces with Wilson Reborn and the PS1 host harness.
-- Add core options for deterministic seed, calendar override, speed, and captions.
+- Keep the implemented seed, calendar, tide/raft, speed, and caption Core Options in
+  the per-target frontend regression gate.
 
 ### M4 — Audio and frontend completeness
 
@@ -127,12 +132,13 @@ contract exists.
    save-state tested. All 63 authentic chapters complete.**
 4. Port feasible PS1 additions: captions, 36-holiday calendar, scene explorer previews,
    and the CC0 ocean ambience loop with full attribution. **Captions, chapter previews,
-   calendar data, automatic/forced asset-free holiday presentation, and ambience are
-   done; original-art sprite presentation remains.**
+   calendar data and simulation, automatic/forced asset-free holiday presentation,
+   tide/raft island composition, ambience, and playback controls are done. Proprietary
+   holiday sprite presentation is deliberately not distributed.**
 5. Browser RetroArch build/link/dist/HTTP and real-Firefox synthetic-content harness.
-   **Done; local original-data auto-loading is implemented and is a release gate for
-   the final rebuilt distribution.** Complete native RetroArch smoke, then expand
-   targets one validated compiler/frontend at a time.
+   **Done; local original-data auto-loading and real RetroArch Core Options navigation
+   are release gates for the final rebuilt distribution.** Continue expanding targets
+   one validated compiler/frontend at a time without weakening existing gates.
 
 The project intentionally adds targets sequentially. A giant untested Makefile is not
 considered platform support.

@@ -5,12 +5,14 @@ A portable libretro core for running Johnny Castaway from user-supplied original
 
 ## Status
 
-Milestone 0 and the first content/rendering slice are complete: the repository builds
-a loadable libretro core, validates the original resource pair, decodes palette and SCR
-resources, and displays selectable authentic screens or live ADS scenes through a
-deterministic 640x480 XRGB8888 software framebuffer. Categorized Core Options v2,
-legacy menu fallback, RetroPad input, audio, and versioned chapter-runtime save-state
-round trips are working.
+The `0.1.0` portable core is feature-complete: it builds as a loadable libretro core,
+validates the original resource pair, decodes the original content, and runs the full
+automatic story or any of 63 selectable live chapter previews through a deterministic
+640x480 XRGB8888 software framebuffer. Categorized Core Options v2, legacy menu
+fallback, RetroPad input, audio, and versioned chapter-runtime save-state round trips
+are working. Host, Web, and cross-compilation release gates are documented below;
+physical-device execution remains a platform-specific validation step rather than a
+claim made by this repository.
 
 The repository now contains bounded ADS/TTM parsers and a resumable 50 Hz script VM,
 an indexed sprite compositor, the deterministic story/walking runtime, and an eight-voice
@@ -22,8 +24,10 @@ primitives, saved zones, and frame composition. A bounded content-backed runtime
 loads one ADS plus its declared TTM resources and drives the renderer at 50 Hz. That
 runtime is connected to the libretro adapter: Automatic mode plans and advances the
 original opening/intermediate/walk/final story sequence, while all 63 chapters can be
-selected individually as live graphical previews. Captions have complete presentation
-options, optional user-supplied `sound0.wav`–`sound24.wav` effects are loaded from beside
+selected individually as live graphical previews. Story options expose reproducible
+seed presets, a system or simulated calendar, 1x–4x playback, and automatic or forced
+tide/raft presentation with authentic island sprites. Captions have complete
+presentation options, optional user-supplied `sound0.wav`–`sound24.wav` effects are loaded from beside
 the resource pair (IDs 11/13 are absent), and the embedded ocean loop has enable/volume
 controls. A Holiday Overlay Core Option uses the local date or forces any of all 36
 catalog entries, rendering its title/date without original artwork. Tested portable
@@ -145,10 +149,12 @@ notices.
 - `scripts/build-console-cores.sh`: pinned eight-platform console archive builder
 - `scripts/build-apple-universal.sh`: verified x86_64/arm64 macOS merger
 - `scripts/build-web-player.sh`, `scripts/serve-web.sh`: pinned local RetroArch Web test
+- `scripts/assemble-release.sh`: fail-closed assembly of exact successful CI artifacts
 - `web/`: local two-file launcher and Web-specific license notice
 - `docs/`: architecture decisions and staged port plan
 - `docs/RETROARCH_INTEGRATION.md`: menu/options acceptance checklist
 - `docs/WEB_TESTING.md`: browser build, local server, and test workflow
+- `docs/RELEASING.md`: exact-SHA artifact assembly, audit, and publication boundary
 - `docs/OPTIONAL_ORIGINAL_AUDIO.md`: user-supplied SFX provenance and distribution boundary
 - `docs/CONSOLE_BUILDS.md`: reproducible console SDK images and packaging gates
 - `docs/PLATFORM_MATRIX.md`: source-backed RetroArch platform inventory and coverage

@@ -2,8 +2,9 @@
 """Exercise the generated RetroArch Web Player in a real Firefox browser.
 
 This deliberately uses only Python's standard library plus the W3C WebDriver
-HTTP protocol.  The content files come from tests/test_libretro.c's synthetic
-fixture generator; original Johnny Castaway data is neither needed nor read.
+HTTP protocol.  By default the content files come from tests/test_libretro.c's
+synthetic fixture generator; an explicit --content-dir enables a local-only
+automatic-story menu check with user-owned data.
 """
 
 from __future__ import annotations
@@ -19,17 +20,23 @@ import os
 import pathlib
 import shutil
 import socket
+import struct
 import subprocess
 import sys
 import threading
 import time
 import urllib.error
 import urllib.request
+import zlib
 from typing import Any
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 WEBDRIVER_ELEMENT = "element-6066-11e4-a52e-4f735466cecf"
+RETROARCH_MENU_OK = "z"
+WEBDRIVER_KEY_END = "\ue010"
+WEBDRIVER_KEY_HOME = "\ue011"
+WEBDRIVER_KEY_DOWN = "\ue015"
 # Exact output of make_synthetic_content() in tests/test_libretro.c.  Keeping
 # this browser fixture self-contained prevents unrelated host-test assertions
 # from blocking it.  Both payloads are generated project data, not game data.
@@ -170,6 +177,27 @@ class WebDriver:
     def click(self, element: str) -> None:
         self.request("POST", f"{self.session_path}/element/{element}/click", {})
 
+    def key_press(self, value: str, hold_ms: int = 120) -> None:
+        """Send a key long enough for RetroArch's frame-polled input to see it."""
+        self.request(
+            "POST",
+            f"{self.session_path}/actions",
+            {
+                "actions": [
+                    {
+                        "type": "key",
+                        "id": "keyboard",
+                        "actions": [
+                            {"type": "keyDown", "value": value},
+                            {"type": "pause", "duration": hold_ms},
+                            {"type": "keyUp", "value": value},
+                            {"type": "pause", "duration": hold_ms},
+                        ],
+                    }
+                ]
+            },
+        )
+
     def execute(self, script: str, *arguments: Any) -> Any:
         return self.request(
             "POST",
@@ -203,6 +231,14 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--artifacts", type=pathlib.Path, default=ROOT / "build/web-smoke"
+    )
+    parser.add_argument(
+        "--content-dir",
+        type=pathlib.Path,
+        help=(
+            "use user-owned RESOURCE.MAP/RESOURCE.001 for an optional "
+            "Automatic Story menu check"
+        ),
     )
     parser.add_argument("--timeout", type=float, default=45.0)
     parser.add_argument(
@@ -355,6 +391,119 @@ def diagnostics(driver: WebDriver) -> dict[str, Any]:
     return value
 
 
+def stable_screenshot(
+    driver: WebDriver,
+    element: str,
+    destination: pathlib.Path,
+) -> str:
+    """Capture a settled, non-black frame after Ozone's page transition."""
+
+    # Ozone briefly renders a black transition frame when a page is pushed.
+    # Its background remains animated after settling, so exact PNG equality is
+    # not a valid stability signal.
+    time.sleep(2.0)
+    result = driver.screenshot(element, destination)
+    if destination.stat().st_size < 20_000:
+        raise SmokeFailure(
+            f"rendered menu screenshot is unexpectedly small: {destination}"
+        )
+    return result
+
+
+def png_pixels(path: pathlib.Path) -> tuple[int, int, int, bytes]:
+    """Decode an 8-bit RGB/RGBA WebDriver PNG using only the stdlib."""
+    encoded = path.read_bytes()
+    if not encoded.startswith(b"\x89PNG\r\n\x1a\n"):
+        raise SmokeFailure(f"screenshot is not a PNG: {path}")
+    position = 8
+    width = height = bit_depth = color_type = interlace = 0
+    compressed = bytearray()
+    while position < len(encoded):
+        length = struct.unpack(">I", encoded[position : position + 4])[0]
+        chunk_type = encoded[position + 4 : position + 8]
+        payload = encoded[position + 8 : position + 8 + length]
+        position += 12 + length
+        if chunk_type == b"IHDR":
+            width, height, bit_depth, color_type, _, _, interlace = struct.unpack(
+                ">IIBBBBB", payload
+            )
+        elif chunk_type == b"IDAT":
+            compressed.extend(payload)
+        elif chunk_type == b"IEND":
+            break
+    if bit_depth != 8 or color_type not in (2, 6) or interlace:
+        raise SmokeFailure(
+            f"unsupported WebDriver PNG format: depth={bit_depth}, "
+            f"color={color_type}, interlace={interlace}"
+        )
+    channels = 3 if color_type == 2 else 4
+    stride = width * channels
+    filtered = zlib.decompress(compressed)
+    rows = bytearray()
+    previous = bytearray(stride)
+    offset = 0
+    for _ in range(height):
+        filter_type = filtered[offset]
+        current = bytearray(filtered[offset + 1 : offset + 1 + stride])
+        offset += stride + 1
+        for index in range(stride):
+            left = current[index - channels] if index >= channels else 0
+            above = previous[index]
+            upper_left = previous[index - channels] if index >= channels else 0
+            if filter_type == 1:
+                current[index] = (current[index] + left) & 0xFF
+            elif filter_type == 2:
+                current[index] = (current[index] + above) & 0xFF
+            elif filter_type == 3:
+                current[index] = (current[index] + ((left + above) // 2)) & 0xFF
+            elif filter_type == 4:
+                estimate = left + above - upper_left
+                distances = (
+                    abs(estimate - left),
+                    abs(estimate - above),
+                    abs(estimate - upper_left),
+                )
+                predictor = (left, above, upper_left)[distances.index(min(distances))]
+                current[index] = (current[index] + predictor) & 0xFF
+            elif filter_type != 0:
+                raise SmokeFailure(f"unsupported PNG filter {filter_type}: {path}")
+        rows.extend(current)
+        previous = current
+    return width, height, channels, bytes(rows)
+
+
+def assert_content_changed(
+    before: pathlib.Path,
+    after: pathlib.Path,
+    description: str,
+    minimum_ratio: float = 0.005,
+) -> float:
+    """Require a material menu-content change while ignoring header clocks."""
+    width, height, channels, first = png_pixels(before)
+    next_width, next_height, next_channels, second = png_pixels(after)
+    if (next_width, next_height, next_channels) != (width, height, channels):
+        raise SmokeFailure(f"screenshot geometry changed while checking {description}")
+    first_row = min(80, height)
+    last_row = max(first_row, height - 60)
+    changed = total = 0
+    for y_position in range(first_row, last_row):
+        row_start = y_position * width * channels
+        for x_position in range(width):
+            pixel = row_start + x_position * channels
+            total += 1
+            if any(
+                abs(first[pixel + channel] - second[pixel + channel]) > 12
+                for channel in range(3)
+            ):
+                changed += 1
+    ratio = changed / total if total else 0.0
+    if ratio < minimum_ratio:
+        raise SmokeFailure(
+            f"{description} changed only {ratio:.3%} of menu-content pixels"
+        )
+    return ratio
+
+
 def run_smoke(args: argparse.Namespace, firefox: str, geckodriver: str) -> int:
     dist = args.dist.resolve()
     artifacts = args.artifacts.resolve()
@@ -373,7 +522,26 @@ def run_smoke(args: argparse.Namespace, firefox: str, geckodriver: str) -> int:
         cwd=ROOT,
         check=True,
     )
-    map_path, archive_path = prepare_synthetic_content(artifacts / "synthetic")
+    if args.content_dir is None:
+        map_path, archive_path = prepare_synthetic_content(artifacts / "synthetic")
+        expected_index_log = "indexed 5 resources"
+        core_options = 'johnny_castaway_chapter = "fishing1"\n'
+        content_description = "checksum-verified synthetic fixture"
+    else:
+        content_directory = args.content_dir.resolve()
+        map_path = content_directory / "RESOURCE.MAP"
+        archive_path = content_directory / "RESOURCE.001"
+        missing_content = [
+            str(path) for path in (map_path, archive_path) if not path.is_file()
+        ]
+        if missing_content:
+            raise SmokeFailure(
+                "user-owned content directory is incomplete: "
+                + ", ".join(missing_content)
+            )
+        expected_index_log = "Johnny Castaway: indexed "
+        core_options = None
+        content_description = "user-owned local data"
     server, url = start_web_server(dist)
     port = available_port()
     gecko_log = artifacts / "geckodriver.log"
@@ -391,8 +559,13 @@ def run_smoke(args: argparse.Namespace, firefox: str, geckodriver: str) -> int:
     driver = WebDriver(f"http://127.0.0.1:{port}")
     result: dict[str, Any] = {
         "url": url,
-        "synthetic_content": [str(map_path.relative_to(ROOT)), str(archive_path.relative_to(ROOT))],
+        "content": content_description,
     }
+    if args.content_dir is None:
+        result["synthetic_content"] = [
+            str(map_path.relative_to(ROOT)),
+            str(archive_path.relative_to(ROOT)),
+        ]
     try:
         wait_for_port(gecko_process, port, 10)
         driver.new_session(firefox, headless=not bool(os.environ.get("DISPLAY")))
@@ -417,7 +590,7 @@ def run_smoke(args: argparse.Namespace, firefox: str, geckodriver: str) -> int:
         file_input = driver.find("#content-files")
         driver.upload(file_input, [map_path, archive_path])
         wait_until(
-            "both synthetic files to be accepted",
+            "both content files to be accepted",
             args.timeout,
             lambda: diagnostics(driver).get("status", "").startswith("Ready:"),
         )
@@ -425,10 +598,11 @@ def run_smoke(args: argparse.Namespace, firefox: str, geckodriver: str) -> int:
             """
             import("./jc-web-player.js").then(player => player.start(
               undefined,
-              'johnny_castaway_chapter = "fishing1"\\n',
+              arguments[0],
             ));
             return true;
-            """
+            """,
+            core_options,
         )
         state = wait_until(
             "RetroArch startup",
@@ -440,7 +614,7 @@ def run_smoke(args: argparse.Namespace, firefox: str, geckodriver: str) -> int:
                     or (
                         current.get("status", "").startswith("Running.")
                         and any(
-                            "indexed 5 resources" in line
+                            expected_index_log in line
                             for line in current.get("consoleErrors", [])
                         )
                     )
@@ -463,20 +637,23 @@ def run_smoke(args: argparse.Namespace, firefox: str, geckodriver: str) -> int:
         joined_console = "\n".join(state.get("consoleErrors", []))
         for expected in (
             "SET_CORE_OPTIONS_V2",
-            "indexed 5 resources",
+            expected_index_log,
             "Geometry: 640x480",
         ):
             if expected not in joined_console:
                 raise SmokeFailure(f"RetroArch log did not contain {expected!r}")
-        for fatal in (
+        fatal_messages = (
             "[EMSCRIPTEN/WebGL] Failed",
             "[libretro ERROR]",
             "Failed to load content",
             "Aborted(",
             "cannot access property \"GLctx\"",
-        ):
-            if fatal in joined_console:
-                raise SmokeFailure(f"RetroArch log contains fatal error: {fatal}")
+        )
+        for fatal_message in fatal_messages:
+            if fatal_message in joined_console:
+                raise SmokeFailure(
+                    f"RetroArch log contains fatal error: {fatal_message}"
+                )
 
         canvas_element = driver.find("#canvas")
         game_hash = driver.screenshot(canvas_element, artifacts / "game.png")
@@ -491,20 +668,162 @@ def run_smoke(args: argparse.Namespace, firefox: str, geckodriver: str) -> int:
                 else None
             ),
         )
-        # The first changed frame may be the Ozone transition's black frame.
-        # Allow the menu to settle, then retain the stable rendered view.
-        time.sleep(2.0)
-        menu_hash = driver.screenshot(canvas_element, artifacts / "menu.png")
+        menu_hash = stable_screenshot(
+            driver, canvas_element, artifacts / "menu.png"
+        )
         if menu_hash == game_hash:
             raise SmokeFailure("RetroArch menu returned to the gameplay frame")
-        result["screenshots"] = {"game_sha256": game_hash, "menu_sha256": menu_hash}
-        result["final"] = diagnostics(driver)
+
+        # Quick Menu ordering is stable for loaded content. Home makes the
+        # starting point explicit, then four Down presses select Core Options:
+        # Resume, Reset, Close Content, Save States, Core Options.
+        driver.key_press(WEBDRIVER_KEY_HOME)
+        for _ in range(4):
+            driver.key_press(WEBDRIVER_KEY_DOWN)
+        core_row_path = artifacts / "core-options-selected.png"
+        core_row_hash = stable_screenshot(
+            driver,
+            canvas_element,
+            core_row_path,
+        )
+        visual_changes = {
+            "quick_menu_to_core_options_row": assert_content_changed(
+                artifacts / "menu.png",
+                core_row_path,
+                "keyboard navigation to Core Options",
+            )
+        }
+
+        driver.key_press(RETROARCH_MENU_OK)
+        core_options_path = artifacts / "core-options.png"
+        core_options_hash = stable_screenshot(
+            driver, canvas_element, core_options_path
+        )
+        visual_changes["core_options_row_to_page"] = assert_content_changed(
+            core_row_path,
+            core_options_path,
+            "Core Options page navigation",
+        )
+
+        # Web RetroArch defaults game_specific_options=true, so its override
+        # manager precedes the categories. Story is the first core-supplied
+        # category after that frontend-owned row.
+        driver.key_press(WEBDRIVER_KEY_HOME)
+        driver.key_press(WEBDRIVER_KEY_DOWN)
+        driver.key_press(RETROARCH_MENU_OK)
+        story_top_path = artifacts / "story-options-top.png"
+        story_top_hash = stable_screenshot(
+            driver, canvas_element, story_top_path
+        )
+        visual_changes["core_options_to_story"] = assert_content_changed(
+            core_options_path,
+            story_top_path,
+            "Story core-option category navigation",
+        )
+
+        simulated_hashes: dict[str, str] = {}
+        if args.content_dir is not None:
+            # Automatic Story category ordering is declared by the core:
+            # Playback/Chapter, Holiday, Seed, Calendar. Select Calendar,
+            # choose its second value (Simulated), then capture the options
+            # that become visible only in deterministic calendar mode.
+            driver.key_press(WEBDRIVER_KEY_HOME)
+            for _ in range(3):
+                driver.key_press(WEBDRIVER_KEY_DOWN)
+            driver.key_press(RETROARCH_MENU_OK)
+            calendar_path = artifacts / "story-calendar-values.png"
+            calendar_hash = stable_screenshot(
+                driver,
+                canvas_element,
+                calendar_path,
+            )
+            driver.key_press(WEBDRIVER_KEY_HOME)
+            driver.key_press(WEBDRIVER_KEY_DOWN)
+            driver.key_press(RETROARCH_MENU_OK)
+            simulated_top_path = artifacts / "story-simulated-top.png"
+            simulated_top_hash = stable_screenshot(
+                driver,
+                canvas_element,
+                simulated_top_path,
+            )
+            visual_changes["story_to_calendar_values"] = assert_content_changed(
+                story_top_path,
+                calendar_path,
+                "Story Calendar value navigation",
+            )
+            visual_changes["calendar_values_to_simulated_story"] = (
+                assert_content_changed(
+                    calendar_path,
+                    simulated_top_path,
+                    "Simulated Calendar option expansion",
+                )
+            )
+            simulated_hashes = {
+                "story_calendar_values_sha256": calendar_hash,
+                "story_simulated_top_sha256": simulated_top_hash,
+            }
+
+        driver.key_press(WEBDRIVER_KEY_END)
+        story_bottom_path = artifacts / "story-options-bottom.png"
+        story_bottom_hash = stable_screenshot(driver, canvas_element, story_bottom_path)
+        visual_changes["story_top_to_last_entry"] = assert_content_changed(
+            story_top_path,
+            story_bottom_path,
+            "Story option navigation to its last entry",
+        )
+
+        result["screenshots"] = {
+            "game_sha256": game_hash,
+            "menu_sha256": menu_hash,
+            "core_options_selected_sha256": core_row_hash,
+            "core_options_sha256": core_options_hash,
+            "story_options_top_sha256": story_top_hash,
+            "story_options_bottom_sha256": story_bottom_hash,
+            **simulated_hashes,
+        }
+        result["menu_navigation"] = {
+            "route": (
+                "Quick Menu/Home/Down*4/Core Options/Home/Down*1/Story"
+                + ("/Calendar/Simulated" if args.content_dir is not None else "")
+                + "/End"
+            ),
+            "stable_frames": True,
+            "visual_change_ratios": visual_changes,
+            "automatic_story_controls": args.content_dir is not None,
+        }
+        if args.content_dir is not None:
+            result["menu_navigation"]["expected_story_controls"] = [
+                "Story Seed",
+                "Story Calendar",
+                "Simulated Month/Day/Time",
+                "Playback Speed",
+                "Tide",
+                "Raft Stage",
+            ]
+        final_state = diagnostics(driver)
+        if final_state.get("pageErrors") or final_state.get("rejections"):
+            raise SmokeFailure(
+                "post-navigation page errors: "
+                f"{final_state.get('pageErrors')}; "
+                f"rejections: {final_state.get('rejections')}"
+            )
+        final_console = "\n".join(final_state.get("consoleErrors", []))
+        for fatal_message in fatal_messages:
+            if fatal_message in final_console:
+                raise SmokeFailure(
+                    "post-navigation RetroArch log contains fatal error: "
+                    f"{fatal_message}"
+                )
+        result["final"] = final_state
         result["passed"] = True
         (artifacts / "result.json").write_text(
             json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8"
         )
-        print(f"PASS: Firefox loaded RetroArch and indexed 5 synthetic resources at {url}")
-        print(f"PASS: canvas is {canvas['width']}x{canvas['height']} and menu screenshot changed")
+        print(f"PASS: Firefox loaded RetroArch with {content_description} at {url}")
+        print(
+            f"PASS: canvas is {canvas['width']}x{canvas['height']}; "
+            "Core Options and Story category rendered"
+        )
         print(f"Artifacts: {artifacts.relative_to(ROOT)}")
         return 0
     except Exception as error:

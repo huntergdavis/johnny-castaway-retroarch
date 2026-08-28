@@ -320,9 +320,9 @@ static void draw_circle(jc_surface_t *surface, int x1, int y1,
         if (y - x <= 1)
             break;
         if (decision < 0)
-            decision += (x << 1) + 3;
+            decision += 2 * x + 3;
         else {
-            decision += ((x - y) << 1) + 5;
+            decision += 2 * (x - y) + 5;
             --y;
         }
         ++x;
@@ -346,9 +346,9 @@ static void draw_circle(jc_surface_t *surface, int x1, int y1,
         if (y - x <= 1)
             break;
         if (decision < 0)
-            decision += (x << 1) + 3;
+            decision += 2 * x + 3;
         else {
-            decision += ((x - y) << 1) + 5;
+            decision += 2 * (x - y) + 5;
             --y;
         }
         ++x;

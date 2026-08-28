@@ -51,6 +51,13 @@ of their respective rights holders. This repository distributes none of that con
   blocking/platform drawing with new deterministic, bounded C99 state machines; the
   exact copied or translated data tables remain identified separately in
   `docs/PROVENANCE.md`.
+- The tide and raft Core Options follow that PS1 revision's `AUTO/HIGH/LOW` and
+  `AUTO/NONE/1..5` pause-menu controls, override precedence, scene-local `NORAFT`
+  rule, and island sprite composition. The exact references are
+  `src/host/story.c`, `src/pause_menu/option_helpers.c.inc`, `src/scene/island.c`,
+  and `src/ads/foreground_bridge.c.inc`; the portable option plumbing, simulated
+  calendar, deterministic seed choices, playback-speed behavior, and save-state
+  encoding are new work for this core.
 - The optional `sound0.wav` through `sound24.wav` sibling convention (with IDs 11 and
   13 absent) also follows that PlayStation revision. The portable VFS/stdio loader is
   new code. No original Sierra/Dynamix WAV is bundled, licensed, or redistributable by

@@ -15,6 +15,7 @@
 #include "jc_scr.h"
 #include "jc_sfx.h"
 #include "jc_story_player.h"
+#include "jc_story_options.h"
 #include "jc_wav.h"
 #include "libretro.h"
 
@@ -37,11 +38,53 @@
 #define STORY_PLAN_SEED 24u
 #define WALK_RUNTIME_SEED_XOR 0x57414c4bu
 
+#define JC_STORY_CONTEXT_FLAG (UINT32_C(1) << 31)
+#define JC_STORY_CONTEXT_YDAY_SHIFT 8u
+#define JC_STORY_CONTEXT_HOUR_SHIFT 17u
+#define JC_STORY_CONTEXT_MONTH_SHIFT 22u
+#define JC_STORY_CONTEXT_DAY_SHIFT 26u
+#define JC_STORY_CONTEXT_YDAY_MASK 0x1ffu
+#define JC_STORY_CONTEXT_HOUR_MASK 0x1fu
+#define JC_STORY_CONTEXT_MONTH_MASK 0x0fu
+#define JC_STORY_CONTEXT_DAY_MASK 0x1fu
+#define JC_STORY_CONTEXT_FIELDS_MASK \
+    ((JC_STORY_CONTEXT_YDAY_MASK << JC_STORY_CONTEXT_YDAY_SHIFT) | \
+     (JC_STORY_CONTEXT_HOUR_MASK << JC_STORY_CONTEXT_HOUR_SHIFT) | \
+     (JC_STORY_CONTEXT_MONTH_MASK << JC_STORY_CONTEXT_MONTH_SHIFT) | \
+     (JC_STORY_CONTEXT_DAY_MASK << JC_STORY_CONTEXT_DAY_SHIFT))
+
+#define JC_STORY_STATE_V2_DAY_SHIFT 0u
+#define JC_STORY_STATE_V2_SCENE_SHIFT 4u
+#define JC_STORY_STATE_V2_TRANSITION_SHIFT 9u
+#define JC_STORY_STATE_V2_FADE_SEQUENCE_SHIFT 11u
+#define JC_STORY_STATE_V2_PROGRESS_SHIFT 14u
+#define JC_STORY_STATE_V2_LOW_TIDE_SHIFT 25u
+#define JC_STORY_STATE_V2_RAFT_SHIFT 26u
+#define JC_STORY_STATE_V2_REPEAT_PLAN_SHIFT 29u
+#define JC_STORY_STATE_V2_DAY_MASK 0x0fu
+#define JC_STORY_STATE_V2_SCENE_MASK 0x1fu
+#define JC_STORY_STATE_V2_TRANSITION_MASK 0x03u
+#define JC_STORY_STATE_V2_FADE_SEQUENCE_MASK 0x07u
+#define JC_STORY_STATE_V2_PROGRESS_MASK 0x7ffu
+#define JC_STORY_STATE_V2_RAFT_MASK 0x07u
+
 typedef enum jc_automatic_transition {
     JC_AUTOMATIC_TRANSITION_NONE = 0,
     JC_AUTOMATIC_TRANSITION_WALK,
     JC_AUTOMATIC_TRANSITION_FADE_OUT
 } jc_automatic_transition_t;
+
+typedef enum jc_story_calendar_mode {
+    JC_STORY_CALENDAR_SYSTEM = 0,
+    JC_STORY_CALENDAR_SIMULATED
+} jc_story_calendar_mode_t;
+
+typedef struct jc_story_calendar_context {
+    int yday;
+    uint8_t hour;
+    uint8_t month;
+    uint8_t month_day;
+} jc_story_calendar_context_t;
 
 #define JC_LIBRETRO_STATE_MAGIC 0x3253434au
 #define JC_LIBRETRO_STATE_VERSION 2u
@@ -78,7 +121,8 @@ enum jc_story_state_transition {
      JC_LIBRETRO_STATE_FLAG_CAPTION_ACTIVE | \
      JC_LIBRETRO_STATE_FLAG_DIAGNOSTIC | \
      JC_LIBRETRO_STATE_FLAG_RESET_PRESSED | \
-     JC_LIBRETRO_STATE_FLAG_AUTOMATIC_STORY)
+     JC_LIBRETRO_STATE_FLAG_AUTOMATIC_STORY | \
+     JC_STORY_CONTEXT_FLAG | JC_STORY_CONTEXT_FIELDS_MASK)
 
 static retro_environment_t environment_cb;
 static retro_video_refresh_t video_cb;
@@ -108,6 +152,7 @@ static jc_fade_t scene_fade;
 static jc_island_walk_t island_walk;
 static jc_bmp_t johnny_walk_sprites;
 static jc_bmp_t island_sprites;
+static jc_bmp_t raft_sprites;
 static uint8_t *walk_frame_pixels;
 static jc_surface_t walk_frame;
 static bool walk_resources_ready;
@@ -123,6 +168,17 @@ static uint8_t *ocean_pcm;
 static jc_vag_info_t ocean_info;
 static bool ocean_enabled = true;
 static unsigned ocean_volume = 56u;
+static uint32_t story_seed = STORY_PLAN_SEED;
+static jc_story_calendar_mode_t story_calendar_mode = JC_STORY_CALENDAR_SYSTEM;
+static uint8_t simulated_month = 1u;
+static uint8_t simulated_month_day = 1u;
+static uint8_t simulated_hour = 12u;
+static jc_story_calendar_context_t active_story_calendar;
+static bool active_story_calendar_ready;
+static bool active_story_first_sequence;
+static unsigned playback_speed = 1u;
+static int tide_override = -1;
+static int raft_override = -1;
 static bool chapter_options_populated;
 static char legacy_chapter_value[LEGACY_CHAPTER_BYTES];
 static bool holiday_options_populated;
@@ -130,6 +186,12 @@ static char legacy_holiday_value[LEGACY_HOLIDAY_BYTES];
 static jc_holiday_overlay_selection_t holiday_selection;
 static bool initial_screen_visibility_known;
 static bool initial_screen_option_visible;
+static bool automatic_options_visibility_known;
+static bool automatic_options_visible;
+static bool simulated_options_visibility_known;
+static bool simulated_options_visible;
+static bool playback_speed_visibility_known;
+static bool playback_speed_option_visible;
 
 static const char *const serialized_screen_names[] = {
     "INTRO.SCR", "ISLAND2.SCR", "NIGHT.SCR", "JOFFICE.SCR",
@@ -160,6 +222,30 @@ static uint64_t read_u64le(const uint8_t *data)
 {
     return (uint64_t)read_u32le(data) |
            ((uint64_t)read_u32le(data + 4u) << 32);
+}
+
+static uint32_t pack_story_calendar(
+    const jc_story_calendar_context_t *calendar)
+{
+    return JC_STORY_CONTEXT_FLAG |
+           ((uint32_t)calendar->yday << JC_STORY_CONTEXT_YDAY_SHIFT) |
+           ((uint32_t)calendar->hour << JC_STORY_CONTEXT_HOUR_SHIFT) |
+           ((uint32_t)calendar->month << JC_STORY_CONTEXT_MONTH_SHIFT) |
+           ((uint32_t)calendar->month_day << JC_STORY_CONTEXT_DAY_SHIFT);
+}
+
+static void unpack_story_calendar(uint32_t flags,
+                                  jc_story_calendar_context_t *calendar)
+{
+    calendar->yday = (int)((flags >> JC_STORY_CONTEXT_YDAY_SHIFT) &
+                           JC_STORY_CONTEXT_YDAY_MASK);
+    calendar->hour = (uint8_t)((flags >> JC_STORY_CONTEXT_HOUR_SHIFT) &
+                               JC_STORY_CONTEXT_HOUR_MASK);
+    calendar->month = (uint8_t)((flags >> JC_STORY_CONTEXT_MONTH_SHIFT) &
+                                JC_STORY_CONTEXT_MONTH_MASK);
+    calendar->month_day =
+        (uint8_t)((flags >> JC_STORY_CONTEXT_DAY_SHIFT) &
+                  JC_STORY_CONTEXT_DAY_MASK);
 }
 
 static struct retro_core_option_v2_category option_categories[] = {
@@ -207,6 +293,130 @@ static struct retro_core_option_v2_definition option_definitions[] = {
         NULL,
         "story",
         {{NULL, NULL}},
+        "auto"
+    },
+    {
+        "johnny_castaway_story_seed",
+        "Automatic Story Seed",
+        "Story Seed",
+        "Choose the deterministic seed used when Automatic Story restarts. The same seed and calendar produce the same plan. Changes restart Automatic Story immediately.",
+        NULL,
+        "story",
+        {
+            {"1", "1"}, {"2", "2"}, {"3", "3"}, {"4", "4"},
+            {"8", "8"}, {"16", "16"}, {"24", "24 — Default"},
+            {"32", "32"}, {"42", "42"}, {"64", "64"},
+            {"128", "128"}, {"256", "256"}, {"512", "512"},
+            {"1024", "1024"}, {"65535", "65535"},
+            {"305419896", "305419896 (0x12345678)"},
+            {NULL, NULL}
+        },
+        "24"
+    },
+    {
+        "johnny_castaway_story_calendar",
+        "Automatic Story Calendar",
+        "Story Calendar",
+        "Use the frontend device calendar or a deterministic simulated month, day, and hour for story planning. Changes restart Automatic Story immediately.",
+        NULL,
+        "story",
+        {
+            {"system", "System Calendar"},
+            {"simulated", "Simulated Calendar"},
+            {NULL, NULL}
+        },
+        "system"
+    },
+    {
+        "johnny_castaway_simulated_month",
+        "Simulated Calendar Month",
+        "Simulated Month",
+        "Set the month used by Automatic Story when Simulated Calendar is selected.",
+        NULL,
+        "story",
+        {
+            {"1", "January"}, {"2", "February"}, {"3", "March"},
+            {"4", "April"}, {"5", "May"}, {"6", "June"},
+            {"7", "July"}, {"8", "August"}, {"9", "September"},
+            {"10", "October"}, {"11", "November"},
+            {"12", "December"}, {NULL, NULL}
+        },
+        "1"
+    },
+    {
+        "johnny_castaway_simulated_day",
+        "Simulated Calendar Day",
+        "Simulated Day",
+        "Set the day of month used by Automatic Story. Invalid dates are clamped to the selected month's last day.",
+        NULL,
+        "story",
+        {
+            {"1", "1"}, {"2", "2"}, {"3", "3"}, {"4", "4"},
+            {"5", "5"}, {"6", "6"}, {"7", "7"}, {"8", "8"},
+            {"9", "9"}, {"10", "10"}, {"11", "11"}, {"12", "12"},
+            {"13", "13"}, {"14", "14"}, {"15", "15"},
+            {"16", "16"}, {"17", "17"}, {"18", "18"},
+            {"19", "19"}, {"20", "20"}, {"21", "21"},
+            {"22", "22"}, {"23", "23"}, {"24", "24"},
+            {"25", "25"}, {"26", "26"}, {"27", "27"},
+            {"28", "28"}, {"29", "29"}, {"30", "30"},
+            {"31", "31"}, {NULL, NULL}
+        },
+        "1"
+    },
+    {
+        "johnny_castaway_simulated_hour",
+        "Simulated Calendar Time",
+        "Simulated Time",
+        "Set the local hour used for Automatic Story day/night planning.",
+        NULL,
+        "story",
+        {
+            {"0", "Midnight (00:00)"}, {"6", "Morning (06:00)"},
+            {"12", "Noon (12:00)"}, {"18", "Evening (18:00)"},
+            {"23", "Night (23:00)"}, {NULL, NULL}
+        },
+        "12"
+    },
+    {
+        "johnny_castaway_playback_speed",
+        "Story Playback Speed",
+        "Playback Speed",
+        "Advance one to four deterministic story ticks per video frame. Audio output remains 44.1 kHz with 882 frames per callback.",
+        NULL,
+        "story",
+        {
+            {"1", "1x — Original"}, {"2", "2x"},
+            {"3", "3x"}, {"4", "4x"}, {NULL, NULL}
+        },
+        "1"
+    },
+    {
+        "johnny_castaway_tide",
+        "Automatic Story Tide",
+        "Tide",
+        "Use the original planned tide or force the automatic island presentation to high or low tide. Changes restart Automatic Story immediately.",
+        NULL,
+        "story",
+        {
+            {"auto", "Automatic"}, {"high", "Force High Tide"},
+            {"low", "Force Low Tide"}, {NULL, NULL}
+        },
+        "auto"
+    },
+    {
+        "johnny_castaway_raft_stage",
+        "Automatic Story Raft Stage",
+        "Raft Stage",
+        "Use the story day, hide the raft, or force construction stage 1 through 5. Scenes marked No Raft always suppress it. Changes restart Automatic Story immediately.",
+        NULL,
+        "story",
+        {
+            {"auto", "Automatic"}, {"0", "None"},
+            {"1", "Stage 1"}, {"2", "Stage 2"},
+            {"3", "Stage 3"}, {"4", "Stage 4"},
+            {"5", "Stage 5"}, {NULL, NULL}
+        },
         "auto"
     },
     {
@@ -376,6 +586,22 @@ static struct retro_variable legacy_options[] = {
      "Story Initial Screen; intro|island_day|island_night|office|suzy_beach|ending"},
     {"johnny_castaway_chapter", NULL},
     {"johnny_castaway_holiday_overlay", NULL},
+    {"johnny_castaway_story_seed",
+     "Automatic Story Seed; 24|1|2|3|4|8|16|32|42|64|128|256|512|1024|65535|305419896"},
+    {"johnny_castaway_story_calendar",
+     "Automatic Story Calendar; system|simulated"},
+    {"johnny_castaway_simulated_month",
+     "Simulated Calendar Month; 1|2|3|4|5|6|7|8|9|10|11|12"},
+    {"johnny_castaway_simulated_day",
+     "Simulated Calendar Day; 1|2|3|4|5|6|7|8|9|10|11|12|13|14|15|16|17|18|19|20|21|22|23|24|25|26|27|28|29|30|31"},
+    {"johnny_castaway_simulated_hour",
+     "Simulated Calendar Time; 12|0|6|18|23"},
+    {"johnny_castaway_playback_speed",
+     "Story Playback Speed; 1|2|3|4"},
+    {"johnny_castaway_tide",
+     "Automatic Story Tide; auto|high|low"},
+    {"johnny_castaway_raft_stage",
+     "Automatic Story Raft Stage; auto|0|1|2|3|4|5"},
     {"johnny_castaway_display_source",
      "Video Display Source; original|diagnostic"},
     {"johnny_castaway_audio_enabled",
@@ -502,28 +728,87 @@ static void populate_holiday_options(void)
     holiday_options_populated = true;
 }
 
+static bool set_option_group_visibility(const char *const *keys,
+                                        size_t key_count, bool visible,
+                                        bool *known, bool *current)
+{
+    size_t index;
+    bool changed = false;
+
+    if (environment_cb == NULL || keys == NULL || known == NULL ||
+        current == NULL)
+        return false;
+    if (*known && *current == visible)
+        return false;
+    for (index = 0u; index < key_count; ++index) {
+        struct retro_core_option_display display = {keys[index], visible};
+        if (environment_cb(RETRO_ENVIRONMENT_SET_CORE_OPTIONS_DISPLAY,
+                           &display))
+            changed = true;
+    }
+    *known = true;
+    *current = visible;
+    return changed;
+}
+
 static bool RETRO_CALLCONV update_option_visibility(void)
 {
-    struct retro_variable variable = {
+    static const char *const initial_screen_keys[] = {
+        "johnny_castaway_initial_screen"
+    };
+    static const char *const automatic_keys[] = {
+        "johnny_castaway_story_seed",
+        "johnny_castaway_story_calendar",
+        "johnny_castaway_tide",
+        "johnny_castaway_raft_stage"
+    };
+    static const char *const simulated_keys[] = {
+        "johnny_castaway_simulated_month",
+        "johnny_castaway_simulated_day",
+        "johnny_castaway_simulated_hour"
+    };
+    static const char *const speed_keys[] = {
+        "johnny_castaway_playback_speed"
+    };
+    struct retro_variable chapter = {
         "johnny_castaway_chapter", NULL
     };
-    struct retro_core_option_display display = {
-        "johnny_castaway_initial_screen", false
+    struct retro_variable calendar = {
+        "johnny_castaway_story_calendar", NULL
     };
+    bool is_screen = false;
+    bool is_automatic = true;
+    bool is_simulated = false;
+    bool changed = false;
 
     if (environment_cb == NULL)
         return false;
-    if (environment_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &variable) &&
-        variable.value != NULL)
-        display.visible = strcmp(variable.value, "screen") == 0;
-    if (initial_screen_visibility_known &&
-        initial_screen_option_visible == display.visible)
-        return false;
-    if (!environment_cb(RETRO_ENVIRONMENT_SET_CORE_OPTIONS_DISPLAY, &display))
-        return false;
-    initial_screen_visibility_known = true;
-    initial_screen_option_visible = display.visible;
-    return true;
+    if (environment_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &chapter) &&
+        chapter.value != NULL) {
+        is_screen = strcmp(chapter.value, "screen") == 0;
+        is_automatic = strcmp(chapter.value, "automatic") == 0;
+    }
+    if (environment_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &calendar) &&
+        calendar.value != NULL)
+        is_simulated = strcmp(calendar.value, "simulated") == 0;
+
+    changed |= set_option_group_visibility(
+        initial_screen_keys, sizeof(initial_screen_keys) /
+                                 sizeof(initial_screen_keys[0]),
+        is_screen, &initial_screen_visibility_known,
+        &initial_screen_option_visible);
+    changed |= set_option_group_visibility(
+        automatic_keys, sizeof(automatic_keys) / sizeof(automatic_keys[0]),
+        is_automatic, &automatic_options_visibility_known,
+        &automatic_options_visible);
+    changed |= set_option_group_visibility(
+        simulated_keys, sizeof(simulated_keys) / sizeof(simulated_keys[0]),
+        is_automatic && is_simulated, &simulated_options_visibility_known,
+        &simulated_options_visible);
+    changed |= set_option_group_visibility(
+        speed_keys, sizeof(speed_keys) / sizeof(speed_keys[0]), !is_screen,
+        &playback_speed_visibility_known, &playback_speed_option_visible);
+    return changed;
 }
 
 static void register_core_options(retro_environment_t cb)
@@ -572,6 +857,82 @@ static void read_core_options(void)
             selected_chapter = active_chapter;
         else if (!automatic_story && strcmp(variable.value, "screen") != 0)
             selected_chapter = jc_chapter_lookup(variable.value);
+    }
+
+    variable.key = "johnny_castaway_story_seed";
+    variable.value = NULL;
+    if (environment_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &variable) &&
+        variable.value != NULL) {
+        char *end = NULL;
+        unsigned long parsed = strtoul(variable.value, &end, 10);
+        if (end != variable.value && end != NULL && *end == '\0' &&
+            parsed <= UINT32_MAX)
+            story_seed = (uint32_t)parsed;
+    }
+
+    variable.key = "johnny_castaway_story_calendar";
+    variable.value = NULL;
+    story_calendar_mode = JC_STORY_CALENDAR_SYSTEM;
+    if (environment_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &variable) &&
+        variable.value != NULL && strcmp(variable.value, "simulated") == 0)
+        story_calendar_mode = JC_STORY_CALENDAR_SIMULATED;
+
+    variable.key = "johnny_castaway_simulated_month";
+    variable.value = NULL;
+    if (environment_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &variable) &&
+        variable.value != NULL) {
+        unsigned parsed = (unsigned)strtoul(variable.value, NULL, 10);
+        if (parsed >= 1u && parsed <= 12u)
+            simulated_month = (uint8_t)parsed;
+    }
+
+    variable.key = "johnny_castaway_simulated_day";
+    variable.value = NULL;
+    if (environment_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &variable) &&
+        variable.value != NULL) {
+        unsigned parsed = (unsigned)strtoul(variable.value, NULL, 10);
+        if (parsed >= 1u && parsed <= 31u)
+            simulated_month_day = (uint8_t)parsed;
+    }
+
+    variable.key = "johnny_castaway_simulated_hour";
+    variable.value = NULL;
+    if (environment_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &variable) &&
+        variable.value != NULL) {
+        unsigned parsed = (unsigned)strtoul(variable.value, NULL, 10);
+        if (parsed < 24u)
+            simulated_hour = (uint8_t)parsed;
+    }
+
+    variable.key = "johnny_castaway_playback_speed";
+    variable.value = NULL;
+    playback_speed = 1u;
+    if (environment_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &variable) &&
+        variable.value != NULL) {
+        unsigned parsed = (unsigned)strtoul(variable.value, NULL, 10);
+        if (parsed >= 1u && parsed <= 4u)
+            playback_speed = parsed;
+    }
+
+    variable.key = "johnny_castaway_tide";
+    variable.value = NULL;
+    tide_override = -1;
+    if (environment_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &variable) &&
+        variable.value != NULL) {
+        if (strcmp(variable.value, "high") == 0)
+            tide_override = 0;
+        else if (strcmp(variable.value, "low") == 0)
+            tide_override = 1;
+    }
+
+    variable.key = "johnny_castaway_raft_stage";
+    variable.value = NULL;
+    raft_override = -1;
+    if (environment_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &variable) &&
+        variable.value != NULL && strcmp(variable.value, "auto") != 0) {
+        unsigned parsed = (unsigned)strtoul(variable.value, NULL, 10);
+        if (parsed <= 5u)
+            raft_override = (int)parsed;
     }
 
     variable.key = "johnny_castaway_holiday_overlay";
@@ -879,6 +1240,7 @@ static void unload_walk_resources(void)
 {
     reset_automatic_transition();
     jc_island_walk_destroy(&island_walk);
+    jc_bmp_free(&raft_sprites);
     jc_bmp_free(&island_sprites);
     jc_bmp_free(&johnny_walk_sprites);
     free(walk_frame_pixels);
@@ -921,6 +1283,7 @@ static bool load_content_bmp(const char *name, jc_bmp_t *bmp,
 static bool load_walk_resources(char *error, size_t error_size)
 {
     bool have_island_sprites;
+    bool have_raft_sprites;
 
     unload_walk_resources();
     if (!load_content_bmp("JOHNWALK.BMP", &johnny_walk_sprites,
@@ -930,6 +1293,13 @@ static bool load_walk_resources(char *error, size_t error_size)
                                            error, error_size);
     if (!have_island_sprites) {
         jc_bmp_free(&island_sprites);
+        if (error != NULL && error_size > 0u)
+            error[0] = '\0';
+    }
+    have_raft_sprites = load_content_bmp("MRAFT.BMP", &raft_sprites,
+                                         error, error_size);
+    if (!have_raft_sprites) {
+        jc_bmp_free(&raft_sprites);
         if (error != NULL && error_size > 0u)
             error[0] = '\0';
     }
@@ -988,22 +1358,169 @@ static bool initialize_story_runtime(char *error, size_t error_size)
     return true;
 }
 
-static void current_story_calendar(int *yday, uint8_t *hour,
-                                   uint8_t *month, uint8_t *month_day)
+static uint8_t story_days_in_month(uint8_t month)
+{
+    static const uint8_t days[] = {
+        31u, 28u, 31u, 30u, 31u, 30u,
+        31u, 31u, 30u, 31u, 30u, 31u
+    };
+
+    return month >= 1u && month <= 12u ? days[month - 1u] : 31u;
+}
+
+static bool story_calendar_valid(const jc_story_calendar_context_t *calendar)
+{
+    uint8_t maximum_day;
+
+    if (calendar == NULL || calendar->month < 1u || calendar->month > 12u)
+        return false;
+    maximum_day = story_days_in_month(calendar->month);
+    if (calendar->month == 2u)
+        maximum_day = 29u;
+    return calendar != NULL && calendar->yday >= 0 &&
+           calendar->yday <= 365 && calendar->hour < 24u &&
+           calendar->month_day >= 1u &&
+           calendar->month_day <= maximum_day;
+}
+
+static int story_simulated_yday(uint8_t month, uint8_t month_day)
+{
+    int yday = 0;
+    uint8_t index;
+
+    for (index = 1u; index < month; ++index)
+        yday += story_days_in_month(index);
+    return yday + (int)month_day - 1;
+}
+
+static void current_story_calendar(jc_story_calendar_context_t *result)
 {
     time_t now = time(NULL);
     struct tm *calendar = now == (time_t)-1 ? NULL : localtime(&now);
 
-    *yday = 0;
-    *hour = 12u;
-    *month = 1u;
-    *month_day = 1u;
-    if (calendar != NULL) {
-        *yday = calendar->tm_yday;
-        *hour = (uint8_t)calendar->tm_hour;
-        *month = (uint8_t)(calendar->tm_mon + 1);
-        *month_day = (uint8_t)calendar->tm_mday;
+    if (result == NULL)
+        return;
+    result->yday = 0;
+    result->hour = 12u;
+    result->month = 1u;
+    result->month_day = 1u;
+    if (story_calendar_mode == JC_STORY_CALENDAR_SIMULATED) {
+        uint8_t maximum_day = story_days_in_month(simulated_month);
+        result->month = simulated_month;
+        result->month_day = simulated_month_day > maximum_day
+                                ? maximum_day : simulated_month_day;
+        result->hour = simulated_hour;
+        result->yday = story_simulated_yday(result->month,
+                                             result->month_day);
+        return;
     }
+    if (calendar != NULL) {
+        result->yday = calendar->tm_yday;
+        result->hour = (uint8_t)calendar->tm_hour;
+        result->month = (uint8_t)(calendar->tm_mon + 1);
+        result->month_day = (uint8_t)calendar->tm_mday;
+    }
+}
+
+static bool restore_story_player_plan(
+    jc_story_player_t *player, uint32_t plan_seed, uint8_t story_day,
+    size_t scene_index, const jc_story_calendar_context_t *calendar,
+    bool first_sequence)
+{
+    jc_story_player_t candidate;
+
+    if (first_sequence)
+        return jc_story_player_restore(
+            player, plan_seed, story_day, scene_index, calendar->yday,
+            calendar->hour, calendar->month, calendar->month_day);
+    memset(&candidate, 0, sizeof(candidate));
+    jc_director_init(&candidate.director, story_day, calendar->yday);
+    candidate.director.first_sequence = false;
+    jc_rng_init(&candidate.planner_rng, plan_seed);
+    if (!jc_director_plan(&candidate.director, calendar->yday,
+                          calendar->hour, calendar->month,
+                          calendar->month_day, &candidate.planner_rng,
+                          &candidate.run) ||
+        candidate.run.scene_count == 0u ||
+        scene_index >= candidate.run.scene_count)
+        return false;
+    candidate.plan_seed = plan_seed;
+    candidate.scene_index = scene_index;
+    candidate.ready = true;
+    *player = candidate;
+    return true;
+}
+
+static void apply_story_island_options(jc_story_player_t *player)
+{
+    const jc_scene_play_t *final_scene;
+
+    if (player == NULL || !player->ready || player->run.scene_count == 0u)
+        return;
+    final_scene = &player->run.scenes[player->run.scene_count - 1u];
+    if (tide_override >= 0)
+        player->run.island.low_tide = tide_override != 0;
+    player->run.island.raft_stage = jc_story_effective_raft_stage(
+        player->run.island.raft_stage, raft_override,
+        final_scene->scene.flags);
+}
+
+static bool blit_story_sprite(jc_bmp_t *bmp, size_t frame,
+                              jc_surface_t *destination, int x, int y)
+{
+    jc_surface_t sprite;
+
+    if (bmp == NULL || destination == NULL ||
+        !jc_bmp_image_surface(bmp, frame, &sprite))
+        return false;
+    jc_surface_blit(destination, x, y, &sprite, 5, false);
+    return true;
+}
+
+static bool apply_story_island_overlays(
+    jc_runtime_t *target_runtime, const jc_story_player_t *player,
+    jc_script_error_t *error)
+{
+    const jc_scene_play_t *play = jc_story_player_current(player);
+    jc_surface_t *background;
+    int offset_x;
+    int offset_y;
+    uint8_t raft_stage;
+
+    if (target_runtime == NULL || play == NULL ||
+        (play->scene.flags & JC_SCENE_ISLAND) == 0u)
+        return true;
+    background = &target_runtime->renderer.background;
+    offset_x = player->run.island.x;
+    offset_y = player->run.island.y;
+    raft_stage = player->run.island.raft_stage;
+
+    if (raft_stage >= 1u && raft_stage <= 5u &&
+        raft_sprites.image_count >= raft_stage) {
+        int x = player->run.island.low_tide ? 529 : 512;
+        int y = player->run.island.low_tide ? 281 : 266;
+        if (!blit_story_sprite(&raft_sprites, raft_stage - 1u, background,
+                               x + offset_x, y + offset_y))
+            return false;
+    }
+    if (player->run.island.low_tide && island_sprites.image_count > 14u) {
+        static const struct {
+            int x;
+            int y;
+            size_t frame;
+        } sprites[] = {
+            {288, 279, 0u}, {442, 148, 13u}, {365, 122, 12u},
+            {396, 279, 14u}, {249, 303, 1u}, {150, 328, 2u}
+        };
+        size_t index;
+        for (index = 0u; index < sizeof(sprites) / sizeof(sprites[0]); ++index) {
+            if (!blit_story_sprite(&island_sprites, sprites[index].frame,
+                                   background, sprites[index].x + offset_x,
+                                   sprites[index].y + offset_y))
+                return false;
+        }
+    }
+    return jc_ttm_renderer_compose(&target_runtime->renderer, error);
 }
 
 static bool start_automatic_scene(char *error, size_t error_size)
@@ -1065,17 +1582,19 @@ static bool start_automatic_scene(char *error, size_t error_size)
 
 static bool restart_automatic_story(char *error, size_t error_size)
 {
-    int yday;
-    uint8_t hour;
-    uint8_t month;
-    uint8_t month_day;
+    jc_story_calendar_context_t calendar;
 
-    current_story_calendar(&yday, &hour, &month, &month_day);
-    if (!jc_story_player_start(&story_player, STORY_PLAN_SEED, 1u, yday,
-                               hour, month, month_day)) {
+    current_story_calendar(&calendar);
+    if (!jc_story_player_start(&story_player, story_seed, 1u, calendar.yday,
+                               calendar.hour, calendar.month,
+                               calendar.month_day)) {
         snprintf(error, error_size, "could not plan automatic story");
         return false;
     }
+    active_story_calendar = calendar;
+    active_story_calendar_ready = true;
+    active_story_first_sequence = true;
+    apply_story_island_options(&story_player);
     fade_sequence = 0u;
     reset_automatic_transition();
     return start_automatic_scene(error, error_size);
@@ -1094,6 +1613,8 @@ static bool start_selected_presentation(char *error, size_t error_size)
     }
     if (diagnostic_display) {
         memset(&story_player, 0, sizeof(story_player));
+        active_story_calendar_ready = false;
+        active_story_first_sequence = false;
         selected_chapter = NULL;
         if (!jc_runtime_reset(runtime, &script_error)) {
             snprintf(error, error_size, "runtime reset: %s",
@@ -1106,6 +1627,8 @@ static bool start_selected_presentation(char *error, size_t error_size)
     if (automatic_story)
         return restart_automatic_story(error, error_size);
     memset(&story_player, 0, sizeof(story_player));
+    active_story_calendar_ready = false;
+    active_story_first_sequence = false;
     if (selected_chapter != NULL) {
         char ads_name[JC_RESOURCE_NAME_BYTES + 1u];
         int written = snprintf(ads_name, sizeof(ads_name), "%s.ADS",
@@ -1140,17 +1663,21 @@ static bool start_selected_presentation(char *error, size_t error_size)
 
 static bool advance_automatic_scene(char *error, size_t error_size)
 {
-    int yday;
-    uint8_t hour;
-    uint8_t month;
-    uint8_t month_day;
+    jc_story_calendar_context_t calendar;
+    uint32_t previous_plan_seed = story_player.plan_seed;
 
-    current_story_calendar(&yday, &hour, &month, &month_day);
-    if (!jc_story_player_advance(&story_player, yday, hour, month,
-                                 month_day)) {
+    current_story_calendar(&calendar);
+    if (!jc_story_player_advance(&story_player, calendar.yday, calendar.hour,
+                                 calendar.month, calendar.month_day)) {
         snprintf(error, error_size,
                  "could not advance the automatic story plan");
         return false;
+    }
+    if (story_player.plan_seed != previous_plan_seed) {
+        active_story_calendar = calendar;
+        active_story_calendar_ready = true;
+        active_story_first_sequence = false;
+        apply_story_island_options(&story_player);
     }
     return start_automatic_scene(error, error_size);
 }
@@ -1270,8 +1797,18 @@ static void tick_story_runtime(void)
     }
     result = jc_runtime_tick(runtime, &error);
     if (result == JC_SCRIPT_TICK_FRAME) {
-        const jc_surface_t *surface = jc_runtime_output(runtime);
+        const jc_surface_t *surface;
         const jc_palette_t *palette = jc_runtime_palette(runtime);
+        if (automatic_story &&
+            !apply_story_island_overlays(runtime, &story_player, &error)) {
+            runtime_failed = true;
+            if (log_cb != NULL)
+                log_cb(RETRO_LOG_ERROR,
+                       "Johnny Castaway island presentation: %s\n",
+                       error.message);
+            return;
+        }
+        surface = jc_runtime_output(runtime);
         if (surface != NULL && palette != NULL) {
             walk_palette = *palette;
             walk_palette_ready = true;
@@ -1336,12 +1873,17 @@ static void present_video_frame(void)
             video_output, JC_FRAME_WIDTH, JC_FRAME_HEIGHT, JC_FRAME_WIDTH,
             holiday, holiday_anchor, NULL);
     }
-    if (automatic_transition == JC_AUTOMATIC_TRANSITION_FADE_OUT &&
-        jc_fade_is_active(&scene_fade)) {
-        (void)jc_fade_apply(&scene_fade, video_output, JC_FRAME_WIDTH,
-                            JC_FRAME_HEIGHT, JC_FRAME_WIDTH, 0x00000000u);
-        jc_fade_advance(&scene_fade);
-        ++automatic_transition_ticks;
+    if (automatic_transition == JC_AUTOMATIC_TRANSITION_FADE_OUT) {
+        unsigned tick;
+
+        if (jc_fade_is_active(&scene_fade))
+            (void)jc_fade_apply(&scene_fade, video_output, JC_FRAME_WIDTH,
+                                JC_FRAME_HEIGHT, JC_FRAME_WIDTH, 0x00000000u);
+        for (tick = 0u; tick < playback_speed &&
+                        jc_fade_is_active(&scene_fade); ++tick) {
+            jc_fade_advance(&scene_fade);
+            ++automatic_transition_ticks;
+        }
     }
     video_cb(video_output, JC_FRAME_WIDTH, JC_FRAME_HEIGHT,
              JC_FRAME_WIDTH * sizeof(uint32_t));
@@ -1401,6 +1943,9 @@ void retro_set_environment(retro_environment_t cb)
 
     environment_cb = cb;
     initial_screen_visibility_known = false;
+    automatic_options_visibility_known = false;
+    simulated_options_visibility_known = false;
+    playback_speed_visibility_known = false;
     register_core_options(cb);
     cb(RETRO_ENVIRONMENT_SET_CORE_OPTIONS_UPDATE_DISPLAY_CALLBACK,
        (void *)&display_callback);
@@ -1462,6 +2007,7 @@ void retro_init(void)
     memset(&island_walk, 0, sizeof(island_walk));
     memset(&johnny_walk_sprites, 0, sizeof(johnny_walk_sprites));
     memset(&island_sprites, 0, sizeof(island_sprites));
+    memset(&raft_sprites, 0, sizeof(raft_sprites));
     walk_frame_pixels = NULL;
     memset(&walk_frame, 0, sizeof(walk_frame));
     walk_resources_ready = false;
@@ -1471,6 +2017,17 @@ void retro_init(void)
     holiday_selection.holiday_id = 0;
     ocean_enabled = true;
     ocean_volume = 56u;
+    story_seed = STORY_PLAN_SEED;
+    story_calendar_mode = JC_STORY_CALENDAR_SYSTEM;
+    simulated_month = 1u;
+    simulated_month_day = 1u;
+    simulated_hour = 12u;
+    memset(&active_story_calendar, 0, sizeof(active_story_calendar));
+    active_story_calendar_ready = false;
+    active_story_first_sequence = false;
+    playback_speed = 1u;
+    tide_override = -1;
+    raft_override = -1;
     jc_audio_init(&audio);
     jc_sfx_init(&sfx);
     jc_captions_init(&captions);
@@ -1504,7 +2061,7 @@ void retro_get_system_info(struct retro_system_info *info)
 {
     memset(info, 0, sizeof(*info));
     info->library_name = "Johnny Castaway";
-    info->library_version = "0.1.0-dev";
+    info->library_version = "0.1.0";
     info->valid_extensions = "map|001";
     info->need_fullpath = true;
     info->block_extract = false;
@@ -1546,6 +2103,7 @@ void retro_run(void)
 {
     bool pressed;
     bool options_updated = false;
+    unsigned story_tick;
 
     if (environment_cb != NULL &&
         environment_cb(RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE, &options_updated) &&
@@ -1557,6 +2115,13 @@ void retro_run(void)
         bool previous_ocean_enabled = ocean_enabled;
         unsigned previous_ocean_volume = ocean_volume;
         bool previous_captions_enabled = captions.enabled;
+        uint32_t previous_story_seed = story_seed;
+        jc_story_calendar_mode_t previous_calendar_mode = story_calendar_mode;
+        uint8_t previous_simulated_month = simulated_month;
+        uint8_t previous_simulated_month_day = simulated_month_day;
+        uint8_t previous_simulated_hour = simulated_hour;
+        int previous_tide_override = tide_override;
+        int previous_raft_override = raft_override;
         char error[256];
         memcpy(previous_screen, selected_screen, sizeof(previous_screen));
         read_core_options();
@@ -1566,7 +2131,15 @@ void retro_run(void)
              previous_automatic_story != automatic_story ||
              previous_chapter != selected_chapter ||
              (selected_chapter == NULL &&
-              strcmp(previous_screen, selected_screen) != 0)) &&
+              strcmp(previous_screen, selected_screen) != 0) ||
+             (automatic_story && previous_automatic_story &&
+              (previous_story_seed != story_seed ||
+               previous_calendar_mode != story_calendar_mode ||
+               previous_simulated_month != simulated_month ||
+               previous_simulated_month_day != simulated_month_day ||
+               previous_simulated_hour != simulated_hour ||
+               previous_tide_override != tide_override ||
+               previous_raft_override != raft_override))) &&
             !start_selected_presentation(error, sizeof(error)) &&
             log_cb != NULL)
             log_cb(RETRO_LOG_ERROR, "Johnny Castaway option update: %s\n", error);
@@ -1591,11 +2164,13 @@ void retro_run(void)
 
     if (game_loaded) {
         jc_core_step(&core);
-        tick_story_runtime();
+        for (story_tick = 0u; story_tick < playback_speed; ++story_tick)
+            tick_story_runtime();
     }
 
     present_video_frame();
-    jc_captions_tick(&captions);
+    for (story_tick = 0u; story_tick < playback_speed; ++story_tick)
+        jc_captions_tick(&captions);
     jc_audio_mix(&audio, audio_output, AUDIO_FRAMES_PER_VIDEO_FRAME);
     audio_batch_cb(audio_output, AUDIO_FRAMES_PER_VIDEO_FRAME);
 }
@@ -1799,14 +2374,20 @@ bool retro_serialize(void *data, size_t size)
             if (play == NULL || selected_chapter == NULL ||
                 story_player.director.current_day < 1u ||
                 story_player.director.current_day > 11u ||
-                story_player.scene_index > UINT8_MAX ||
+                story_player.scene_index > JC_STORY_STATE_V2_SCENE_MASK ||
+                story_player.run.island.raft_stage > 5u ||
+                !active_story_calendar_ready ||
+                !story_calendar_valid(&active_story_calendar) ||
                 jc_chapter_for_ads(play->scene.ads_name,
                                    play->scene.ads_tag) != selected_chapter)
                 return false;
+            flags |= pack_story_calendar(&active_story_calendar);
             story_plan_seed = story_player.plan_seed;
             story_position =
-                (uint32_t)story_player.director.current_day |
-                ((uint32_t)story_player.scene_index << 8);
+                (uint32_t)story_player.director.current_day
+                    << JC_STORY_STATE_V2_DAY_SHIFT |
+                (uint32_t)story_player.scene_index
+                    << JC_STORY_STATE_V2_SCENE_SHIFT;
             runtime_seed = jc_story_player_runtime_seed(&story_player);
             if (fade_sequence >= JC_FADE_STYLE_COUNT)
                 return false;
@@ -1835,13 +2416,22 @@ bool retro_serialize(void *data, size_t size)
                 return false;
             }
             story_position |=
-                story_transition << JC_STORY_STATE_TRANSITION_SHIFT;
+                story_transition << JC_STORY_STATE_V2_TRANSITION_SHIFT;
             story_position |=
                 (fade_sequence & JC_STORY_STATE_FADE_SEQUENCE_MASK)
-                << JC_STORY_STATE_FADE_SEQUENCE_SHIFT;
+                << JC_STORY_STATE_V2_FADE_SEQUENCE_SHIFT;
             story_position |=
                 (story_progress & JC_STORY_STATE_PROGRESS_MASK)
-                << JC_STORY_STATE_PROGRESS_SHIFT;
+                << JC_STORY_STATE_V2_PROGRESS_SHIFT;
+            story_position |=
+                (story_player.run.island.low_tide ? 1u : 0u)
+                << JC_STORY_STATE_V2_LOW_TIDE_SHIFT;
+            story_position |=
+                (uint32_t)story_player.run.island.raft_stage
+                << JC_STORY_STATE_V2_RAFT_SHIFT;
+            story_position |=
+                (active_story_first_sequence ? 0u : 1u)
+                << JC_STORY_STATE_V2_REPEAT_PLAN_SHIFT;
         }
     }
     if (selected_chapter != NULL) {
@@ -1915,6 +2505,9 @@ bool retro_unserialize(const void *data, size_t size)
     uint32_t saved_story_transition = JC_STORY_STATE_PLAYING;
     uint32_t saved_fade_sequence = 0u;
     uint32_t saved_transition_progress = 0u;
+    bool saved_low_tide = false;
+    uint8_t saved_raft_stage = 0u;
+    bool saved_repeat_plan = false;
     uint64_t runtime_ticks;
     const jc_chapter_t *candidate_chapter = NULL;
     jc_captions_t candidate_captions;
@@ -1923,6 +2516,7 @@ bool retro_unserialize(const void *data, size_t size)
     jc_runtime_t *candidate_runtime = NULL;
     jc_runtime_t *old_runtime;
     jc_story_player_t candidate_story_player;
+    jc_story_calendar_context_t candidate_story_calendar = {0, 0u, 0u, 0u};
     jc_fade_t candidate_fade;
     jc_island_walk_t candidate_island_walk;
     uint8_t *candidate_walk_pixels = NULL;
@@ -1933,6 +2527,7 @@ bool retro_unserialize(const void *data, size_t size)
     int runtime_offset_x = 0;
     int runtime_offset_y = 0;
     bool automatic;
+    bool has_story_context;
     bool diagnostic;
     bool has_scene;
     bool finished;
@@ -1962,10 +2557,14 @@ bool retro_unserialize(const void *data, size_t size)
     diagnostic = (flags & JC_LIBRETRO_STATE_FLAG_DIAGNOSTIC) != 0u;
     automatic =
         (flags & JC_LIBRETRO_STATE_FLAG_AUTOMATIC_STORY) != 0u;
+    has_story_context = (flags & JC_STORY_CONTEXT_FLAG) != 0u;
     has_scene = (flags & JC_LIBRETRO_STATE_FLAG_RUNTIME_SCENE) != 0u;
     finished = (flags & JC_LIBRETRO_STATE_FLAG_RUNTIME_FINISHED) != 0u;
 
     if ((flags & ~JC_LIBRETRO_STATE_FLAGS_ALL) != 0u ||
+        (has_story_context && (!automatic || diagnostic)) ||
+        (!has_story_context &&
+         (flags & JC_STORY_CONTEXT_FIELDS_MASK) != 0u) ||
         screen_index >= sizeof(serialized_screen_names) /
                             sizeof(serialized_screen_names[0]) ||
         runtime_ticks > JC_LIBRETRO_STATE_MAX_RUNTIME_TICKS)
@@ -1982,32 +2581,73 @@ bool retro_unserialize(const void *data, size_t size)
     memset(&candidate_island_walk, 0, sizeof(candidate_island_walk));
     memset(&candidate_walk_frame, 0, sizeof(candidate_walk_frame));
     if (automatic && !diagnostic) {
-        int yday;
-        uint8_t hour;
-        uint8_t month;
-        uint8_t month_day;
-        uint8_t story_day = (uint8_t)(story_position & 0xffu);
-        size_t story_scene_index = (size_t)((story_position >> 8) & 0xffu);
+        uint8_t story_day;
+        size_t story_scene_index;
         const jc_scene_play_t *play;
+        const jc_scene_play_t *final_play;
 
-        saved_story_transition =
-            (story_position >> JC_STORY_STATE_TRANSITION_SHIFT) &
-            JC_STORY_STATE_TRANSITION_MASK;
-        saved_fade_sequence =
-            (story_position >> JC_STORY_STATE_FADE_SEQUENCE_SHIFT) &
-            JC_STORY_STATE_FADE_SEQUENCE_MASK;
-        saved_transition_progress =
-            (story_position >> JC_STORY_STATE_PROGRESS_SHIFT) &
-            JC_STORY_STATE_PROGRESS_MASK;
+        if (has_story_context) {
+            unpack_story_calendar(flags, &candidate_story_calendar);
+            if (!story_calendar_valid(&candidate_story_calendar))
+                return false;
+            story_day =
+                (uint8_t)((story_position >> JC_STORY_STATE_V2_DAY_SHIFT) &
+                          JC_STORY_STATE_V2_DAY_MASK);
+            story_scene_index =
+                (size_t)((story_position >> JC_STORY_STATE_V2_SCENE_SHIFT) &
+                         JC_STORY_STATE_V2_SCENE_MASK);
+            saved_story_transition =
+                (story_position >> JC_STORY_STATE_V2_TRANSITION_SHIFT) &
+                JC_STORY_STATE_V2_TRANSITION_MASK;
+            saved_fade_sequence =
+                (story_position >> JC_STORY_STATE_V2_FADE_SEQUENCE_SHIFT) &
+                JC_STORY_STATE_V2_FADE_SEQUENCE_MASK;
+            saved_transition_progress =
+                (story_position >> JC_STORY_STATE_V2_PROGRESS_SHIFT) &
+                JC_STORY_STATE_V2_PROGRESS_MASK;
+            saved_low_tide =
+                ((story_position >> JC_STORY_STATE_V2_LOW_TIDE_SHIFT) & 1u) !=
+                0u;
+            saved_raft_stage =
+                (uint8_t)((story_position >> JC_STORY_STATE_V2_RAFT_SHIFT) &
+                          JC_STORY_STATE_V2_RAFT_MASK);
+            saved_repeat_plan =
+                ((story_position >> JC_STORY_STATE_V2_REPEAT_PLAN_SHIFT) &
+                 1u) != 0u;
+            if (saved_raft_stage > 5u)
+                return false;
+        } else {
+            story_day = (uint8_t)(story_position & 0xffu);
+            story_scene_index = (size_t)((story_position >> 8) & 0xffu);
+            saved_story_transition =
+                (story_position >> JC_STORY_STATE_TRANSITION_SHIFT) &
+                JC_STORY_STATE_TRANSITION_MASK;
+            saved_fade_sequence =
+                (story_position >> JC_STORY_STATE_FADE_SEQUENCE_SHIFT) &
+                JC_STORY_STATE_FADE_SEQUENCE_MASK;
+            saved_transition_progress =
+                (story_position >> JC_STORY_STATE_PROGRESS_SHIFT) &
+                JC_STORY_STATE_PROGRESS_MASK;
+            current_story_calendar(&candidate_story_calendar);
+        }
         if (candidate_chapter == NULL || story_day < 1u || story_day > 11u ||
             saved_fade_sequence >= JC_FADE_STYLE_COUNT)
             return false;
-        current_story_calendar(&yday, &hour, &month, &month_day);
-        if (!jc_story_player_restore(
+        if (!restore_story_player_plan(
                 &candidate_story_player, story_plan_seed, story_day,
-                story_scene_index, yday, hour, month, month_day))
+                story_scene_index, &candidate_story_calendar,
+                !saved_repeat_plan))
             return false;
         play = jc_story_player_current(&candidate_story_player);
+        final_play = &candidate_story_player.run.scenes[
+            candidate_story_player.run.scene_count - 1u];
+        if (has_story_context) {
+            if ((final_play->scene.flags & JC_SCENE_NO_RAFT) != 0u &&
+                saved_raft_stage != 0u)
+                return false;
+            candidate_story_player.run.island.low_tide = saved_low_tide;
+            candidate_story_player.run.island.raft_stage = saved_raft_stage;
+        }
         if (play == NULL ||
             jc_chapter_for_ads(play->scene.ads_name,
                                play->scene.ads_tag) != candidate_chapter ||
@@ -2095,6 +2735,9 @@ bool retro_unserialize(const void *data, size_t size)
                                    diagnostic, has_scene, finished,
                                    runtime_ticks, seed, runtime_offset_x,
                                    runtime_offset_y) ||
+        (automatic && !diagnostic &&
+         !apply_story_island_overlays(candidate_runtime,
+                                      &candidate_story_player, NULL)) ||
         !restore_candidate_frame(candidate_core, candidate_runtime,
                                  candidate_chapter,
                                  serialized_screen_names[screen_index],
@@ -2166,6 +2809,10 @@ bool retro_unserialize(const void *data, size_t size)
     selected_chapter = candidate_chapter;
     automatic_story = automatic;
     story_player = candidate_story_player;
+    active_story_calendar = candidate_story_calendar;
+    active_story_calendar_ready = automatic && !diagnostic;
+    active_story_first_sequence = automatic && !diagnostic &&
+                                  !saved_repeat_plan;
     reset_automatic_transition();
     fade_sequence = saved_fade_sequence;
     automatic_transition = candidate_transition;

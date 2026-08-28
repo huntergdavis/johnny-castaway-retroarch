@@ -385,6 +385,20 @@ static void test_primitives_offsets_and_saved_zones(void)
                 output_at(&renderer, 1u, 1u) == 12u,
             "circle primitive produced no indexed pixels");
     jc_ttm_renderer_destroy(&renderer);
+
+    require(jc_ttm_renderer_init(&renderer, 32u, 32u, 5, &resource_api,
+                                 NULL, NULL, &error), error.message);
+    lifecycle = event_base(JC_SCRIPT_EVENT_SCENE_STARTED, 0u);
+    send_event(&renderer, &lifecycle);
+    args[0] = 0u; args[1] = 0u; args[2] = 32u; args[3] = 32u;
+    send_args(&renderer, 0xa404u, args, 4u, 12u, 6u);
+    frame(&renderer);
+    require(output_at(&renderer, 16u, 16u) == 6u,
+            "large circle fill did not reach its center");
+    require(output_at(&renderer, 16u, 0u) == 12u ||
+                output_at(&renderer, 15u, 0u) == 12u,
+            "large circle outline did not reach its upper edge");
+    jc_ttm_renderer_destroy(&renderer);
 }
 
 static void test_background_snapshot_and_errors(void)
