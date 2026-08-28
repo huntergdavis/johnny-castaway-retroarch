@@ -84,8 +84,47 @@ curl -fsS http://127.0.0.1:8080/ >/dev/null
 ```
 
 The checker verifies required files, WebAssembly magic, ZIP contents, local
-HTML dependencies, and absence of original Johnny resource archives. A full
-runtime test still requires a browser and the user's own lawful data files.
+HTML dependencies, and absence of original Johnny resource archives.
+
+### Automated real-browser test
+
+After building the distribution, run the optional Firefox smoke test:
+
+```sh
+python3 tools/web_smoke_test.py
+```
+
+The script uses the W3C WebDriver protocol directly, so no Python browser
+package is required. It needs Firefox and geckodriver; on a headless Linux
+machine it also needs `xvfb-run` and a software-capable Mesa installation. If
+those browser tools are absent the default command reports `SKIP` and exits
+successfully. Use this in an environment where the browser is mandatory:
+
+```sh
+python3 tools/web_smoke_test.py --require-browser
+```
+
+The test serves `build/web-player/dist/` on a random loopback port, starts a
+real Firefox process, loads the JS and WebAssembly runtime, selects two
+embedded synthetic files, and asserts that RetroArch:
+
+- registers the core's version 2 option set;
+- indexes all five synthetic resources;
+- reports the core's 640x480 geometry;
+- enables the menu button without a page error or unhandled rejection; and
+- renders a canvas whose screenshot changes after the Quick Menu opens.
+
+Evidence is written to `build/web-smoke/`: `result.json`,
+`geckodriver.log`, `game.png`, and `menu.png`. The embedded 61-byte MAP and
+1,126-byte archive are exact, checksum-verified outputs of
+`make_synthetic_content()` in `tests/test_libretro.c`. They contain only the
+project's tiny generated palette, screens, and scripts. The automated test
+does not find, read, copy, or require original Johnny Castaway data.
+
+Firefox's native headless mode did not expose a usable WebGL context in the
+development environment. When no display is already set, the runner therefore
+uses Xvfb and Mesa software rendering automatically. `--no-xvfb` is available
+for browser installations whose native headless WebGL is known to work.
 
 ## Reproducibility, credits, and licenses
 
@@ -94,9 +133,10 @@ The default revisions are pinned:
 - RetroArch `96a1b1a9cf3f9166affcfd7df4323aa58d5c281a`
 - retroarch-assets `73106363e14e34c08a5854b4cfbc29f184e3b783`
 
-Every generated distribution contains `BUILD-PROVENANCE.txt`, the project, CC0 ocean, and
-upstream license texts, and `WEB_PLAYER_NOTICE.md`. The notice identifies the
-exact upstream files from which the launcher and build process were derived.
+Every generated distribution contains `BUILD-PROVENANCE.txt`, the project,
+CC0 ocean and upstream license texts, and `WEB_PLAYER_NOTICE.md`. The notice
+identifies the exact upstream files from which the launcher and build process
+were derived.
 
 Primary sources:
 
@@ -106,6 +146,10 @@ Primary sources:
 - [RetroArch GPL-3.0 license](https://github.com/libretro/RetroArch/blob/96a1b1a9cf3f9166affcfd7df4323aa58d5c281a/COPYING)
 - [retroarch-assets CC BY 4.0 license](https://github.com/libretro/retroarch-assets/blob/73106363e14e34c08a5854b4cfbc29f184e3b783/COPYING)
 - [BrowserFS MIT notice](https://github.com/jvilk/BrowserFS/blob/76fd5122fcf3ad6bff3315550aafb041cfb6a72e/license.md)
+- [Mozilla geckodriver usage](https://firefox-source-docs.mozilla.org/testing/geckodriver/Usage.html)
+- [W3C WebDriver Recommendation](https://www.w3.org/TR/webdriver2/)
 
-The required `deja` recall query found no prior web-testing implementation to
-reuse; the provenance above records the primary sources used for this work.
+The required `deja` recall queries found no prior web-testing implementation
+or Snap Firefox/Xvfb fix to reuse. The test reuses the repository's synthetic
+fixture format from `tests/test_libretro.c`; the provenance above records the
+external primary sources used for the browser protocol and frontend.

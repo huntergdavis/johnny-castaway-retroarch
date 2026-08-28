@@ -230,6 +230,7 @@ jobs:
           node --check web/jc-web-player.js
           python3 tools/check_web_sources.py .
           python3 tools/check_web_dist.py --help >/dev/null
+          python3 tools/web_smoke_test.py --help >/dev/null
 
       - name: Upload Emscripten core and web source kit
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -242,6 +243,7 @@ jobs:
             scripts/serve-web.sh
             tools/check_web_dist.py
             tools/serve_web.py
+            tools/web_smoke_test.py
             web/
             LICENSE
             CREDITS.md

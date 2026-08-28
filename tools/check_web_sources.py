@@ -19,6 +19,7 @@ REQUIRED_FILES = (
     "scripts/serve-web.sh",
     "tools/check_web_dist.py",
     "tools/serve_web.py",
+    "tools/web_smoke_test.py",
     "web/index.html",
     "web/jc-web-player.js",
     "web/style.css",
