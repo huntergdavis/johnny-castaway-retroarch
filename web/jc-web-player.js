@@ -13,6 +13,8 @@ const menuButton = document.querySelector("#menu");
 const resetButton = document.querySelector("#reset");
 const fullscreenButton = document.querySelector("#fullscreen");
 const statusElement = document.querySelector("#status");
+const audioStateElement = document.querySelector("#audio-state");
+const audioUnlockButton = document.querySelector("#audio-unlock-button");
 const canvas = document.querySelector("#canvas");
 
 const retroarchRoot = "/home/web_user/retroarch";
@@ -31,6 +33,114 @@ const originalSoundIds = Array.from({ length: 25 }, (_, id) => id).filter(
 
 let moduleInstance = null;
 let running = false;
+const trackedAudioContexts = [];
+const trackedAudioContextSet = new WeakSet();
+
+function activeAudioContexts() {
+  return trackedAudioContexts.filter((context) => context.state !== "closed");
+}
+
+function renderAudioState() {
+  const contexts = activeAudioContexts();
+  const context = contexts[contexts.length - 1] || null;
+  audioStateElement.dataset.contextCount = String(contexts.length);
+  audioStateElement.dataset.sampleRate = context
+    ? String(context.sampleRate)
+    : "";
+  if (!context) {
+    audioStateElement.textContent = running
+      ? "Audio: starting…"
+      : "Audio: waiting for game";
+    audioStateElement.dataset.state = "waiting";
+    audioUnlockButton.disabled = true;
+    return;
+  }
+  if (context.state === "running") {
+    audioStateElement.textContent = "Audio: on";
+    audioStateElement.dataset.state = "running";
+    audioUnlockButton.disabled = true;
+    return;
+  }
+  if (context.state === "suspended" || context.state === "interrupted") {
+    audioStateElement.textContent = "Audio: locked by browser";
+    audioStateElement.dataset.state = "locked";
+    audioUnlockButton.disabled = false;
+    return;
+  }
+  audioStateElement.textContent = `Audio: ${context.state}`;
+  audioStateElement.dataset.state = "failed";
+  audioUnlockButton.disabled = true;
+}
+
+function trackAudioContext(context) {
+  if (!context || trackedAudioContextSet.has(context)) return;
+  trackedAudioContextSet.add(context);
+  trackedAudioContexts.push(context);
+  context.addEventListener("statechange", renderAudioState);
+  renderAudioState();
+}
+
+function installAudioContextTracker() {
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  const prototype = AudioContextClass?.prototype;
+  if (!prototype || prototype.__jcAudioContextTrackerInstalled) return;
+  const originalCreateBufferSource = prototype.createBufferSource;
+  prototype.createBufferSource = function (...createArguments) {
+    trackAudioContext(this);
+    return originalCreateBufferSource.apply(this, createArguments);
+  };
+  Object.defineProperty(prototype, "__jcAudioContextTrackerInstalled", {
+    value: true,
+  });
+
+  // RWebAudio tries resume() before it creates its first buffer source. When
+  // autoplay rejects that attempt there is no prototype call from which to
+  // discover the already-created context, so retain the real constructor
+  // result as a fallback. Subclassing preserves native instanceof/prototype
+  // behavior and static inheritance.
+  class TrackedAudioContext extends AudioContextClass {
+    constructor(...constructorArguments) {
+      super(...constructorArguments);
+      trackAudioContext(this);
+    }
+  }
+  if (window.AudioContext === AudioContextClass) {
+    window.AudioContext = TrackedAudioContext;
+  }
+  if (window.webkitAudioContext === AudioContextClass) {
+    window.webkitAudioContext = TrackedAudioContext;
+  }
+}
+
+async function unlockAudio() {
+  const lockedContexts = activeAudioContexts().filter(
+    (context) => context.state !== "running",
+  );
+  await Promise.allSettled(
+    lockedContexts.map(async (context) => {
+      try {
+        await context.resume();
+      } catch (error) {
+        console.warn("Could not resume browser audio:", error);
+      }
+    }),
+  );
+  renderAudioState();
+}
+
+function unlockAudioFromGesture() {
+  if (
+    activeAudioContexts().some(
+      (context) =>
+        context.state === "suspended" || context.state === "interrupted",
+    )
+  ) {
+    void unlockAudio();
+  }
+}
+
+installAudioContextTracker();
+renderAudioState();
 
 function installAudioSmokeProbe() {
   if (!new URLSearchParams(window.location.search).has("smoke")) return;
@@ -438,6 +548,7 @@ async function createModule() {
     },
     retroArchExit() {
       running = false;
+      renderAudioState();
       setStatus("RetroArch exited. Reload the page to start again.");
     },
   });
@@ -522,6 +633,7 @@ export async function start(pair = selectedPair(), coreOptions = null) {
     );
 
     running = true;
+    renderAudioState();
     menuButton.disabled = false;
     resetButton.disabled = false;
     fullscreenButton.disabled = false;
@@ -533,6 +645,8 @@ export async function start(pair = selectedPair(), coreOptions = null) {
     canvas.focus();
   } catch (error) {
     console.error(error);
+    running = false;
+    renderAudioState();
     setStatus(`Could not start: ${error.message}`, true);
     startButton.disabled = false;
     contentInput.disabled = false;
@@ -579,5 +693,15 @@ startButton.addEventListener("click", () => start());
 menuButton.addEventListener("click", () => sendCommand("MENU_TOGGLE"));
 resetButton.addEventListener("click", () => sendCommand("RESET"));
 fullscreenButton.addEventListener("click", () => sendCommand("FULLSCREEN_TOGGLE"));
+audioUnlockButton.addEventListener("click", async () => {
+  await unlockAudio();
+  canvas.focus();
+});
+document.addEventListener("pointerdown", unlockAudioFromGesture, true);
+document.addEventListener("keydown", unlockAudioFromGesture, true);
+document.addEventListener("touchstart", unlockAudioFromGesture, {
+  capture: true,
+  passive: true,
+});
 
 autoStartLocalContent();

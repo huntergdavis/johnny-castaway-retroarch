@@ -74,6 +74,13 @@ of their respective rights holders. This repository distributes none of that con
   and `src/ads/foreground_bridge.c.inc`; the portable option plumbing, simulated
   calendar, deterministic seed choices, playback-speed behavior, and save-state
   encoding are new work for this core.
+- The visible browser-audio state and user-gesture unlock flow adapt Hunter
+  Davis's GPLv3 `jc_reborn/docs/play/online/player.js` implementation at commit
+  `6316545c0c`. This port adds its own early `AudioContext` capture around the
+  real RetroArch buffer-source boundary because the linked module does not
+  promise a public `RWA` handle. A native-constructor subclass also retains the
+  real context when RetroArch's first blocked `resume()` returns before source
+  creation; the autoplay-blocked WebDriver regression locks this behavior.
 - The optional `sound0.wav` through `sound24.wav` sibling convention (with IDs 11 and
   13 absent) also follows that PlayStation revision. The portable VFS/stdio loader is
   new code. No original Sierra/Dynamix WAV is bundled, licensed, or redistributable by

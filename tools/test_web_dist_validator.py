@@ -163,6 +163,38 @@ class WebDistributionValidatorTests(unittest.TestCase):
 
 
 class WebDiagnosticProbeSourceTests(unittest.TestCase):
+    def test_audio_unlock_is_visible_tracks_real_contexts_and_is_browser_tested(self) -> None:
+        html = (ROOT / "web/index.html").read_text(encoding="utf-8")
+        player = (ROOT / "web/jc-web-player.js").read_text(encoding="utf-8")
+        harness = (ROOT / "tools/web_smoke_test.py").read_text(encoding="utf-8")
+        provenance = (ROOT / "docs/PROVENANCE.md").read_text(encoding="utf-8")
+        for marker in ("audio-state", "audio-unlock-button", "Enable Audio"):
+            self.assertIn(marker, html)
+        for marker in (
+            "installAudioContextTracker",
+            "class TrackedAudioContext extends AudioContextClass",
+            "prototype.createBufferSource",
+            "trackAudioContext(this)",
+            "context.resume()",
+            'context.state !== "closed"',
+            "audioStateElement.dataset.contextCount",
+            'addEventListener("pointerdown", unlockAudioFromGesture',
+            'addEventListener("keydown", unlockAudioFromGesture',
+            'addEventListener("touchstart", unlockAudioFromGesture',
+        ):
+            self.assertIn(marker, player)
+        for marker in (
+            "--test-audio-unlock",
+            '"media.autoplay.default": 5 if block_autoplay else 0',
+            '"media.autoplay.block-webaudio": block_autoplay',
+            "audio-blocked-01.png",
+            "canvas did not change while Web Audio autoplay was blocked",
+            "Web AudioContext to resume after Enable Audio",
+            "audio context to remain running after RetroArch reset",
+        ):
+            self.assertIn(marker, harness)
+        self.assertIn("6316545c0c", provenance)
+
     def test_webgl_probe_is_query_gated_bounded_and_metadata_only(self) -> None:
         player = (ROOT / "web/jc-web-player.js").read_text(encoding="utf-8")
         start = player.index("function installWebGLSmokeProbe()")

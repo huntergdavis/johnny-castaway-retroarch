@@ -27,6 +27,16 @@ The local launcher is intentionally smaller than the stock Web Player UI. It
 keeps the same RetroArch runtime and exposes a direct two-file content picker,
 plus menu, reset, and fullscreen commands.
 
+Its visible audio state, **Enable Audio** control, and pointer/keyboard/touch
+resume flow adapt the GPLv3 implementation in Hunter Davis's
+`jc_reborn/docs/play/online/player.js` at commit `6316545c0c`. This launcher
+captures the actual RetroArch WebAudio context by wrapping the standard
+`AudioContext.createBufferSource` boundary before module startup because the
+linked module does not promise a public `RWA` handle. A native-constructor subclass
+also retains the real context if a blocked initial `resume()` returns before
+RetroArch reaches source creation. It retains context references and scheduling
+metadata only; it does not inspect or retain samples.
+
 ## RetroArch assets
 
 - Project: <https://github.com/libretro/retroarch-assets>

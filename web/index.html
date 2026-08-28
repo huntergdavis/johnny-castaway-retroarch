@@ -31,6 +31,10 @@
       </section>
 
       <p id="status" class="status" role="status">Checking for locally staged Johnny data…</p>
+      <div class="audio-gate" aria-label="Browser audio controls">
+        <span id="audio-state" data-state="waiting" role="status">Audio: waiting for game</span>
+        <button id="audio-unlock-button" type="button" disabled>Enable Audio</button>
+      </div>
       <div class="screen">
         <canvas id="canvas" tabindex="0" aria-label="RetroArch video output"></canvas>
       </div>
@@ -41,7 +45,7 @@
           <li>The first build is slow because it compiles RetroArch; later builds are incremental.</li>
           <li>Use “RetroArch menu” to inspect every core option exposed by the port.</li>
           <li>Locally staged original data is served to anyone who can reach this test server; do not expose it publicly.</li>
-          <li>Audio may require one additional click after browser permission or autoplay prompts.</li>
+          <li>If browser autoplay is blocked, select “Enable Audio”; graphics continue while audio is locked.</li>
           <li>See <a href="WEB_PLAYER_NOTICE.md">credits, licenses, and provenance</a>.</li>
         </ul>
       </details>

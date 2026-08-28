@@ -57,6 +57,19 @@ button:disabled { opacity: .45; }
 .status { min-height: 1.6rem; color: #f1be58; }
 .status.error { color: #ff8d7e; }
 
+.audio-gate {
+  display: flex;
+  align-items: center;
+  gap: .8rem;
+  min-height: 3.2rem;
+  margin: -.4rem 0 .8rem;
+}
+
+#audio-state { color: #c9d8d0; }
+#audio-state[data-state="locked"] { color: #ffd477; }
+#audio-state[data-state="running"] { color: #8ed9b6; }
+#audio-state[data-state="failed"] { color: #ff8d7e; }
+
 .screen {
   display: grid;
   place-items: center;

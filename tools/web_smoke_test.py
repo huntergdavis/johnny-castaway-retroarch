@@ -120,8 +120,17 @@ class WebDriver:
             raise SmokeFailure(f"WebDriver error: {value['message']}")
         return value
 
-    def new_session(self, firefox_binary: str, headless: bool) -> None:
+    def new_session(
+        self, firefox_binary: str, headless: bool, block_autoplay: bool = False
+    ) -> None:
         arguments = ["-headless"] if headless else []
+        preferences = {
+            "devtools.console.stdout.content": True,
+            "media.autoplay.default": 5 if block_autoplay else 0,
+            "media.autoplay.block-webaudio": block_autoplay,
+            "webgl.disabled": False,
+            "webgl.force-enabled": True,
+        }
         value = self.request(
             "POST",
             "/session",
@@ -133,12 +142,7 @@ class WebDriver:
                         "moz:firefoxOptions": {
                             "binary": firefox_binary,
                             "args": arguments,
-                            "prefs": {
-                                "devtools.console.stdout.content": True,
-                                "media.autoplay.default": 0,
-                                "webgl.disabled": False,
-                                "webgl.force-enabled": True,
-                            },
+                            "prefs": preferences,
                         },
                     }
                 }
@@ -275,6 +279,14 @@ def parse_args() -> argparse.Namespace:
         "--no-xvfb",
         action="store_true",
         help="use Firefox native headless mode instead of automatically using Xvfb",
+    )
+    parser.add_argument(
+        "--test-audio-unlock",
+        action="store_true",
+        help=(
+            "with --staged-local-content, block Firefox WebAudio autoplay and "
+            "prove that visuals run before the Enable Audio gesture"
+        ),
     )
     return parser.parse_args()
 
@@ -449,6 +461,17 @@ def diagnostics(driver: WebDriver) -> dict[str, Any]:
           canvas: canvas ? {width: canvas.width, height: canvas.height} : null,
           menuEnabled: !document.querySelector('#menu').disabled,
           startEnabled: !document.querySelector('#start').disabled,
+          audioGate: (() => {
+            const state = document.querySelector('#audio-state');
+            const button = document.querySelector('#audio-unlock-button');
+            return {
+              state: state ? state.dataset.state : null,
+              text: state ? state.textContent : null,
+              contextCount: state ? Number(state.dataset.contextCount || 0) : 0,
+              sampleRate: state ? Number(state.dataset.sampleRate || 0) : 0,
+              unlockEnabled: button ? !button.disabled : false,
+            };
+          })(),
           pageErrors: smoke.pageErrors || [],
           rejections: smoke.rejections || [],
           consoleErrors: smoke.consoleErrors || [],
@@ -1024,6 +1047,8 @@ def run_smoke(args: argparse.Namespace, firefox: str, geckodriver: str) -> int:
         raise SmokeFailure("generated Web distribution is incomplete: " + ", ".join(missing))
     if args.chapter and args.content_dir is None:
         raise SmokeFailure("--chapter requires --content-dir")
+    if args.test_audio_unlock and not args.staged_local_content:
+        raise SmokeFailure("--test-audio-unlock requires --staged-local-content")
     if args.chapter:
         chapter_source = (ROOT / "src/jc_chapters.c").read_text(encoding="utf-8")
         chapter_marker = f'CHAPTER("{args.chapter}",'
@@ -1093,6 +1118,7 @@ def run_smoke(args: argparse.Namespace, firefox: str, geckodriver: str) -> int:
         "content": content_description,
         "smoke_probe_enabled": True,
         "chapter": args.chapter or "automatic",
+        "autoplay_blocked": args.test_audio_unlock,
     }
     if args.staged_local_content:
         result["staged_local_content"] = [path.name for path in staged_files]
@@ -1103,7 +1129,11 @@ def run_smoke(args: argparse.Namespace, firefox: str, geckodriver: str) -> int:
         ]
     try:
         wait_for_port(gecko_process, port, 10)
-        driver.new_session(firefox, headless=not bool(os.environ.get("DISPLAY")))
+        driver.new_session(
+            firefox,
+            headless=not bool(os.environ.get("DISPLAY")),
+            block_autoplay=args.test_audio_unlock,
+        )
         driver.navigate(url)
         driver.execute(
             """
@@ -1199,6 +1229,113 @@ def run_smoke(args: argparse.Namespace, firefox: str, geckodriver: str) -> int:
                 )
 
         canvas_element = driver.find("#canvas")
+        if args.test_audio_unlock:
+            blocked_state = wait_until(
+                "browser-blocked Web AudioContext",
+                args.timeout,
+                lambda: (
+                    current
+                    if (
+                        (current := diagnostics(driver))
+                        .get("audioGate", {})
+                        .get("state")
+                        == "locked"
+                        and current.get("audioGate", {}).get("unlockEnabled")
+                        and current.get("audioGate", {}).get("contextCount", 0) > 0
+                    )
+                    else None
+                ),
+            )
+            driver.execute(
+                """
+                if (typeof window.__jcResetWebGLProbe === 'function') {
+                  window.__jcResetWebGLProbe();
+                }
+                return true;
+                """
+            )
+            blocked_first_path = artifacts / "audio-blocked-01.png"
+            blocked_second_path = artifacts / "audio-blocked-02.png"
+            blocked_first_hash = driver.screenshot(
+                canvas_element, blocked_first_path
+            )
+            time.sleep(1.5)
+            blocked_second_hash = driver.screenshot(
+                canvas_element, blocked_second_path
+            )
+            blocked_after_visuals = diagnostics(driver)
+            blocked_context = blocked_after_visuals.get("audioGate") or {}
+            if blocked_context.get("state") != "locked":
+                raise SmokeFailure(
+                    "Web AudioContext did not remain suspended before interaction"
+                )
+            if blocked_first_hash == blocked_second_hash:
+                raise SmokeFailure(
+                    "canvas did not change while Web Audio autoplay was blocked"
+                )
+            blocked_webgl = blocked_after_visuals.get("webglProbe") or {}
+            if int(blocked_webgl.get("windowVideoUploadCandidates", 0)) < 1:
+                raise SmokeFailure(
+                    "no video-sized WebGL upload occurred while audio was suspended"
+                )
+            if int(blocked_webgl.get("windowDrawArraysCalls", 0)) < 1:
+                raise SmokeFailure(
+                    "no WebGL draw occurred while audio was suspended"
+                )
+            result["audio_unlock"] = {
+                "blocked_state": blocked_state.get("audioGate"),
+                "blocked_context": blocked_context,
+                "visuals_while_suspended": {
+                    "first_sha256": blocked_first_hash,
+                    "second_sha256": blocked_second_hash,
+                    "video_uploads": int(
+                        blocked_webgl.get("windowVideoUploadCandidates", 0)
+                    ),
+                    "draw_calls": int(
+                        blocked_webgl.get("windowDrawArraysCalls", 0)
+                    ),
+                },
+            }
+            driver.click(driver.find("#audio-unlock-button"))
+            unlocked_state = wait_until(
+                "Web AudioContext to resume after Enable Audio",
+                args.timeout,
+                lambda: (
+                    current
+                    if (
+                        (current := diagnostics(driver))
+                        .get("audioGate", {})
+                        .get("state")
+                        == "running"
+                        and current.get("audioGate", {}).get("contextCount", 0) > 0
+                    )
+                    else None
+                ),
+            )
+            result["audio_unlock"]["unlocked_state"] = unlocked_state.get(
+                "audioGate"
+            )
+            driver.click(driver.find("#reset"))
+            reset_state = wait_until(
+                "audio context to remain running after RetroArch reset",
+                args.timeout,
+                lambda: (
+                    current
+                    if (
+                        (current := diagnostics(driver))
+                        .get("audioGate", {})
+                        .get("state")
+                        == "running"
+                        and current.get("audioGate", {}).get("contextCount") == 1
+                        and current.get("status", "").startswith("Running.")
+                    )
+                    else None
+                ),
+            )
+            result["audio_unlock"]["post_reset_state"] = reset_state.get(
+                "audioGate"
+            )
+            result["audio_unlock"]["passed"] = True
         authentic_content = args.content_dir is not None or args.staged_local_content
         if authentic_content:
             game_paths, game_hashes, temporal = capture_temporal_gameplay(

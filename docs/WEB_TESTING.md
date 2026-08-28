@@ -64,6 +64,9 @@ JOBS=8 ./scripts/build-web-player.sh
   RetroArch's content browser.
 - The RetroArch menu remains available through the page button, including all
   options registered by the core.
+- Browser audio state is always visible. If autoplay leaves WebAudio suspended,
+  **Enable Audio** and the first pointer, keyboard, or touch gesture resume the
+  actual context without delaying graphics startup.
 - The server supplies `application/wasm`, COOP, COEP, and CORP headers, so the
   same server is suitable if a future core build enables WebAssembly threads.
 
@@ -230,6 +233,22 @@ directory excluded, and then requires Firefox to fetch and start the staged pair
 all 23 WAVs automatically. It does not relax `tools/check_web_dist.py`: run that checker
 only on a pristine distribution, and remove or rebuild away `local-content/` before
 publishing or sharing the Web package.
+
+To exercise the autoplay boundary itself, use the same staged-local setup and
+ask Firefox to block WebAudio until an explicit gesture:
+
+```sh
+python3 tools/web_smoke_test.py \
+  --staged-local-content --test-audio-unlock \
+  --artifacts build/web-smoke-audio-unlock \
+  --require-browser --timeout 180
+```
+
+This mode proves that the real context is suspended and the dedicated button is
+enabled, captures two changing canvas frames plus WebGL upload/draw evidence
+before interaction, clicks **Enable Audio**, waits for the context to run, and
+requires that context to remain running across a RetroArch reset, and then
+applies the normal strict gameplay-audio and stable-menu gates.
 
 Firefox's native headless mode did not expose a usable WebGL context in the
 development environment. When no display is already set, the runner therefore
