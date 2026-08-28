@@ -246,7 +246,11 @@ print(
 )
 raise SystemExit(
     frame_has_color_key_failure(quality)
-    or quality["meaningful_ratio"] < 0.05
+    # The five-resource CI fixture intentionally draws one small scripted
+    # object on a mostly black canvas. Authentic browser captures use the
+    # stricter 5% floor; this native ABI/frontend gate only needs to reject a
+    # blank/lost frame while independently enforcing the full color-key gate.
+    or quality["meaningful_ratio"] < 0.005
 )
 PY
 } 2>&1)" ||
