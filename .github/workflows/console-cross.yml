@@ -50,7 +50,9 @@ jobs:
       - name: Install PSP emulator smoke dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends xvfb xauth
+          sudo apt-get install -y --no-install-recommends pulseaudio xvfb xauth
+          pulseaudio --start --exit-idle-time=-1
+          pactl info
 
       - name: Boot PSP package in PPSSPP
         timeout-minutes: 5

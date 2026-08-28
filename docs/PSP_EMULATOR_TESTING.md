@@ -38,14 +38,16 @@ and the standard utilities used by the script. On Ubuntu, the emulator-only
 packages are:
 
 ```sh
-sudo apt-get install xvfb xauth
+sudo apt-get install pulseaudio xvfb xauth
+pulseaudio --start --exit-idle-time=-1
 ```
 
 Each run uses new XDG config/data/cache directories beneath an ignored
 `build/ppsspp-smoke.*` directory. It does not read or modify the user's
-normal PPSSPP settings or memory stick. It requests the dummy audio backend
-under both the SDL2 and SDL3 environment-variable names so headless runners
-never require a host PulseAudio service. Evidence is retained there after both
+normal PPSSPP settings or memory stick. It first requests SDL's dummy audio
+backend under both the SDL2 and SDL3 environment-variable names. The pinned
+AppImage may still select its compiled PulseAudio backend, so headless CI also
+starts a user-scoped PulseAudio daemon. Evidence is retained there after both
 success and failure.
 
 ## What passing means
