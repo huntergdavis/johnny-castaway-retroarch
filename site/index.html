@@ -1,0 +1,360 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Johnny Castaway for RetroArch: an independent, portable libretro core with automatic story playback, 63 selectable scenes, captions, holidays, and a complete Web player.">
+    <meta name="theme-color" content="#14122b">
+    <title>Johnny Castaway for RetroArch</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to main content</a>
+
+    <header class="site-header">
+      <div class="shell header-inner">
+        <a class="brand" href="#top" aria-label="Johnny Castaway for RetroArch home">
+          <span class="brand-title">Johnny Castaway</span>
+          <span class="brand-subtitle">libretro core</span>
+        </a>
+        <nav aria-label="Primary navigation">
+          <ul class="nav-list">
+            <li><a href="#play">Play</a></li>
+            <li><a href="#features">Features</a></li>
+            <li><a href="#downloads">Downloads</a></li>
+            <li><a href="#testing">Testing</a></li>
+            <li><a href="#credits">Credits</a></li>
+          </ul>
+        </nav>
+      </div>
+    </header>
+
+    <main id="main-content">
+      <section class="hero" id="top">
+        <div class="shell hero-grid">
+          <div class="hero-copy">
+            <p class="eyebrow">Independent, unofficial libretro port</p>
+            <h1>The island,<br><span>now in RetroArch.</span></h1>
+            <p class="hero-summary">
+              A portable C99 core that brings Johnny's automatic story to modern
+              RetroArch frontends, with direct scene access and the most useful
+              additions from the PlayStation port.
+            </p>
+            <ul class="fact-list" aria-label="Release highlights">
+              <li>Release v0.1.3</li>
+              <li>63 selectable scenes</li>
+              <li>640 × 480 software video</li>
+            </ul>
+            <div class="button-row">
+              <a class="button button-primary" href="play/">Launch Web player</a>
+              <a class="button button-secondary" href="https://github.com/huntergdavis/johnny-castaway-retroarch/releases/tag/v0.1.3">Get v0.1.3</a>
+            </div>
+            <p class="fine-print">
+              Bring a legally owned copy of the original data. It is not bundled
+              with this port or uploaded by the Web player.
+            </p>
+          </div>
+
+          <figure class="hero-frame">
+            <img
+              src="assets/screenshots/johnny-island.png"
+              width="640"
+              height="480"
+              alt="Johnny stands beneath the palm tree on his small island as bright waves move across the ocean"
+              fetchpriority="high">
+            <figcaption>Automatic Story running in the release Web player.</figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <section class="section section-play" id="play">
+        <div class="shell section-grid">
+          <div>
+            <p class="eyebrow">Play in a browser</p>
+            <h2>Your copy stays on your device</h2>
+            <p class="lead">
+              The Pages build serves the complete, checksum-verified v0.1.3
+              RetroArch Web player. The original Sierra/Dynamix files are a
+              separate input that you choose locally.
+            </p>
+            <a class="text-link" href="play/">Open the Web player <span aria-hidden="true">→</span></a>
+          </div>
+          <ol class="steps">
+            <li>
+              <span class="step-number" aria-hidden="true">1</span>
+              <div><strong>Open the player</strong><br>Wait for RetroArch to finish loading.</div>
+            </li>
+            <li>
+              <span class="step-number" aria-hidden="true">2</span>
+              <div><strong>Choose your two data files</strong><br>Select <code>RESOURCE.MAP</code> and <code>RESOURCE.001</code> from your lawful copy.</div>
+            </li>
+            <li>
+              <span class="step-number" aria-hidden="true">3</span>
+              <div><strong>Enable audio when asked</strong><br>Your browser may require one click before sound can start.</div>
+            </li>
+            <li>
+              <span class="step-number" aria-hidden="true">4</span>
+              <div><strong>Use RetroArch's Quick Menu</strong><br>Core Options contains chapters, captions, holidays, playback, tide, raft, and sound controls.</div>
+            </li>
+          </ol>
+        </div>
+        <div class="shell privacy-note" role="note">
+          <strong>Privacy boundary:</strong> selected files are read locally by
+          JavaScript and placed in the player's browser filesystem. They are not sent
+          to this project's server. GitHub Pages and the published player contain no
+          original data or user-supplied WAV files.
+        </div>
+      </section>
+
+      <section class="section" id="features">
+        <div class="shell">
+          <p class="eyebrow">More than a straight port</p>
+          <h2>Story, accessibility, and control</h2>
+          <p class="lead narrow">
+            The core preserves the screensaver-like flow while exposing practical
+            choices through RetroArch's standard Core Options menu.
+          </p>
+
+          <div class="feature-grid">
+            <article class="feature-card">
+              <span class="feature-index">01</span>
+              <h3>Automatic Story</h3>
+              <p>A deterministic director joins the island, walks, fades, and scenes into continuous hands-off playback.</p>
+            </article>
+            <article class="feature-card">
+              <span class="feature-index">02</span>
+              <h3>63 live chapter previews</h3>
+              <p>Jump directly to any audited chapter. Every selection starts the real scene as a live-rendered preview.</p>
+            </article>
+            <article class="feature-card">
+              <span class="feature-index">03</span>
+              <h3>Closed captions</h3>
+              <p>Enable captions and tune their size, position, background style, and opacity without altering the scene.</p>
+            </article>
+            <article class="feature-card">
+              <span class="feature-index">04</span>
+              <h3>Music &amp; sound</h3>
+              <p>The background soundtrack is a separately licensed CC0 ocean-ambience loop. Volume controls and optional user-supplied original SFX are supported.</p>
+            </article>
+            <article class="feature-card">
+              <span class="feature-index">05</span>
+              <h3>36 holidays</h3>
+              <p>Use your local date, a simulated calendar, no overlay, or force one of 36 asset-free holiday title/date presentations.</p>
+            </article>
+            <article class="feature-card">
+              <span class="feature-index">06</span>
+              <h3>Frontend-native controls</h3>
+              <p>Seed, calendar, speed, tide, raft stage, mute, ambience, captions, reset, and versioned save states use standard libretro interfaces.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="section section-gallery" aria-labelledby="gallery-title">
+        <div class="shell gallery-grid">
+          <div class="gallery-copy">
+            <p class="eyebrow">Authentic runtime capture</p>
+            <h2 id="gallery-title">The original scenes, through a new portable renderer</h2>
+            <p>
+              The core decodes the user's original resources and renders them through
+              a bounded software pipeline. No SDL window, platform-specific GPU API,
+              or copied game asset is compiled into the core.
+            </p>
+            <p>
+              The airplane scene at right is the fixed <strong>Visitor 1</strong>
+              chapter running in the exact release Web build.
+            </p>
+          </div>
+          <figure class="gallery-frame">
+            <img
+              src="assets/visitor-airplane.png"
+              width="640"
+              height="480"
+              alt="Johnny looks up from the island as a yellow propeller airplane flies overhead"
+              loading="lazy">
+            <figcaption>Visitor 1 fixed chapter, captured from the accepted 63-scene browser matrix.</figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <section class="section section-options">
+        <div class="shell options-grid">
+          <figure class="options-frame">
+            <img
+              src="assets/story-options.png"
+              width="640"
+              height="480"
+              alt="RetroArch Story options menu over the running island scene, showing chapter, holiday, seed, calendar, speed, tide, and raft controls"
+              loading="lazy">
+            <figcaption>Story controls integrated into RetroArch's Core Options menu.</figcaption>
+          </figure>
+          <div>
+            <p class="eyebrow">No second menu system</p>
+            <h2>Options belong in RetroArch</h2>
+            <p>
+              Every exposed setting does real work and follows frontend conventions.
+              Dynamic option visibility keeps the menu focused: simulated date/time
+              controls appear only when that calendar mode is active, for example.
+            </p>
+            <ul class="check-list">
+              <li>Automatic Story or any fixed chapter</li>
+              <li>System or simulated calendar</li>
+              <li>1×–4× playback speed</li>
+              <li>Automatic or forced tide and raft stage</li>
+              <li>Caption presentation and audio mix</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="downloads">
+        <div class="shell">
+          <p class="eyebrow">Verified public release</p>
+          <h2>Download v0.1.3</h2>
+          <p class="lead narrow">
+            These links point directly to the assets published from source commit
+            <code>52351184596d086d0ac0670935782947bf66bd7a</code>. Verify downloads
+            with the published checksum list.
+          </p>
+
+          <div class="download-grid">
+            <article class="download-card featured-download">
+              <p class="download-label">Browser</p>
+              <h3>Web player</h3>
+              <p>Play here, or download the complete standalone static player archive.</p>
+              <div class="download-actions">
+                <a class="button button-primary" href="play/">Play online</a>
+                <a class="text-link" href="https://github.com/huntergdavis/johnny-castaway-retroarch/releases/download/v0.1.3/johnny-castaway-retroarch-web.zip">Web ZIP</a>
+              </div>
+            </article>
+            <article class="download-card">
+              <p class="download-label">Computers &amp; mobile</p>
+              <h3>Desktop and app cores</h3>
+              <ul class="download-links">
+                <li><a href="https://github.com/huntergdavis/johnny-castaway-retroarch/releases/download/v0.1.3/johnny-castaway-linux-x86_64.zip">Linux x86_64</a></li>
+                <li><a href="https://github.com/huntergdavis/johnny-castaway-retroarch/releases/download/v0.1.3/johnny-castaway-linux-x86.zip">Linux x86</a></li>
+                <li><a href="https://github.com/huntergdavis/johnny-castaway-retroarch/releases/download/v0.1.3/johnny-castaway-linux-arm-and-windows-x86.zip">Linux ARM + Windows x86</a></li>
+                <li><a href="https://github.com/huntergdavis/johnny-castaway-retroarch/releases/download/v0.1.3/johnny-castaway-windows-x64.zip">Windows x64</a></li>
+                <li><a href="https://github.com/huntergdavis/johnny-castaway-retroarch/releases/download/v0.1.3/johnny-castaway-android-all-abis.zip">Android, all ABIs</a></li>
+                <li><a href="https://github.com/huntergdavis/johnny-castaway-retroarch/releases/download/v0.1.3/johnny-castaway-apple-cores.zip">macOS, iOS, and tvOS</a></li>
+                <li><a href="https://github.com/huntergdavis/johnny-castaway-retroarch/releases/download/v0.1.3/johnny-castaway-emscripten-core.zip">Emscripten core kit</a></li>
+              </ul>
+            </article>
+            <article class="download-card">
+              <p class="download-label">Installable console frontends</p>
+              <h3>Eight ready-to-install packages</h3>
+              <ul class="download-links two-columns">
+                <li><a href="https://github.com/huntergdavis/johnny-castaway-retroarch/releases/download/v0.1.3/johnny-castaway-psp-frontend.zip">PSP</a></li>
+                <li><a href="https://github.com/huntergdavis/johnny-castaway-retroarch/releases/download/v0.1.3/johnny-castaway-vita-frontend.zip">Vita</a></li>
+                <li><a href="https://github.com/huntergdavis/johnny-castaway-retroarch/releases/download/v0.1.3/johnny-castaway-ps2-frontend.zip">PS2</a></li>
+                <li><a href="https://github.com/huntergdavis/johnny-castaway-retroarch/releases/download/v0.1.3/johnny-castaway-3ds-frontend.zip">Nintendo 3DS</a></li>
+                <li><a href="https://github.com/huntergdavis/johnny-castaway-retroarch/releases/download/v0.1.3/johnny-castaway-switch-frontend.zip">Switch</a></li>
+                <li><a href="https://github.com/huntergdavis/johnny-castaway-retroarch/releases/download/v0.1.3/johnny-castaway-gamecube-frontend.zip">GameCube</a></li>
+                <li><a href="https://github.com/huntergdavis/johnny-castaway-retroarch/releases/download/v0.1.3/johnny-castaway-wii-frontend.zip">Wii</a></li>
+                <li><a href="https://github.com/huntergdavis/johnny-castaway-retroarch/releases/download/v0.1.3/johnny-castaway-wiiu-frontend.zip">Wii U</a></li>
+              </ul>
+            </article>
+            <article class="download-card compact-download">
+              <p class="download-label">Core link inputs</p>
+              <h3>Console core archive</h3>
+              <p>Static core libraries for the supported console toolchains; these are not installable applications by themselves.</p>
+              <a class="text-link" href="https://github.com/huntergdavis/johnny-castaway-retroarch/releases/download/v0.1.3/johnny-castaway-console-cores.zip">Download console cores <span aria-hidden="true">→</span></a>
+            </article>
+          </div>
+
+          <div class="checksum-row">
+            <a href="https://github.com/huntergdavis/johnny-castaway-retroarch/releases/download/v0.1.3/SHA256SUMS">SHA256SUMS</a>
+            <span aria-hidden="true">·</span>
+            <a href="https://github.com/huntergdavis/johnny-castaway-retroarch/releases/tag/v0.1.3">Release notes and complete inventory</a>
+            <span aria-hidden="true">·</span>
+            <a href="https://github.com/huntergdavis/johnny-castaway-retroarch/blob/52351184596d086d0ac0670935782947bf66bd7a/docs/PLATFORM_MATRIX.md">Platform evidence matrix</a>
+          </div>
+        </div>
+      </section>
+
+      <section class="section section-testing" id="testing">
+        <div class="shell testing-grid">
+          <div>
+            <p class="eyebrow">What “supported” means here</p>
+            <h2>Evidence before labels</h2>
+            <p>
+              The public release is built from clean source, checked for expected
+              formats and libretro exports, and scanned to exclude original data.
+              Linux has real RetroArch runtime evidence; the Web release has strict
+              authentic Firefox video, WebGL, menu, audio-unlock, and cadence evidence.
+            </p>
+            <p>
+              The authentic browser matrix exercises all 63 fixed scenes: 61 through
+              the ordinary settled window and the short Stand15 and Stand16 scenes
+              through reset-scoped early-motion windows that retain the same quality
+              gates.
+            </p>
+          </div>
+          <aside class="status-card" aria-label="Validation boundary">
+            <h3>Important boundary</h3>
+            <p>
+              Console packages have reproducible build, link, format, metadata,
+              option, license, and no-data checks. PSP also has a pinned PPSSPP boot
+              smoke. These results do <strong>not</strong> claim physical-device
+              gameplay, audio, input, performance, or save-state execution where the
+              platform matrix still marks a device gate open.
+            </p>
+            <a class="text-link" href="https://github.com/huntergdavis/johnny-castaway-retroarch/blob/52351184596d086d0ac0670935782947bf66bd7a/docs/SCENE_ACCEPTANCE_MATRIX.md">Read the scene acceptance record <span aria-hidden="true">→</span></a>
+          </aside>
+        </div>
+      </section>
+
+      <section class="section section-legal" id="credits">
+        <div class="shell legal-grid">
+          <div>
+            <p class="eyebrow">Original-data boundary</p>
+            <h2>Port code is open. The game data is not.</h2>
+            <p>
+              This independent project is GPLv3-or-later, but Johnny Castaway's names,
+              characters, artwork, animation, and original sounds remain the property
+              of their respective rights holders. The project is not affiliated with
+              or endorsed by Sierra, Dynamix, or those rights holders.
+            </p>
+            <p>
+              No original resource archive, extracted sprite, proprietary holiday
+              image, or original sound sample is included. You must supply a legally
+              owned <code>RESOURCE.MAP</code> and <code>RESOURCE.001</code>.
+            </p>
+          </div>
+          <div class="link-panel">
+            <h3>Credits, lineage, and licenses</h3>
+            <ul>
+              <li><a href="https://github.com/huntergdavis/johnny-castaway-retroarch/blob/52351184596d086d0ac0670935782947bf66bd7a/CREDITS.md">Original production and community credits</a></li>
+              <li><a href="https://github.com/huntergdavis/johnny-castaway-retroarch/blob/52351184596d086d0ac0670935782947bf66bd7a/docs/PROVENANCE.md">File-by-file derivation and provenance</a></li>
+              <li><a href="https://github.com/huntergdavis/johnny-castaway-retroarch/blob/52351184596d086d0ac0670935782947bf66bd7a/docs/THIRD_PARTY_NOTICES.md">Third-party notices</a></li>
+              <li><a href="SCREENSHOT_PROVENANCE.md">Website screenshot provenance and attribution</a></li>
+              <li><a href="https://github.com/huntergdavis/johnny-castaway-retroarch/blob/52351184596d086d0ac0670935782947bf66bd7a/LICENSE">Project license</a></li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section class="section section-contribute">
+        <div class="shell contribute-inner">
+          <div>
+            <p class="eyebrow">Build and contribute</p>
+            <h2>Portable by design, testable by contract</h2>
+            <p>Start with the architecture and porting plan, then run the strict host suite before sending a change.</p>
+          </div>
+          <div class="contribute-links">
+            <a class="button button-secondary" href="https://github.com/huntergdavis/johnny-castaway-retroarch/blob/52351184596d086d0ac0670935782947bf66bd7a/docs/PORTING_PLAN.md">Porting plan</a>
+            <a class="button button-secondary" href="https://github.com/huntergdavis/johnny-castaway-retroarch/blob/52351184596d086d0ac0670935782947bf66bd7a/docs/ARCHITECTURE.md">Architecture</a>
+            <a class="button button-secondary" href="https://github.com/huntergdavis/johnny-castaway-retroarch">Source on GitHub</a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="shell footer-inner">
+        <p>Johnny Castaway for RetroArch · independent, unofficial, and community-built.</p>
+        <p>Website has no analytics, cookies, remote fonts, or bundled original game data.</p>
+      </div>
+    </footer>
+  </body>
+</html>

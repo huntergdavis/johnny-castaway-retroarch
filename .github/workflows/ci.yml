@@ -428,6 +428,9 @@ jobs:
           bash -n scripts/build-web-player.sh scripts/serve-web.sh scripts/test-native-retroarch.sh
           node --check web/jc-web-player.js
           python3 tools/check_web_sources.py .
+          python3 -m py_compile tools/build_pages_site.py tools/test_pages_site.py
+          python3 tools/test_pages_site.py
+          python3 tools/build_pages_site.py --validate-source-only
           python3 tools/check_web_dist.py --help >/dev/null
           python3 tools/test_web_dist_validator.py
           python3 tools/test_web_chapter_matrix.py

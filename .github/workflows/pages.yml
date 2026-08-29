@@ -1,0 +1,79 @@
+name: GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/pages.yml"
+      - "site/**"
+      - "tools/build_pages_site.py"
+      - "tools/test_pages_site.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Validate and assemble pinned Web release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate deterministic Pages source and assembler
+        run: |
+          python3 -m py_compile tools/build_pages_site.py tools/test_pages_site.py
+          python3 tools/test_pages_site.py
+          python3 tools/build_pages_site.py --validate-source-only
+          python3 tools/check_web_sources.py .
+
+      - name: Download checksum-pinned v0.1.3 Web player
+        env:
+          WEB_RELEASE_URL: https://github.com/huntergdavis/johnny-castaway-retroarch/releases/download/v0.1.3/johnny-castaway-retroarch-web.zip
+        run: |
+          curl --fail --location --proto '=https' --tlsv1.2 \
+            --retry 4 --retry-all-errors \
+            --output "$RUNNER_TEMP/johnny-castaway-retroarch-web.zip" \
+            "$WEB_RELEASE_URL"
+
+      - name: Assemble complete player beneath /play/
+        run: |
+          python3 tools/build_pages_site.py \
+            --web-zip "$RUNNER_TEMP/johnny-castaway-retroarch-web.zip" \
+            --output build/pages
+          test -f build/pages/index.html
+          test -f build/pages/play/index.html
+          test -f build/pages/play/johnny_castaway_libretro.wasm
+          test ! -e build/pages/play/local-content
+
+      - name: Configure Pages
+        uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
+        with:
+          path: build/pages
+
+  deploy:
+    name: Deploy
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4
