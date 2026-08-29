@@ -20,7 +20,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SITE_SOURCE = ROOT / "site"
-DEFAULT_RELEASE_MANIFEST = DEFAULT_SITE_SOURCE / "release-v0.1.3.json"
+DEFAULT_RELEASE_MANIFEST = DEFAULT_SITE_SOURCE / "release-v0.1.4.json"
 
 ORIGINAL_DATA_NAMES = frozenset(("RESOURCE.MAP", "RESOURCE.001"))
 WEB_ARCHIVE_ROOT = "johnny-castaway-retroarch-web"
@@ -37,7 +37,7 @@ REQUIRED_SITE_FILES = frozenset(
     (
         "index.html",
         "styles.css",
-        "release-v0.1.3.json",
+        "release-v0.1.4.json",
         "SCREENSHOT_PROVENANCE.md",
         "assets/screenshots/johnny-island.png",
         "assets/visitor-airplane.png",
@@ -193,7 +193,7 @@ def load_release_manifest(path: Path = DEFAULT_RELEASE_MANIFEST) -> dict[str, An
             raise PagesFailure(f"screenshot commit does not match release: {raw_path}")
         if (
             not isinstance(source_artifact, str)
-            or not source_artifact.startswith("build/final-5235118-")
+            or not source_artifact.startswith("build/web-smoke-v014-cd62e39")
         ):
             raise PagesFailure(f"screenshot source artifact is not release-bound: {raw_path}")
         if not isinstance(description, str) or len(description.strip()) < 20:

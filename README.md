@@ -7,7 +7,7 @@ rendering, audio, RetroPad input, Core Options, and versioned save states.
 
 **[Project website](https://hunterdavis.com/johnny-castaway-retroarch/)** ·
 **[Play in a browser](https://hunterdavis.com/johnny-castaway-retroarch/play/)** ·
-**[Download v0.1.3](https://github.com/huntergdavis/johnny-castaway-retroarch/releases/tag/v0.1.3)**
+**[Download v0.1.4](https://github.com/huntergdavis/johnny-castaway-retroarch/releases/tag/v0.1.4)**
 
 ![Johnny standing beside his palm tree on the animated island](site/assets/screenshots/johnny-island.png)
 

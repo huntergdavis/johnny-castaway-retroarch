@@ -1,0 +1,143 @@
+{
+  "schema_version": 1,
+  "release": {
+    "tag": "v0.1.4",
+    "source_commit": "cd62e390882ace098e95eb72ba32cd021419f715",
+    "published_at": "2026-08-29T06:08:39Z",
+    "url": "https://github.com/huntergdavis/johnny-castaway-retroarch/releases/tag/v0.1.4",
+    "assets": [
+      {
+        "name": "johnny-castaway-3ds-frontend.zip",
+        "size": 4410857,
+        "sha256": "aaf315f8b053cf009935f65053dbfa630e21f008e6e746e80457fe62dd1ccc47",
+        "url": "https://github.com/huntergdavis/johnny-castaway-retroarch/releases/download/v0.1.4/johnny-castaway-3ds-frontend.zip"
+      },
+      {
+        "name": "johnny-castaway-android-all-abis.zip",
+        "size": 911312,
+        "sha256": "593352acc90625a13dfa80cba3ca0742a45813d1b103c9127d5a125e261b9b6a",
+        "url": "https://github.com/huntergdavis/johnny-castaway-retroarch/releases/download/v0.1.4/johnny-castaway-android-all-abis.zip"
+      },
+      {
+        "name": "johnny-castaway-apple-cores.zip",
+        "size": 1685351,
+        "sha256": "ad50a245a29b31288c418f23e0dbb94fd70406813f6ec31d6d6eb84da6f9862c",
+        "url": "https://github.com/huntergdavis/johnny-castaway-retroarch/releases/download/v0.1.4/johnny-castaway-apple-cores.zip"
+      },
+      {
+        "name": "johnny-castaway-console-cores.zip",
+        "size": 103287298,
+        "sha256": "cdda1e7deae18a6e545ec35f5b339fd6bd3d820a568427ebb8a674973d7a6480",
+        "url": "https://github.com/huntergdavis/johnny-castaway-retroarch/releases/download/v0.1.4/johnny-castaway-console-cores.zip"
+      },
+      {
+        "name": "johnny-castaway-emscripten-core.zip",
+        "size": 342575,
+        "sha256": "2f81afff9d31dc2b3823b841266a2211360847c40906a0639687ea3e7ed51a07",
+        "url": "https://github.com/huntergdavis/johnny-castaway-retroarch/releases/download/v0.1.4/johnny-castaway-emscripten-core.zip"
+      },
+      {
+        "name": "johnny-castaway-gamecube-frontend.zip",
+        "size": 1977013,
+        "sha256": "c793480aeae62c27b31967c91f9d34ad63a8d77a889886b5041b3961cee4bb1a",
+        "url": "https://github.com/huntergdavis/johnny-castaway-retroarch/releases/download/v0.1.4/johnny-castaway-gamecube-frontend.zip"
+      },
+      {
+        "name": "johnny-castaway-linux-arm-and-windows-x86.zip",
+        "size": 987675,
+        "sha256": "b70991523b29ce16c9a75e641508aa31bdc66cbd07e05002b42f0b36bc198682",
+        "url": "https://github.com/huntergdavis/johnny-castaway-retroarch/releases/download/v0.1.4/johnny-castaway-linux-arm-and-windows-x86.zip"
+      },
+      {
+        "name": "johnny-castaway-linux-x86.zip",
+        "size": 269687,
+        "sha256": "99f580aae6aa070362c361b02c6e1a21f04866706d86c271176f054806b35de6",
+        "url": "https://github.com/huntergdavis/johnny-castaway-retroarch/releases/download/v0.1.4/johnny-castaway-linux-x86.zip"
+      },
+      {
+        "name": "johnny-castaway-linux-x86_64.zip",
+        "size": 264880,
+        "sha256": "c9fa08aa9d82b306e91b3c709028450459467f48ef8a74f9f05d8c88b883e426",
+        "url": "https://github.com/huntergdavis/johnny-castaway-retroarch/releases/download/v0.1.4/johnny-castaway-linux-x86_64.zip"
+      },
+      {
+        "name": "johnny-castaway-ps2-frontend.zip",
+        "size": 8256113,
+        "sha256": "f95108dbf2b8e2e713c778cf748f0e967bc5d671ad74c284eb6e2f56a5b81f0a",
+        "url": "https://github.com/huntergdavis/johnny-castaway-retroarch/releases/download/v0.1.4/johnny-castaway-ps2-frontend.zip"
+      },
+      {
+        "name": "johnny-castaway-psp-frontend.zip",
+        "size": 1671684,
+        "sha256": "e3c772656466f34fdd5e4523e1157686ae543514d86ebec28aa8d88a5a1bbe24",
+        "url": "https://github.com/huntergdavis/johnny-castaway-retroarch/releases/download/v0.1.4/johnny-castaway-psp-frontend.zip"
+      },
+      {
+        "name": "johnny-castaway-retroarch-web.zip",
+        "role": "pages_web_player",
+        "size": 11220750,
+        "sha256": "9866c4b0fb028eba13b213c43275f761ae1f37a40e8dfa4e101161a004c057e7",
+        "url": "https://github.com/huntergdavis/johnny-castaway-retroarch/releases/download/v0.1.4/johnny-castaway-retroarch-web.zip"
+      },
+      {
+        "name": "johnny-castaway-switch-frontend.zip",
+        "size": 6813483,
+        "sha256": "b25c9d8f51adc0782d58014fbe1af5cf0d1b512fa9c39c655c99d7cfdae7f608",
+        "url": "https://github.com/huntergdavis/johnny-castaway-retroarch/releases/download/v0.1.4/johnny-castaway-switch-frontend.zip"
+      },
+      {
+        "name": "johnny-castaway-vita-frontend.zip",
+        "size": 3600951,
+        "sha256": "066a46d28afa94eea569b47c37f06609a9abb67d7a949ca82e15010730a47796",
+        "url": "https://github.com/huntergdavis/johnny-castaway-retroarch/releases/download/v0.1.4/johnny-castaway-vita-frontend.zip"
+      },
+      {
+        "name": "johnny-castaway-wii-frontend.zip",
+        "size": 2044047,
+        "sha256": "47befd022c2d58f346e744a353fe16826b8b02d176044d264533f488c89836e1",
+        "url": "https://github.com/huntergdavis/johnny-castaway-retroarch/releases/download/v0.1.4/johnny-castaway-wii-frontend.zip"
+      },
+      {
+        "name": "johnny-castaway-wiiu-frontend.zip",
+        "size": 5606162,
+        "sha256": "3fab28c79469b868344e9c4016b0d83052eca387f3254b046c33a2feef97c859",
+        "url": "https://github.com/huntergdavis/johnny-castaway-retroarch/releases/download/v0.1.4/johnny-castaway-wiiu-frontend.zip"
+      },
+      {
+        "name": "johnny-castaway-windows-x64.zip",
+        "size": 344454,
+        "sha256": "28e5d551001a96a0364e662db97f664a6e2d09c01c2e44abe8f703d414bd8704",
+        "url": "https://github.com/huntergdavis/johnny-castaway-retroarch/releases/download/v0.1.4/johnny-castaway-windows-x64.zip"
+      },
+      {
+        "name": "SHA256SUMS",
+        "size": 1710,
+        "sha256": "c0ff2201f0552dedfa99f9a769cf55ab196e2f95d505f4013f1c375137fd20ce",
+        "url": "https://github.com/huntergdavis/johnny-castaway-retroarch/releases/download/v0.1.4/SHA256SUMS"
+      }
+    ]
+  },
+  "screenshots": [
+    {
+      "path": "assets/screenshots/johnny-island.png",
+      "sha256": "b2ddf52f74e160386eceba8f11a48a940dc14e110d6e5a4a3e7ea2f1c4c3d561",
+      "source_artifact": "build/web-smoke-v014-cd62e39/game.png",
+      "source_commit": "cd62e390882ace098e95eb72ba32cd021419f715",
+      "description": "Automatic Story island frame rendered by the exact release Web candidate"
+    },
+    {
+      "path": "assets/visitor-airplane.png",
+      "sha256": "0c88c8f1de07740487002ccc46db57af008a5ad718b8563b70e7ce0d5dcd398c",
+      "source_artifact": "build/web-smoke-v014-cd62e39-visitor1/game.png",
+      "source_commit": "cd62e390882ace098e95eb72ba32cd021419f715",
+      "description": "Visitor 1 fixed-chapter frame from the exact release Web candidate"
+    },
+    {
+      "path": "assets/story-options.png",
+      "sha256": "3236b7469f553a5eb5fe4c68a42436fd99fb4c980090e895cca64f536dcb99ef",
+      "source_artifact": "build/web-smoke-v014-cd62e39/story-options-top.png",
+      "source_commit": "cd62e390882ace098e95eb72ba32cd021419f715",
+      "description": "RetroArch Story Core Options over the exact release Web candidate"
+    }
+  ]
+}

@@ -38,9 +38,9 @@ jobs:
           python3 tools/build_pages_site.py --validate-source-only
           python3 tools/check_web_sources.py .
 
-      - name: Download checksum-pinned v0.1.3 Web player
+      - name: Download checksum-pinned v0.1.4 Web player
         env:
-          WEB_RELEASE_URL: https://github.com/huntergdavis/johnny-castaway-retroarch/releases/download/v0.1.3/johnny-castaway-retroarch-web.zip
+          WEB_RELEASE_URL: https://github.com/huntergdavis/johnny-castaway-retroarch/releases/download/v0.1.4/johnny-castaway-retroarch-web.zip
         run: |
           curl --fail --location --proto '=https' --tlsv1.2 \
             --retry 4 --retry-all-errors \

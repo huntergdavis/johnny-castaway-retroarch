@@ -26,8 +26,8 @@ from build_pages_site import (
 )
 
 
-EXPECTED_COMMIT = "52351184596d086d0ac0670935782947bf66bd7a"
-EXPECTED_WEB_SHA256 = "1f234be6f689a804cbf6281451037cf3d6050c241a30c7bb408257b731442110"
+EXPECTED_COMMIT = "cd62e390882ace098e95eb72ba32cd021419f715"
+EXPECTED_WEB_SHA256 = "9866c4b0fb028eba13b213c43275f761ae1f37a40e8dfa4e101161a004c057e7"
 
 
 def make_nested_bundle(*, forbidden_name: str | None = None) -> bytes:
@@ -77,7 +77,7 @@ def make_fixture_archive(
     provenance_lines = [
         "Johnny Castaway RetroArch Web Player build provenance",
         f"Johnny Castaway commit: {EXPECTED_COMMIT} (clean)",
-        "Frontend version: 0.1.3",
+        "Frontend version: 0.1.4",
         "Tree state: clean",
     ] + [f"{label}: {digest}" for label, digest in provenance_hashes.items()]
     files["BUILD-PROVENANCE.txt"] = ("\n".join(provenance_lines) + "\n").encode()
@@ -98,7 +98,7 @@ def make_fixture_archive(
 
 
 def bind_fixture_archive(site: Path, archive: Path) -> Path:
-    manifest_path = site / "release-v0.1.3.json"
+    manifest_path = site / "release-v0.1.4.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     web_asset = next(
         asset
@@ -137,7 +137,7 @@ class PagesSourceTests(unittest.TestCase):
         )
         self.assertEqual(web_asset["name"], "johnny-castaway-retroarch-web.zip")
         self.assertEqual(web_asset["sha256"], EXPECTED_WEB_SHA256)
-        self.assertEqual(web_asset["size"], 11213882)
+        self.assertEqual(web_asset["size"], 11220750)
 
     def test_remote_script_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -151,7 +151,7 @@ class PagesSourceTests(unittest.TestCase):
                 encoding="utf-8",
             )
             with self.assertRaisesRegex(PagesFailure, "scripts, embeds, or forms"):
-                validate_site_source(site, site / "release-v0.1.3.json")
+                validate_site_source(site, site / "release-v0.1.4.json")
 
     def test_empty_image_alt_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -165,7 +165,7 @@ class PagesSourceTests(unittest.TestCase):
                 encoding="utf-8",
             )
             with self.assertRaisesRegex(PagesFailure, "non-empty alt text"):
-                validate_site_source(site, site / "release-v0.1.3.json")
+                validate_site_source(site, site / "release-v0.1.4.json")
 
 
 class PagesAssemblerTests(unittest.TestCase):
