@@ -216,7 +216,8 @@ input fingerprint
 After fail-closed reruns, 62 chapters passed the unchanged generic gate. The only
 generic-window failure was `stand16`: its entire native runtime is about 5.08
 seconds, so the ordinary six-second notification settle sampled its correct
-terminal spyglass hold rather than its earlier action.
+terminal spyglass hold rather than its earlier action. This remains accurate
+historical evidence for that runner/candidate, not the v2 matrix's window policy.
 
 The reset-scoped `--test-early-chapter-motion` mode closes that timing alias without
 weakening any visual, audio, frame-quality, or WebGL assertion. Against exact clean
@@ -227,7 +228,20 @@ changes from 4.76% through 29.14%, four playfield changes from 0.92% through 2.1
 and 102 typed WebGL uploads with no context loss. The passing ignored result is
 `build/web-stand16-early-424aea1-r2/result.json`. Thus every one of the 63 chapters
 has strict authentic Firefox acceptance: 62 through the generic window and `stand16`
-through its timing-appropriate early window. The tracked
+through its timing-appropriate early window in that historical evidence set.
+
+A later quiet full sweep exposed the same deterministic timing alias for `stand15`:
+tracked native rows finish in 270 ticks (5.4 seconds) with 46 distinct hashes, while
+`stand16` finishes in 254 ticks (5.08 seconds) with 50 distinct hashes. Their pinned
+PS1 explorer records contain 45 and 36 frames and sign off left- and right-side
+spyglass loops. The v2 matrix therefore applies the ordinary settled window to the
+other 61 slugs and automatically adds the unchanged reset-scoped early gate for
+exactly `stand15` and `stand16`, using separate left/right actor regions. Real Firefox
+development runs passed both with startup logs 1 then 2, five distinct frames,
+23.45%–25.09% Stand15 actor changes and 4.36%–29.14% Stand16 actor changes, zero
+audio gaps, and no WebGL context loss. The matrix's v2 resume fingerprint hashes both
+the smoke runner and the matrix policy source, preventing old generic-window markers
+from being reused. The tracked
 `docs/scene_acceptance_matrix.csv` remains the historical native `b7f151f` snapshot;
 it is not retroactively rewritten with environment-local browser results.
 
@@ -236,8 +250,8 @@ bitmap. Where the user has local `regtest-references/<ADS>-<TAG>` captures, a
 separate opt-in comparator can normalize the PS1 640x448 viewport and compare
 semantic phases. Those copyrighted/user-owned images must remain untracked.
 
-This document records repeated strict Automatic Story Web audio/renderer acceptance
-for clean candidate `02e8ddb` and the complete 62+1 chapter evidence above. It does
-not claim OCEAN01/02 coverage and does not elevate completion plus frame diversity to
-pixel-perfect parity with the PS1 signoff. It records exactly what is executable now
-and the stronger golden phase oracle needed for pixel-level parity.
+This document records repeated strict Automatic Story Web audio/renderer acceptance,
+the historical 62+1 evidence set, and the more robust v2 61+2 matrix policy above. It
+does not claim OCEAN01/02 coverage and does not elevate completion plus frame diversity
+to pixel-perfect parity with the PS1 signoff. It records exactly what is executable
+now and the stronger golden phase oracle needed for pixel-level parity.

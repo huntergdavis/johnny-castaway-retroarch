@@ -285,16 +285,19 @@ The 2026-08-28 authentic execution accounted for all 63 slugs. Its ignored aggre
 `build/web-chapter-matrix-02e8ddb/summary-range-000-063.json` (SHA-256
 `a692eef5d32a4489fdd79a20601f2f5e9de1a9c48e528e01e88794bcdc9c84fd`)
 records 62 generic-window passes after fail-closed reruns. It deliberately remains
-`passed=false` because `stand16` alone reached its correct terminal hold before the
-ordinary post-notification capture: its complete native runtime is 254 ticks, or
-about 5.08 seconds. Exercise its early action without changing any gate using:
+`passed=false` because `stand16` reached its correct terminal hold before the ordinary
+post-notification capture: its complete native runtime is 254 ticks, or about 5.08
+seconds. A later quieter full sweep also demonstrated that neighboring `stand15`'s
+270 ticks (5.4 seconds) finish before the same six-second settle. The v2 matrix treats
+these as the only two source-validated short-window chapters. Exercise either early
+action directly without changing any gate using (replace the slug as needed):
 
 ```sh
 python3 tools/web_smoke_test.py \
   --dist build/web-player/dist \
-  --content-dir /path/to/johnny-data --chapter stand16 \
+  --content-dir /path/to/johnny-data --chapter stand15 \
   --scene-visual-only --test-early-chapter-motion \
-  --artifacts build/web-stand16-early \
+  --artifacts build/web-stand15-early \
   --require-browser --timeout 180
 ```
 
@@ -303,8 +306,9 @@ ordinary notifications, records the fixed-chapter startup-log count, clicks the 
 Reset control, requires a second startup log and clean Running diagnostics, then
 captures five frames beginning 250 ms later at 500 ms intervals. All ordinary
 playfield, frame-quality/color-key, continuous-audio, and WebGL gates remain active,
-and a normalized Johnny/spyglass region must change by at least 0.5% in one interval.
-The exact clean `424aea1` result
+and the selected chapter's normalized Johnny/spyglass region must change by at least
+0.5% in one interval. Any slug except `stand15` or `stand16` is rejected. The exact
+clean `424aea1` Stand16 result
 `build/web-stand16-early-424aea1-r2/result.json` (SHA-256
 `1643185bc7c0f3e6be8484fdc747ec69f30bd33da80277b20d31f1e45d50e040`)
 passed with startup logs 1 then 2, five distinct frames, 4.76%–29.14% actor motion,
@@ -312,9 +316,13 @@ passed with startup logs 1 then 2, five distinct frames, 4.76%–29.14% actor mo
 across 505 480-frame audio buffers at 0.999106 scheduled/wall, 102 WebGL uploads and
 205 draws, and no context loss, page error, or rejection. The first diagnostic run
 already proved reset and motion but encountered one 15 ms audio scheduling gap; the
-isolated repeat passed unchanged, so no threshold was weakened. Together with the 62
-generic passes, this supplies accepted Web evidence for every catalog entry without
-misreporting the aggregate JSON itself as green.
+isolated repeat passed unchanged, so no threshold was weakened. Stand15's separate
+left-side ROI and Stand16's right-side ROI each passed real-browser development runs
+with five distinct frames and zero-gap audio. The v2 matrix automatically adds this
+mode for exactly those two slugs, so its own aggregate can honestly become green; it
+does not rely on a manually adjudicated companion result. Resume fingerprints use a
+v2 domain and hash both the smoke runner and this matrix wrapper, so changing this
+chapter policy invalidates every older marker.
 
 Run the full catalog sequentially with:
 

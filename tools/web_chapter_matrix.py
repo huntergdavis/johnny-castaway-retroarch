@@ -24,8 +24,10 @@ from typing import Any, Callable
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 CATALOG_PATH = ROOT / "src/jc_chapters.c"
 SMOKE_RUNNER = ROOT / "tools/web_smoke_test.py"
+MATRIX_RUNNER = pathlib.Path(__file__).resolve()
 EXPECTED_CHAPTER_COUNT = 63
-RESULT_SCHEMA = 1
+RESULT_SCHEMA = 2
+EARLY_MOTION_CHAPTERS = frozenset(("stand15", "stand16"))
 CATALOG_RE = re.compile(
     r"static\s+const\s+jc_chapter_t\s+chapters\s*\[\s*\]\s*=\s*\{"
     r"(?P<body>.*?)\s*\};",
@@ -147,20 +149,24 @@ def input_fingerprint(
     dist: pathlib.Path,
     content_dir: pathlib.Path,
     smoke_runner: pathlib.Path = SMOKE_RUNNER,
+    matrix_runner: pathlib.Path = MATRIX_RUNNER,
 ) -> str:
     """Bind resume eligibility without exposing user-owned file names or bytes."""
     if not dist.is_dir():
         raise MatrixFailure(f"Web distribution directory does not exist: {dist}")
     if not smoke_runner.is_file():
         raise MatrixFailure(f"smoke runner does not exist: {smoke_runner}")
+    if not matrix_runner.is_file():
+        raise MatrixFailure(f"matrix runner does not exist: {matrix_runner}")
     resource_paths = [content_dir / "RESOURCE.MAP", content_dir / "RESOURCE.001"]
     missing = [path.name for path in resource_paths if not path.is_file()]
     if missing:
         raise MatrixFailure("user-owned content is incomplete: " + ", ".join(missing))
     digest = hashlib.sha256()
-    digest.update(b"johnny-web-chapter-matrix-v1\0")
+    digest.update(b"johnny-web-chapter-matrix-v2\0")
     digest.update(bytes.fromhex(catalog_sha256))
     digest.update(bytes.fromhex(sha256_file(smoke_runner)))
+    digest.update(bytes.fromhex(sha256_file(matrix_runner)))
     update_tree_digest(digest, dist)
     for path in resource_paths:
         digest.update(path.name.encode("ascii"))
@@ -291,6 +297,8 @@ def run_scene(
         "--timeout",
         str(timeout),
     ]
+    if slug in EARLY_MOTION_CHAPTERS:
+        command.append("--test-early-chapter-motion")
     if no_xvfb:
         command.append("--no-xvfb")
     try:

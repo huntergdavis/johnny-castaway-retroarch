@@ -67,9 +67,10 @@ of their respective rights holders. This repository distributes none of that con
   new. No `BACKGRND.BMP`, palette, or other original-media bytes are copied. The
   exact copied or translated data tables remain identified separately in
   `docs/PROVENANCE.md`.
-- The Stand16 browser gate uses that PS1 explorer's 36-frame record and its signed-off
-  right-side spyglass idle route only as a timing/behavior oracle. The browser ROI,
-  reset-log proof, frame analysis, audio cadence checks, and WebGL checks are new.
+- The short-Stand browser gates use that PS1 explorer's 45-frame Stand15 and 36-frame
+  Stand16 records plus their signed-off left/right spyglass routes only as timing and
+  behavior oracles. The chapter-local browser ROIs, reset-log proof, frame analysis,
+  audio cadence checks, and WebGL checks are new.
 - The tide and raft Core Options follow that PS1 revision's `AUTO/HIGH/LOW` and
   `AUTO/NONE/1..5` pause-menu controls, override precedence, scene-local `NORAFT`
   rule, and island sprite composition. The exact references are

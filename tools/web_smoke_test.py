@@ -41,12 +41,10 @@ WEBDRIVER_KEY_DOWN = "\ue015"
 EARLY_CHAPTER_NOTIFICATION_SETTLE_SECONDS = 6.0
 EARLY_CHAPTER_FIRST_CAPTURE_DELAY_SECONDS = 0.25
 EARLY_CHAPTER_CAPTURE_INTERVAL_SECONDS = 0.5
-EARLY_CHAPTER_ACTOR_REGION = (
-    500.0 / 640.0,
-    220.0 / 480.0,
-    580.0 / 640.0,
-    330.0 / 480.0,
-)
+EARLY_CHAPTER_ACTOR_REGIONS = {
+    "stand15": (270.0 / 640.0, 210.0 / 480.0, 350.0 / 640.0, 335.0 / 480.0),
+    "stand16": (500.0 / 640.0, 220.0 / 480.0, 580.0 / 640.0, 330.0 / 480.0),
+}
 EARLY_CHAPTER_MINIMUM_ACTOR_MOTION_RATIO = 0.005
 # Exact output of make_synthetic_content() in tests/test_libretro.c.  Keeping
 # this browser fixture self-contained prevents unrelated host-test assertions
@@ -345,9 +343,10 @@ def validate_late_ending_args(args: argparse.Namespace) -> None:
 def validate_early_chapter_motion_args(args: argparse.Namespace) -> None:
     if not args.test_early_chapter_motion:
         return
-    if not args.chapter or args.content_dir is None:
+    if args.chapter not in EARLY_CHAPTER_ACTOR_REGIONS or args.content_dir is None:
         raise SmokeFailure(
-            "--test-early-chapter-motion requires --chapter and --content-dir"
+            "--test-early-chapter-motion requires --chapter stand15 or stand16 "
+            "and --content-dir"
         )
 
 
@@ -1302,7 +1301,10 @@ def capture_temporal_gameplay(
     reset_state: dict[str, Any] | None = None
     reset_log_count_before = 0
     reset_log_count_after = 0
+    actor_region = EARLY_CHAPTER_ACTOR_REGIONS.get(str(evidence.get("chapter")))
     if test_early_chapter_motion:
+        if actor_region is None:
+            raise SmokeFailure("early fixed chapter has no validated actor region")
         reset_log_count_before = chapter_start_log_count(diagnostics(driver))
         driver.click(driver.find("#reset"))
         reset_state = wait_until(
@@ -1418,7 +1420,7 @@ def capture_temporal_gameplay(
             region_change_ratio(
                 decoded_frames[index - 1],
                 decoded_frames[index],
-                EARLY_CHAPTER_ACTOR_REGION,
+                actor_region,
             )
             for index in range(1, len(decoded_frames))
         ]
@@ -1538,7 +1540,7 @@ def capture_temporal_gameplay(
                 EARLY_CHAPTER_FIRST_CAPTURE_DELAY_SECONDS
             ),
             "capture_interval_seconds": capture_interval_seconds,
-            "actor_region": EARLY_CHAPTER_ACTOR_REGION,
+            "actor_region": actor_region,
             "actor_change_ratios": actor_ratios,
             "minimum_actor_motion_ratio": (
                 EARLY_CHAPTER_MINIMUM_ACTOR_MOTION_RATIO

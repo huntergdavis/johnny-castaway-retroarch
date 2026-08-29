@@ -11,8 +11,10 @@ import unittest
 
 from web_chapter_matrix import (
     CATALOG_PATH,
+    EARLY_MOTION_CHAPTERS,
     MatrixFailure,
     empty_record,
+    input_fingerprint,
     parse_chapter_catalog,
     paths_overlap,
     reusable_record,
@@ -140,6 +142,69 @@ class ResultTests(unittest.TestCase):
             self.assertIsNotNone(resumed)
             assert resumed is not None
             self.assertTrue(resumed["resumed"])
+
+    def test_short_stand_scenes_use_targeted_early_motion_only(self) -> None:
+        self.assertEqual(EARLY_MOTION_CHAPTERS, {"stand15", "stand16"})
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            commands: dict[str, list[str]] = {}
+
+            def passing_runner(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[object]:
+                slug = command[command.index("--chapter") + 1]
+                commands[slug] = list(command)
+                artifacts = pathlib.Path(command[command.index("--artifacts") + 1])
+                artifacts.mkdir(parents=True, exist_ok=True)
+                self.write_passing_result(artifacts / "result.json", slug)
+                return subprocess.CompletedProcess(command, 0)
+
+            for index, slug in enumerate(("stand15", "stand16", "fishing1")):
+                record = run_scene(
+                    dist=root,
+                    content_dir=root,
+                    scene_dir=root / slug,
+                    index=index,
+                    slug=slug,
+                    fingerprint="f" * 64,
+                    timeout=1.0,
+                    no_xvfb=False,
+                    smoke_runner=root / "runner.py",
+                    command_runner=passing_runner,
+                )
+                self.assertEqual(record["status"], "passed")
+            self.assertIn("--test-early-chapter-motion", commands["stand15"])
+            self.assertIn("--test-early-chapter-motion", commands["stand16"])
+            self.assertNotIn("--test-early-chapter-motion", commands["fishing1"])
+
+    def test_fingerprint_binds_matrix_policy_source(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            dist = root / "dist"
+            content = root / "content"
+            dist.mkdir()
+            content.mkdir()
+            (dist / "index.html").write_text("dist", encoding="utf-8")
+            (content / "RESOURCE.MAP").write_bytes(b"map")
+            (content / "RESOURCE.001").write_bytes(b"archive")
+            smoke_runner = root / "smoke.py"
+            matrix_runner = root / "matrix.py"
+            smoke_runner.write_text("smoke", encoding="utf-8")
+            matrix_runner.write_text("policy one", encoding="utf-8")
+            before = input_fingerprint(
+                "a" * 64,
+                dist,
+                content,
+                smoke_runner=smoke_runner,
+                matrix_runner=matrix_runner,
+            )
+            matrix_runner.write_text("policy two", encoding="utf-8")
+            after = input_fingerprint(
+                "a" * 64,
+                dist,
+                content,
+                smoke_runner=smoke_runner,
+                matrix_runner=matrix_runner,
+            )
+            self.assertNotEqual(before, after)
 
     def test_stale_passing_result_cannot_mask_nonzero_subprocess(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
