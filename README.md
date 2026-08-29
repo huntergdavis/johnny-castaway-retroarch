@@ -5,8 +5,8 @@ recreates the automatic story and all 63 selectable chapters from a legally owne
 copy of *Screen Antics: Johnny Castaway*, with deterministic 640x480 software
 rendering, audio, RetroPad input, Core Options, and versioned save states.
 
-**[Project website](https://huntergdavis.github.io/johnny-castaway-retroarch/)** ·
-**[Play in a browser](https://huntergdavis.github.io/johnny-castaway-retroarch/play/)** ·
+**[Project website](https://hunterdavis.com/johnny-castaway-retroarch/)** ·
+**[Play in a browser](https://hunterdavis.com/johnny-castaway-retroarch/play/)** ·
 **[Download v0.1.3](https://github.com/huntergdavis/johnny-castaway-retroarch/releases/tag/v0.1.3)**
 
 ![Johnny standing beside his palm tree on the animated island](site/assets/screenshots/johnny-island.png)
