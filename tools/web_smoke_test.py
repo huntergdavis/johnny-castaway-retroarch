@@ -584,6 +584,16 @@ def diagnostics_are_clean_running(value: Any) -> bool:
     )
 
 
+def chapter_start_log_count(value: Any) -> int:
+    """Count fixed-chapter starts observed in a browser diagnostic snapshot."""
+    if not isinstance(value, dict):
+        return 0
+    messages = value.get("consoleErrors")
+    if not isinstance(messages, list):
+        return 0
+    return sum("Johnny Castaway chapter:" in str(message) for message in messages)
+
+
 def stable_screenshot(
     driver: WebDriver,
     element: str,
@@ -1223,19 +1233,24 @@ def capture_temporal_gameplay(
     time.sleep(settle_seconds)
     capture_interval_seconds = 1.0
     reset_state: dict[str, Any] | None = None
+    reset_log_count_before = 0
+    reset_log_count_after = 0
     if test_early_chapter_motion:
+        reset_log_count_before = chapter_start_log_count(diagnostics(driver))
         driver.click(driver.find("#reset"))
         reset_state = wait_until(
-            "clean Running state after fixed chapter reset",
+            "clean restarted fixed chapter after Web Reset",
             timeout,
             lambda: (
                 current
                 if diagnostics_are_clean_running(
                     current := diagnostics(driver)
                 )
+                and chapter_start_log_count(current) > reset_log_count_before
                 else None
             ),
         )
+        reset_log_count_after = chapter_start_log_count(reset_state)
         time.sleep(EARLY_CHAPTER_FIRST_CAPTURE_DELAY_SECONDS)
         capture_interval_seconds = EARLY_CHAPTER_CAPTURE_INTERVAL_SECONDS
     paths: list[pathlib.Path] = []
@@ -1450,6 +1465,8 @@ def capture_temporal_gameplay(
             "reset_rejection_count": len(
                 reset_state.get("rejections", []) if reset_state else []
             ),
+            "chapter_start_log_count_before_reset": reset_log_count_before,
+            "chapter_start_log_count_after_reset": reset_log_count_after,
             "first_capture_delay_seconds": (
                 EARLY_CHAPTER_FIRST_CAPTURE_DELAY_SECONDS
             ),

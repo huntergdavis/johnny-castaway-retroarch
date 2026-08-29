@@ -18,6 +18,7 @@ from web_smoke_test import (
     EARLY_CHAPTER_MINIMUM_ACTOR_MOTION_RATIO,
     SmokeFailure,
     analyze_late_ending_decoded_frames,
+    chapter_start_log_count,
     complete_scene_visual_only_result,
     diagnostics_are_clean_running,
     evaluate_strict_audio_window,
@@ -213,7 +214,10 @@ class WebDiagnosticProbeSourceTests(unittest.TestCase):
         for marker in (
             "--test-early-chapter-motion",
             'driver.click(driver.find("#reset"))',
+            "chapter_start_log_count(current) > reset_log_count_before",
             '"reset_before_capture": True',
+            '"chapter_start_log_count_before_reset"',
+            '"chapter_start_log_count_after_reset"',
             '"first_capture_delay_seconds"',
             '"capture_interval_seconds"',
             '"actor_region"',
@@ -221,6 +225,11 @@ class WebDiagnosticProbeSourceTests(unittest.TestCase):
             '"minimum_actor_motion_ratio"',
         ):
             self.assertIn(marker, harness)
+
+        player = (ROOT / "web/jc-web-player.js").read_text(encoding="utf-8")
+        self.assertIn('typeof moduleInstance._cmd_reset === "function"', player)
+        self.assertIn("moduleInstance._cmd_reset();", player)
+        self.assertIn('sendCommand("RESET")', player)
 
     def test_late_ending_requires_authentic_johnny1(self) -> None:
         import argparse
@@ -373,6 +382,22 @@ class WebDiagnosticProbeSourceTests(unittest.TestCase):
 
 
 class WebSmokeEarlyChapterMotionTests(unittest.TestCase):
+    def test_fixed_chapter_start_logs_prove_reset_completion(self) -> None:
+        self.assertEqual(chapter_start_log_count(None), 0)
+        self.assertEqual(chapter_start_log_count({"consoleErrors": "bad"}), 0)
+        self.assertEqual(
+            chapter_start_log_count(
+                {
+                    "consoleErrors": [
+                        "RetroArch startup",
+                        "RetroArch: [libretro INFO] Johnny Castaway chapter: first",
+                        "RetroArch: [libretro INFO] Johnny Castaway chapter: second",
+                    ]
+                }
+            ),
+            2,
+        )
+
     def test_post_reset_diagnostics_must_be_clean_and_running(self) -> None:
         clean = {
             "status": "Running. Use RetroArch menu to inspect core options.",

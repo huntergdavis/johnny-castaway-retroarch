@@ -678,6 +678,16 @@ function sendCommand(command) {
   canvas.focus();
 }
 
+function resetCore() {
+  if (!running || !moduleInstance) return;
+  if (typeof moduleInstance._cmd_reset === "function") {
+    moduleInstance._cmd_reset();
+    canvas.focus();
+    return;
+  }
+  sendCommand("RESET");
+}
+
 contentInput.addEventListener("change", () => {
   const pair = selectedPair();
   startButton.disabled = !pair;
@@ -691,7 +701,7 @@ contentInput.addEventListener("change", () => {
 
 startButton.addEventListener("click", () => start());
 menuButton.addEventListener("click", () => sendCommand("MENU_TOGGLE"));
-resetButton.addEventListener("click", () => sendCommand("RESET"));
+resetButton.addEventListener("click", resetCore);
 fullscreenButton.addEventListener("click", () => sendCommand("FULLSCREEN_TOGGLE"));
 audioUnlockButton.addEventListener("click", async () => {
   await unlockAudio();
