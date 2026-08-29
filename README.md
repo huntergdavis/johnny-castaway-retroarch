@@ -21,7 +21,10 @@ queued/ended 512/466, 501/471, and 510/478 pinned 10 ms buffers, scheduled 0.997
 RetroArch menus intentionally paused the core and produced exact all-zero audio
 windows. A separate ordinary staged-local full-options run also passed. These results
 close the previously reported Web renderer/audio blocker for this exact candidate;
-device-specific execution gates and the all-63-scene Web matrix remain separate work.
+device-specific execution gates remain separate work. The authentic Web chapter audit
+has also exercised every catalog entry: 62 chapters passed the generic strict window,
+and short `stand16` passed a reset-scoped early-motion window that proves five changing
+frames, local actor motion, gap-free audio, and clean WebGL before its terminal hold.
 
 The repository now contains bounded ADS/TTM parsers and a resumable 50 Hz script VM,
 an indexed sprite compositor, the deterministic story/walking runtime, and an eight-voice

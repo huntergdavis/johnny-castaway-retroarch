@@ -26,6 +26,7 @@ from web_smoke_test import (
     frame_quality,
     late_ending_color_metrics,
     late_ending_signature_failures,
+    public_distribution_evidence,
     region_change_ratio,
     validate_early_chapter_motion_args,
     validate_late_ending_args,
@@ -382,6 +383,28 @@ class WebDiagnosticProbeSourceTests(unittest.TestCase):
 
 
 class WebSmokeEarlyChapterMotionTests(unittest.TestCase):
+    def test_public_distribution_evidence_binds_public_files_only(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="jc-web-evidence-") as temporary:
+            dist = pathlib.Path(temporary)
+            (dist / "BUILD-PROVENANCE.txt").write_text(
+                "Johnny Castaway commit: " + "a" * 40 + " (clean)\n",
+                encoding="utf-8",
+            )
+            (dist / "index.html").write_text("first", encoding="utf-8")
+            before = public_distribution_evidence(dist)
+            local_content = dist / "local-content"
+            local_content.mkdir()
+            (local_content / "RESOURCE.MAP").write_bytes(b"private")
+            after_private = public_distribution_evidence(dist)
+            self.assertEqual(before, after_private)
+            (dist / "index.html").write_text("second", encoding="utf-8")
+            after_public = public_distribution_evidence(dist)
+            self.assertNotEqual(
+                before["public_tree_sha256"], after_public["public_tree_sha256"]
+            )
+            self.assertEqual(after_public["johnny_commit"], "a" * 40)
+            self.assertEqual(after_public["tree_state"], "clean")
+
     def test_fixed_chapter_start_logs_prove_reset_completion(self) -> None:
         self.assertEqual(chapter_start_log_count(None), 0)
         self.assertEqual(chapter_start_log_count({"consoleErrors": "bad"}), 0)

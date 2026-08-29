@@ -537,6 +537,73 @@ def validate_staged_local_content(dist: pathlib.Path) -> list[pathlib.Path]:
     return files
 
 
+def sha256_file(path: pathlib.Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def public_distribution_evidence(dist: pathlib.Path) -> dict[str, Any]:
+    """Bind a smoke result to every public distribution byte, never local data."""
+    provenance = dist / "BUILD-PROVENANCE.txt"
+    if not provenance.is_file():
+        raise SmokeFailure("Web distribution is missing BUILD-PROVENANCE.txt")
+    try:
+        provenance_text = provenance.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as error:
+        raise SmokeFailure("Web build provenance is unreadable") from error
+    prefix = "Johnny Castaway commit: "
+    commit_lines = [
+        line[len(prefix) :]
+        for line in provenance_text.splitlines()
+        if line.startswith(prefix)
+    ]
+    if len(commit_lines) != 1:
+        raise SmokeFailure("Web build provenance has no unique Johnny commit")
+    commit_state = commit_lines[0].split()
+    commit = commit_state[0] if commit_state else ""
+    tree_state = (
+        commit_state[1].removeprefix("(").removesuffix(")")
+        if len(commit_state) == 2
+        else ""
+    )
+    if (
+        len(commit) != 40
+        or any(character not in "0123456789abcdef" for character in commit)
+        or tree_state not in {"clean", "dirty"}
+    ):
+        raise SmokeFailure("Web build provenance has an invalid Johnny commit/state")
+
+    public_files = sorted(
+        path
+        for path in dist.rglob("*")
+        if path.is_file()
+        and not (
+            (relative := path.relative_to(dist)).parts
+            and relative.parts[0] == "local-content"
+        )
+    )
+    if not public_files:
+        raise SmokeFailure("Web distribution has no public files")
+    digest = hashlib.sha256()
+    digest.update(b"johnny-web-public-distribution-v1\0")
+    for path in public_files:
+        relative = path.relative_to(dist)
+        digest.update(relative.as_posix().encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(bytes.fromhex(sha256_file(path)))
+    return {
+        "fingerprint_kind": "johnny-web-public-distribution-v1",
+        "public_tree_sha256": digest.hexdigest(),
+        "public_file_count": len(public_files),
+        "build_provenance_sha256": sha256_file(provenance),
+        "johnny_commit": commit,
+        "tree_state": tree_state,
+    }
+
+
 def diagnostics(driver: WebDriver) -> dict[str, Any]:
     value = driver.execute(
         """
@@ -1524,6 +1591,7 @@ def run_smoke(args: argparse.Namespace, firefox: str, geckodriver: str) -> int:
             cwd=ROOT,
             check=True,
         )
+    distribution_evidence = public_distribution_evidence(dist)
     if not args.staged_local_content and args.content_dir is None:
         map_path, archive_path = prepare_synthetic_content(artifacts / "synthetic")
         expected_index_log = "indexed 5 resources"
@@ -1568,6 +1636,7 @@ def run_smoke(args: argparse.Namespace, firefox: str, geckodriver: str) -> int:
     driver = WebDriver(f"http://127.0.0.1:{port}")
     result: dict[str, Any] = {
         "url": url,
+        "distribution": distribution_evidence,
         "content": content_description,
         "smoke_probe_enabled": True,
         "chapter": args.chapter or "automatic",

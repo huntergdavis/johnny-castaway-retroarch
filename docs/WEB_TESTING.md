@@ -281,6 +281,41 @@ The matrix deliberately retains its early temporal-motion acceptance for
 `johnny1`; run the late-ending command above once per candidate Web build to bind
 the separate final replacement phase.
 
+The 2026-08-28 authentic execution accounted for all 63 slugs. Its ignored aggregate
+`build/web-chapter-matrix-02e8ddb/summary-range-000-063.json` (SHA-256
+`a692eef5d32a4489fdd79a20601f2f5e9de1a9c48e528e01e88794bcdc9c84fd`)
+records 62 generic-window passes after fail-closed reruns. It deliberately remains
+`passed=false` because `stand16` alone reached its correct terminal hold before the
+ordinary post-notification capture: its complete native runtime is 254 ticks, or
+about 5.08 seconds. Exercise its early action without changing any gate using:
+
+```sh
+python3 tools/web_smoke_test.py \
+  --dist build/web-player/dist \
+  --content-dir /path/to/johnny-data --chapter stand16 \
+  --scene-visual-only --test-early-chapter-motion \
+  --artifacts build/web-stand16-early \
+  --require-browser --timeout 180
+```
+
+This mode is rejected without authentic fixed-chapter content. It waits for the
+ordinary notifications, records the fixed-chapter startup-log count, clicks the real
+Reset control, requires a second startup log and clean Running diagnostics, then
+captures five frames beginning 250 ms later at 500 ms intervals. All ordinary
+playfield, frame-quality/color-key, continuous-audio, and WebGL gates remain active,
+and a normalized Johnny/spyglass region must change by at least 0.5% in one interval.
+The exact clean `424aea1` result
+`build/web-stand16-early-424aea1-r2/result.json` (SHA-256
+`1643185bc7c0f3e6be8484fdc747ec69f30bd33da80277b20d31f1e45d50e040`)
+passed with startup logs 1 then 2, five distinct frames, 4.76%–29.14% actor motion,
+0.92%–2.15% playfield motion, at most a one-pixel renderer-key component, zero gaps
+across 505 480-frame audio buffers at 0.999106 scheduled/wall, 102 WebGL uploads and
+205 draws, and no context loss, page error, or rejection. The first diagnostic run
+already proved reset and motion but encountered one 15 ms audio scheduling gap; the
+isolated repeat passed unchanged, so no threshold was weakened. Together with the 62
+generic passes, this supplies accepted Web evidence for every catalog entry without
+misreporting the aggregate JSON itself as green.
+
 Run the full catalog sequentially with:
 
 ```sh

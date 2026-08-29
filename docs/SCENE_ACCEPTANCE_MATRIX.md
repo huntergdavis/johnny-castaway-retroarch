@@ -90,8 +90,10 @@ catalog at the oracle revision above. It records all 126 measured tide rows,
 the six initial-screen rows, and ordered sound events as
 `event@tick/frame:sample/status`. The sound sequence is repeated on the high
 and low rows because tide changes composition, not the ADS script event
-stream. Its `web_acceptance` field remains `pending_all_scene_matrix`; native
-acceptance is not presented as evidence that every Web row has run.
+stream. Its `web_acceptance` field remains `pending_all_scene_matrix` because this
+tracked file is the immutable native snapshot, not because current Web evidence is
+missing. Native acceptance is not presented as Web evidence; the later independent
+browser evidence is recorded below.
 
 Run only the production visual sweep with:
 
@@ -196,20 +198,38 @@ signatures above, rejects key runs/components, and requires six distinct
 full-frame hashes. The ordinary synthetic libretro unit test still has
 dedicated pixel hashes only for `intro` and `island_day`.
 
-## Web acceptance still required
+## Web acceptance evidence
 
-`tools/web_smoke_test.py --chapter <slug> --content-dir <dir>` can launch any
-of the 63 fixed chapters, and its current frame-quality gate rejects a
-material four-connected renderer-key block (at least 256 pixels and at least
-16x4 bounds). `tools/web_chapter_matrix.py` now owns exact 63-slug accounting,
+`tools/web_smoke_test.py --chapter <slug> --content-dir <dir>` launches any of
+the 63 fixed chapters. Its frame-quality gate rejects a material four-connected
+renderer-key block (at least 256 pixels and at least 16x4 bounds), while the
+same window also requires playfield motion, continuous audio cadence, and healthy
+WebGL uploads/draws. `tools/web_chapter_matrix.py` owns exact 63-slug accounting,
 balanced sharding, resume fingerprints, and ignored per-scene result artifacts.
-The tracked `docs/scene_acceptance_matrix.csv` remains the historical native
-snapshot recorded at `b7f151f`; it is not rewritten to imply a completed Web
-matrix. Current clean-candidate Web release evidence lives only in the ignored
-`build/exact-02e8ddb-unlock-{1,2,3}/` and
-`build/exact-02e8ddb-normal-options/` runner artifacts described in
-`WEB_TESTING.md`. A future all-63 Web execution can publish status-only summaries
-while keeping user-owned PNGs and content ignored.
+
+The ignored aggregate
+`build/web-chapter-matrix-02e8ddb/summary-range-000-063.json` accounts for all 63
+catalog slugs with catalog SHA-256
+`a1d7fce79437c7e62202c08e74f94856035dcc6678a065cb334f6d4dbe8e6460` and
+input fingerprint
+`5825ff93d23f66322d5283c1654262515bdd3741f2b57ca664a7dfa5d4eb2760`.
+After fail-closed reruns, 62 chapters passed the unchanged generic gate. The only
+generic-window failure was `stand16`: its entire native runtime is about 5.08
+seconds, so the ordinary six-second notification settle sampled its correct
+terminal spyglass hold rather than its earlier action.
+
+The reset-scoped `--test-early-chapter-motion` mode closes that timing alias without
+weakening any visual, audio, frame-quality, or WebGL assertion. Against exact clean
+Web commit `424aea13f81a7a9a3534ece00166305aea5536c0`, the real Reset control produced
+chapter-start log counts 1 then 2, followed by five distinct frames, four actor-region
+changes from 4.76% through 29.14%, four playfield changes from 0.92% through 2.15%,
+505 pinned audio buffers with zero positive gaps and 0.999106 scheduled/wall ratio,
+and 102 typed WebGL uploads with no context loss. The passing ignored result is
+`build/web-stand16-early-424aea1-r2/result.json`. Thus every one of the 63 chapters
+has strict authentic Firefox acceptance: 62 through the generic window and `stand16`
+through its timing-appropriate early window. The tracked
+`docs/scene_acceptance_matrix.csv` remains the historical native `b7f151f` snapshot;
+it is not retroactively rewritten with environment-local browser results.
 
 The PS1 thumbnail is an expected-preview locator, not a committed golden
 bitmap. Where the user has local `regtest-references/<ADS>-<TAG>` captures, a
@@ -217,7 +237,7 @@ separate opt-in comparator can normalize the PS1 640x448 viewport and compare
 semantic phases. Those copyrighted/user-owned images must remain untracked.
 
 This document records repeated strict Automatic Story Web audio/renderer acceptance
-for clean candidate `02e8ddb`; it does **not** claim that the all-63 Web matrix has
-been executed, does not claim OCEAN01/02 coverage, and does not elevate completion
-plus frame diversity to pixel-perfect parity with the PS1 signoff. It records exactly
-what is executable now and the stronger oracle needed next.
+for clean candidate `02e8ddb` and the complete 62+1 chapter evidence above. It does
+not claim OCEAN01/02 coverage and does not elevate completion plus frame diversity to
+pixel-perfect parity with the PS1 signoff. It records exactly what is executable now
+and the stronger golden phase oracle needed for pixel-level parity.

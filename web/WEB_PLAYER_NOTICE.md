@@ -16,7 +16,8 @@ in `docs/PROVENANCE.md`, with dependency notices in
 - Build recipe derived from:
   [`pkg/emscripten/README.md`](https://github.com/libretro/RetroArch/blob/96a1b1a9cf3f9166affcfd7df4323aa58d5c281a/pkg/emscripten/README.md)
 - `web/jc-web-player.js` derives its Emscripten module initialization,
-  BrowserFS mount layout, fake static-core path, and command bridge from:
+  BrowserFS mount layout, fake static-core path, command bridge, and direct exported
+  `cmd_reset` invocation from:
   [`pkg/emscripten/libretro/libretro.js`](https://github.com/libretro/RetroArch/blob/96a1b1a9cf3f9166affcfd7df4323aa58d5c281a/pkg/emscripten/libretro/libretro.js)
 - The generated `johnny_castaway_libretro.js` and
   `johnny_castaway_libretro.wasm` are produced by RetroArch's
@@ -25,7 +26,8 @@ in `docs/PROVENANCE.md`, with dependency notices in
 
 The local launcher is intentionally smaller than the stock Web Player UI. It
 keeps the same RetroArch runtime and exposes a direct two-file content picker,
-plus menu, reset, and fullscreen commands.
+plus menu, reset, and fullscreen commands. Reset uses the pinned module's exported
+entry point and retains the string command bridge only as a compatibility fallback.
 
 Its visible audio state, **Enable Audio** control, and pointer/keyboard/touch
 resume flow adapt the GPLv3 implementation in Hunter Davis's
