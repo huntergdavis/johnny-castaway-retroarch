@@ -2144,30 +2144,41 @@ def run_smoke(args: argparse.Namespace, firefox: str, geckodriver: str) -> int:
         driver.key_press(WEBDRIVER_KEY_HOME)
         for _ in range(HOLIDAY_FOUR_TWENTY_VALUE_INDEX):
             driver.key_press(WEBDRIVER_KEY_DOWN)
+        holiday_selected_path = artifacts / "holiday-420-selected.png"
+        holiday_selected_hash = stable_screenshot(
+            driver, canvas_element, holiday_selected_path
+        )
         driver.key_press(RETROARCH_MENU_OK)
+        holiday_story_path = artifacts / "holiday-story-selected.png"
+        holiday_story_hash = stable_screenshot(
+            driver, canvas_element, holiday_story_path
+        )
         driver.click(driver.find("#menu"))
         holiday_path = artifacts / "holiday-420-gameplay.png"
-        holiday_hash = wait_until(
+        baseline_holiday_frame = png_pixels(game_paths[-1])
+
+        def capture_holiday_emblem() -> tuple[str, float] | None:
+            current_hash = driver.screenshot(canvas_element, holiday_path)
+            current_ratio = region_change_ratio(
+                baseline_holiday_frame,
+                png_pixels(holiday_path),
+                HOLIDAY_EMBLEM_REGION,
+            )
+            if current_ratio < 0.08:
+                return None
+            return current_hash, current_ratio
+
+        holiday_hash, holiday_region_ratio = wait_until(
             "4/20 Day holiday gameplay",
             args.timeout,
-            lambda: (
-                current
-                if (
-                    current := driver.screenshot(canvas_element, holiday_path)
-                ) != story_bottom_hash
-                else None
-            ),
+            capture_holiday_emblem,
         )
-        holiday_region_ratio = region_change_ratio(
-            png_pixels(game_paths[-1]),
-            png_pixels(holiday_path),
-            HOLIDAY_EMBLEM_REGION,
+        result["screenshots"]["holiday_420_selected_sha256"] = (
+            holiday_selected_hash
         )
-        if holiday_region_ratio < 0.08:
-            raise SmokeFailure(
-                "4/20 Day changed only "
-                f"{holiday_region_ratio:.3%} of its PS1 emblem region"
-            )
+        result["screenshots"]["holiday_story_selected_sha256"] = (
+            holiday_story_hash
+        )
         result["screenshots"]["holiday_420_gameplay_sha256"] = holiday_hash
         result["holiday_emblem"] = {
             "value": "four_twenty",
