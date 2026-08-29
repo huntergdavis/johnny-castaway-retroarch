@@ -12,14 +12,21 @@ import unittest
 import zipfile
 
 from web_smoke_test import (
+    EARLY_CHAPTER_ACTOR_REGION,
+    EARLY_CHAPTER_CAPTURE_INTERVAL_SECONDS,
+    EARLY_CHAPTER_FIRST_CAPTURE_DELAY_SECONDS,
+    EARLY_CHAPTER_MINIMUM_ACTOR_MOTION_RATIO,
     SmokeFailure,
     analyze_late_ending_decoded_frames,
     complete_scene_visual_only_result,
+    diagnostics_are_clean_running,
     evaluate_strict_audio_window,
     frame_has_color_key_failure,
     frame_quality,
     late_ending_color_metrics,
     late_ending_signature_failures,
+    region_change_ratio,
+    validate_early_chapter_motion_args,
     validate_late_ending_args,
     validate_scene_visual_only_args,
 )
@@ -174,6 +181,47 @@ class WebDistributionValidatorTests(unittest.TestCase):
 
 
 class WebDiagnosticProbeSourceTests(unittest.TestCase):
+    def test_early_chapter_motion_requires_fixed_authentic_content(self) -> None:
+        import argparse
+
+        validate_early_chapter_motion_args(
+            argparse.Namespace(test_early_chapter_motion=False)
+        )
+        for chapter, content_dir in (
+            (None, pathlib.Path("fixture")),
+            ("stand16", None),
+        ):
+            invalid = argparse.Namespace(
+                test_early_chapter_motion=True,
+                chapter=chapter,
+                content_dir=content_dir,
+            )
+            with self.assertRaisesRegex(
+                SmokeFailure, "requires --chapter and --content-dir"
+            ):
+                validate_early_chapter_motion_args(invalid)
+        validate_early_chapter_motion_args(
+            argparse.Namespace(
+                test_early_chapter_motion=True,
+                chapter="stand16",
+                content_dir=pathlib.Path("fixture"),
+            )
+        )
+
+    def test_early_chapter_motion_source_is_reset_scoped_and_recorded(self) -> None:
+        harness = (ROOT / "tools/web_smoke_test.py").read_text(encoding="utf-8")
+        for marker in (
+            "--test-early-chapter-motion",
+            'driver.click(driver.find("#reset"))',
+            '"reset_before_capture": True',
+            '"first_capture_delay_seconds"',
+            '"capture_interval_seconds"',
+            '"actor_region"',
+            '"actor_change_ratios"',
+            '"minimum_actor_motion_ratio"',
+        ):
+            self.assertIn(marker, harness)
+
     def test_late_ending_requires_authentic_johnny1(self) -> None:
         import argparse
 
@@ -322,6 +370,65 @@ class WebDiagnosticProbeSourceTests(unittest.TestCase):
         ):
             self.assertIn(marker, harness)
         self.assertNotIn('import("./jc-web-player.js")', harness)
+
+
+class WebSmokeEarlyChapterMotionTests(unittest.TestCase):
+    def test_post_reset_diagnostics_must_be_clean_and_running(self) -> None:
+        clean = {
+            "status": "Running. Use RetroArch menu to inspect core options.",
+            "statusError": False,
+            "pageErrors": [],
+            "rejections": [],
+        }
+        self.assertTrue(diagnostics_are_clean_running(clean))
+        for changed in (
+            {"status": "Ready: files selected"},
+            {"statusError": True},
+            {"pageErrors": ["boom"]},
+            {"rejections": ["boom"]},
+        ):
+            candidate = dict(clean)
+            candidate.update(changed)
+            self.assertFalse(diagnostics_are_clean_running(candidate))
+        self.assertFalse(diagnostics_are_clean_running(None))
+
+    def test_actor_region_is_normalized_and_requires_local_motion(self) -> None:
+        self.assertEqual(
+            EARLY_CHAPTER_ACTOR_REGION,
+            (500 / 640, 220 / 480, 580 / 640, 330 / 480),
+        )
+        self.assertEqual(EARLY_CHAPTER_FIRST_CAPTURE_DELAY_SECONDS, 0.25)
+        self.assertEqual(EARLY_CHAPTER_CAPTURE_INTERVAL_SECONDS, 0.5)
+        self.assertEqual(EARLY_CHAPTER_MINIMUM_ACTOR_MOTION_RATIO, 0.005)
+
+        width, height, channels = 640, 480, 3
+        baseline = bytes(width * height * channels)
+        actor_motion = bytearray(baseline)
+        for y_position in range(230, 240):
+            for x_position in range(510, 520):
+                pixel = (y_position * width + x_position) * channels
+                actor_motion[pixel : pixel + channels] = b"\xff\xff\xff"
+        outside_motion = bytearray(baseline)
+        for y_position in range(20, 30):
+            for x_position in range(20, 30):
+                pixel = (y_position * width + x_position) * channels
+                outside_motion[pixel : pixel + channels] = b"\xff\xff\xff"
+
+        original = (width, height, channels, baseline)
+        actor_changed = (width, height, channels, bytes(actor_motion))
+        outside_changed = (width, height, channels, bytes(outside_motion))
+        self.assertGreaterEqual(
+            region_change_ratio(
+                original, actor_changed, EARLY_CHAPTER_ACTOR_REGION
+            ),
+            EARLY_CHAPTER_MINIMUM_ACTOR_MOTION_RATIO,
+        )
+        self.assertEqual(
+            region_change_ratio(
+                original, outside_changed, EARLY_CHAPTER_ACTOR_REGION
+            ),
+            0.0,
+        )
 
 
 class WebSmokeFrameQualityTests(unittest.TestCase):

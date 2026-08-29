@@ -38,6 +38,16 @@ RETROARCH_MENU_OK = "z"
 WEBDRIVER_KEY_END = "\ue010"
 WEBDRIVER_KEY_HOME = "\ue011"
 WEBDRIVER_KEY_DOWN = "\ue015"
+EARLY_CHAPTER_NOTIFICATION_SETTLE_SECONDS = 6.0
+EARLY_CHAPTER_FIRST_CAPTURE_DELAY_SECONDS = 0.25
+EARLY_CHAPTER_CAPTURE_INTERVAL_SECONDS = 0.5
+EARLY_CHAPTER_ACTOR_REGION = (
+    500.0 / 640.0,
+    220.0 / 480.0,
+    580.0 / 640.0,
+    330.0 / 480.0,
+)
+EARLY_CHAPTER_MINIMUM_ACTOR_MOTION_RATIO = 0.005
 # Exact output of make_synthetic_content() in tests/test_libretro.c.  Keeping
 # this browser fixture self-contained prevents unrelated host-test assertions
 # from blocking it.  Both payloads are generated project data, not game data.
@@ -304,6 +314,15 @@ def parse_args() -> argparse.Namespace:
             "The End replacement and require clean stable title frames"
         ),
     )
+    parser.add_argument(
+        "--test-early-chapter-motion",
+        action="store_true",
+        help=(
+            "with --chapter and --content-dir, let startup notifications expire, "
+            "reset the fixed chapter, and prove early actor motion before a short "
+            "chapter reaches its terminal hold"
+        ),
+    )
     return parser.parse_args()
 
 
@@ -320,6 +339,15 @@ def validate_late_ending_args(args: argparse.Namespace) -> None:
     if args.chapter != "johnny1" or args.content_dir is None:
         raise SmokeFailure(
             "--test-late-ending requires --chapter johnny1 and --content-dir"
+        )
+
+
+def validate_early_chapter_motion_args(args: argparse.Namespace) -> None:
+    if not args.test_early_chapter_motion:
+        return
+    if not args.chapter or args.content_dir is None:
+        raise SmokeFailure(
+            "--test-early-chapter-motion requires --chapter and --content-dir"
         )
 
 
@@ -543,6 +571,17 @@ def diagnostics(driver: WebDriver) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise SmokeFailure("browser diagnostics were not an object")
     return value
+
+
+def diagnostics_are_clean_running(value: Any) -> bool:
+    """Return whether a post-command player snapshot is running and error-free."""
+    return bool(
+        isinstance(value, dict)
+        and str(value.get("status", "")).startswith("Running.")
+        and not value.get("statusError")
+        and not value.get("pageErrors")
+        and not value.get("rejections")
+    )
 
 
 def stable_screenshot(
@@ -1174,11 +1213,31 @@ def capture_temporal_gameplay(
     *,
     require_playfield_motion: bool,
     require_water_motion: bool,
+    test_early_chapter_motion: bool = False,
+    timeout: float = 45.0,
 ) -> tuple[list[pathlib.Path], list[str], dict[str, Any]]:
     """Capture settled gameplay and require authentic playfield/water motion."""
     # RetroArch's content and configuration notifications obscure the center
     # and bottom of the first frame. Let both expire before evidence capture.
-    time.sleep(6.0)
+    settle_seconds = EARLY_CHAPTER_NOTIFICATION_SETTLE_SECONDS
+    time.sleep(settle_seconds)
+    capture_interval_seconds = 1.0
+    reset_state: dict[str, Any] | None = None
+    if test_early_chapter_motion:
+        driver.click(driver.find("#reset"))
+        reset_state = wait_until(
+            "clean Running state after fixed chapter reset",
+            timeout,
+            lambda: (
+                current
+                if diagnostics_are_clean_running(
+                    current := diagnostics(driver)
+                )
+                else None
+            ),
+        )
+        time.sleep(EARLY_CHAPTER_FIRST_CAPTURE_DELAY_SECONDS)
+        capture_interval_seconds = EARLY_CHAPTER_CAPTURE_INTERVAL_SECONDS
     paths: list[pathlib.Path] = []
     hashes: list[str] = []
     started = time.monotonic()
@@ -1188,7 +1247,7 @@ def capture_temporal_gameplay(
         paths.append(path)
         hashes.append(driver.screenshot(canvas_element, path))
         if index != 4:
-            time.sleep(1.0)
+            time.sleep(capture_interval_seconds)
     elapsed = time.monotonic() - started
 
     # Screenshot readback can stall the browser's main thread. Measure audio
@@ -1270,6 +1329,18 @@ def capture_temporal_gameplay(
         )
         for index in range(1, len(decoded_frames))
     ]
+    actor_ratios = (
+        []
+        if geometry_changed or not test_early_chapter_motion
+        else [
+            region_change_ratio(
+                decoded_frames[index - 1],
+                decoded_frames[index],
+                EARLY_CHAPTER_ACTOR_REGION,
+            )
+            for index in range(1, len(decoded_frames))
+        ]
+    )
     distinct_frames = len(set(hashes))
     if distinct_frames < 3:
         failures.append(
@@ -1282,6 +1353,14 @@ def capture_temporal_gameplay(
     if require_water_motion and max(water_ratios, default=0.0) < 0.0002:
         failures.append(
             "settled gameplay lacks a material lower water-band transition"
+        )
+    if (
+        test_early_chapter_motion
+        and max(actor_ratios, default=0.0)
+        < EARLY_CHAPTER_MINIMUM_ACTOR_MOTION_RATIO
+    ):
+        failures.append(
+            "early fixed chapter lacks a material actor-region pixel transition"
         )
 
     audio_metrics, audio_failures = evaluate_strict_audio_window(
@@ -1338,7 +1417,7 @@ def capture_temporal_gameplay(
     }
 
     temporal = {
-        "settle_seconds": 6.0,
+        "settle_seconds": settle_seconds,
         "sample_elapsed_seconds": elapsed,
         "distinct_frames": distinct_frames,
         "frame_sha256": {
@@ -1358,6 +1437,29 @@ def capture_temporal_gameplay(
         "acceptance_failures": failures,
         "passed": not failures,
     }
+    if test_early_chapter_motion:
+        temporal["early_chapter_motion"] = {
+            "reset_before_capture": True,
+            "reset_status": reset_state.get("status") if reset_state else None,
+            "reset_status_error": (
+                reset_state.get("statusError") if reset_state else None
+            ),
+            "reset_page_error_count": len(
+                reset_state.get("pageErrors", []) if reset_state else []
+            ),
+            "reset_rejection_count": len(
+                reset_state.get("rejections", []) if reset_state else []
+            ),
+            "first_capture_delay_seconds": (
+                EARLY_CHAPTER_FIRST_CAPTURE_DELAY_SECONDS
+            ),
+            "capture_interval_seconds": capture_interval_seconds,
+            "actor_region": EARLY_CHAPTER_ACTOR_REGION,
+            "actor_change_ratios": actor_ratios,
+            "minimum_actor_motion_ratio": (
+                EARLY_CHAPTER_MINIMUM_ACTOR_MOTION_RATIO
+            ),
+        }
     evidence["temporal_gameplay"] = temporal
     if failures:
         raise SmokeFailure("; ".join(failures))
@@ -1378,6 +1480,7 @@ def run_smoke(args: argparse.Namespace, firefox: str, geckodriver: str) -> int:
         raise SmokeFailure("generated Web distribution is incomplete: " + ", ".join(missing))
     validate_scene_visual_only_args(args)
     validate_late_ending_args(args)
+    validate_early_chapter_motion_args(args)
     if args.chapter and args.content_dir is None:
         raise SmokeFailure("--chapter requires --content-dir")
     if args.test_audio_unlock and not args.staged_local_content:
@@ -1455,6 +1558,8 @@ def run_smoke(args: argparse.Namespace, firefox: str, geckodriver: str) -> int:
         "scene_visual_only": args.scene_visual_only,
         "test_late_ending": args.test_late_ending,
     }
+    if args.test_early_chapter_motion:
+        result["test_early_chapter_motion"] = True
     if args.staged_local_content:
         result["staged_local_content"] = [path.name for path in staged_files]
     elif args.content_dir is None:
@@ -1680,6 +1785,8 @@ def run_smoke(args: argparse.Namespace, firefox: str, geckodriver: str) -> int:
                 result,
                 require_playfield_motion=bool(args.chapter),
                 require_water_motion=not bool(args.chapter),
+                test_early_chapter_motion=args.test_early_chapter_motion,
+                timeout=args.timeout,
             )
             result["temporal_gameplay"] = temporal
         else:
