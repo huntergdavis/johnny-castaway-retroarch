@@ -13,8 +13,11 @@ Menu integration is a release gate for every platform, not a post-port task.
   records; selecting a chapter starts its original ADS/tag and the first live-rendered
   frame acts as the graphical preview. Holiday Overlay
   provides Automatic (frontend device local date), Off, and 36 explicit force/preview
-  values. A forced or date-matched holiday immediately draws an asset-free title/date
-  band, opposite top-positioned captions. Deterministic Seed selects a reproducible
+  values. A forced or date-matched holiday draws only its scene emblem, never a
+  title/date banner. The 32 holidays added by the GPL PS1 port use their generated
+  32x32 emblems; the four original-game frames are decoded only from the user's own
+  required resource archive and remain excluded from the distribution.
+  Deterministic Seed selects a reproducible
   automatic plan; Calendar selects the frontend system clock or simulated month/day/hour
   fields; Tide selects automatic/high/low; and Raft selects automatic/none/stage 1–5.
   Tide and raft choices alter the authentic island composition while scene-local

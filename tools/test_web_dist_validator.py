@@ -525,10 +525,18 @@ class WebSmokeStrictAudioTests(unittest.TestCase):
     def audio_window(**overrides: object) -> dict[str, object]:
         window: dict[str, object] = {
             "installed": True,
-            "contexts": [{"state": "running", "sampleRate": 48000}],
+            "contexts": [
+                {
+                    "state": "running",
+                    "sampleRate": 48000,
+                    "currentTimeSeconds": 12.0,
+                    "lastScheduledEndSeconds": 12.4,
+                    "scheduleLeadSeconds": 0.4,
+                }
+            ],
             "observedWindowElapsedMs": 5000.0,
             "windowQueuedBuffers": 500,
-            "windowEndedBuffers": 450,
+            "windowEndedBuffers": 437,
             "windowFramesQueued": 240000,
             "windowScheduledSeconds": 5.0,
             "windowBufferFramesMin": 480,
@@ -552,7 +560,7 @@ class WebSmokeStrictAudioTests(unittest.TestCase):
         _, failures = evaluate_strict_audio_window(
             self.audio_window(
                 windowScheduledSeconds=5.11,
-                windowEndedBuffers=449,
+                windowEndedBuffers=501,
                 windowPositiveGapCount=1,
                 windowMaxPositiveGapMs=0.25,
             ),
@@ -561,8 +569,19 @@ class WebSmokeStrictAudioTests(unittest.TestCase):
         self.assertTrue(
             any("scheduled duration is inconsistent" in failure for failure in failures)
         )
-        self.assertTrue(any("ended only 449/500" in failure for failure in failures))
+        self.assertTrue(any("ended 501/500" in failure for failure in failures))
         self.assertTrue(any("is not gap-free" in failure for failure in failures))
+
+    def test_continuous_window_rejects_drained_or_excessive_schedule_lead(self) -> None:
+        for lead in (-0.006, 0.426):
+            window = self.audio_window()
+            context = dict(window["contexts"][0])
+            context["scheduleLeadSeconds"] = lead
+            window["contexts"] = [context]
+            _, failures = evaluate_strict_audio_window(window, "gameplay")
+            self.assertTrue(
+                any("schedule headroom is outside" in failure for failure in failures)
+            )
 
     def test_menu_accepts_exact_silence_and_rejects_partial_scheduling(self) -> None:
         silence = self.audio_window(

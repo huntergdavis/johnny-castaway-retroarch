@@ -80,13 +80,15 @@ chapter, 36-holiday, and CC0 ambience foundations are complete. The exact licens
 is embedded and decoded, the mixer loops it at independent gain, and TTM sample cues are
 dispatched. All 63 chapters start as live-rendered Core Option previews, and caption
 presentation has functional menu controls. Automatic/off/36-force holiday menu values
-drive an asset-free title/date overlay. Versioned chapter-mode save states preserve and
+drive asset-only scene decoration without a title/date banner. The 32 PS1-added holidays
+draw the GPL port's generated 32x32 emblems; the four original frames are decoded only
+from the user's resource archive. Versioned chapter-mode save states preserve and
 deterministically reconstruct runtime, renderer, caption, core, and audio state; the
 automatic plan/day/scene identity is also represented without serializing pointers.
 Optional user-supplied `sound0.wav` through `sound24.wav` siblings are now loaded through
 VFS/stdio and dispatched by original TTM sample IDs, with missing/invalid files failing
-softly. Active island/walk/fade transition state is covered. Sprite-faithful holiday
-decorations remain intentionally asset-free, and chapter selection stays in the
+softly. Active island/walk/fade transition state is covered. The four original Sierra
+holiday sprites remain deliberately excluded from packages, and chapter selection stays in the
 RetroArch menu rather than adding a second controller-driven explorer UI.
 
 - Port sound triggers and deterministic multi-voice mixing.
@@ -133,9 +135,10 @@ contract exists.
    save-state tested. All 63 authentic chapters complete.**
 4. Port feasible PS1 additions: captions, 36-holiday calendar, scene explorer previews,
    and the CC0 ocean ambience loop with full attribution. **Captions, chapter previews,
-   calendar data and simulation, automatic/forced asset-free holiday presentation,
-   tide/raft island composition, ambience, and playback controls are done. Proprietary
-   holiday sprite presentation is deliberately not distributed.**
+   calendar data and simulation, automatic/forced asset-only presentation for 32 GPL
+   PS1-added emblems plus four runtime-decoded user-supplied originals, tide/raft island
+   composition, ambience, and playback controls are done. The four proprietary
+   original-game holiday frames are deliberately not distributed.**
 5. Browser RetroArch build/link/dist/HTTP and real-Firefox synthetic-content harness.
    **Infrastructure, local original-data auto-loading, and Core Options navigation pass;
    authentic Automatic Story animation, water motion, and residual-key rejection now

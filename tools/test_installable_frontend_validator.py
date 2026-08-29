@@ -18,7 +18,7 @@ from unittest import mock
 import check_installable_frontend as validator
 
 
-VERSION = "0.1.3"
+VERSION = "0.1.4"
 PROGRAM_ID = 0x0004000004A43000
 
 

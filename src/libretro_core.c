@@ -288,6 +288,8 @@ static jc_island_walk_t island_walk;
 static jc_bmp_t johnny_walk_sprites;
 static jc_bmp_t island_sprites;
 static jc_bmp_t raft_sprites;
+static jc_bmp_t holiday_sprites;
+static bool holiday_sprites_ready;
 static uint8_t *walk_frame_pixels;
 static jc_surface_t walk_frame;
 static bool walk_resources_ready;
@@ -424,7 +426,7 @@ static struct retro_core_option_v2_definition option_definitions[] = {
         "johnny_castaway_holiday_overlay",
         "Holiday Overlay",
         "Holiday Overlay",
-        "Automatic uses the frontend device's local calendar date. Off hides the overlay. Every named value forces a visible title/date preview without requiring proprietary holiday artwork. Changes apply immediately.",
+        "Automatic uses the frontend device's local calendar date. Off hides holiday artwork. Every named value forces its scene emblem; the 32 PS1-port-added holidays use their GPL-generated sprite. No title or date banner is drawn. Changes apply immediately.",
         NULL,
         "story",
         {{NULL, NULL}},
@@ -1600,6 +1602,8 @@ static void unload_walk_resources(void)
     jc_bmp_free(&raft_sprites);
     jc_bmp_free(&island_sprites);
     jc_bmp_free(&johnny_walk_sprites);
+    jc_bmp_free(&holiday_sprites);
+    holiday_sprites_ready = false;
     free(walk_frame_pixels);
     walk_frame_pixels = NULL;
     memset(&walk_frame, 0, sizeof(walk_frame));
@@ -1688,6 +1692,24 @@ static bool load_walk_resources(char *error, size_t error_size)
         return false;
     }
     walk_resources_ready = true;
+    return true;
+}
+
+static bool load_original_holiday_sprites(char *error, size_t error_size)
+{
+    jc_bmp_free(&holiday_sprites);
+    holiday_sprites_ready = false;
+    if (!load_content_bmp("HOLIDAY.BMP", &holiday_sprites,
+                          error, error_size))
+        return false;
+    if (holiday_sprites.image_count < 4u) {
+        snprintf(error, error_size,
+                 "HOLIDAY.BMP has %u frames; four required",
+                 (unsigned)holiday_sprites.image_count);
+        jc_bmp_free(&holiday_sprites);
+        return false;
+    }
+    holiday_sprites_ready = true;
     return true;
 }
 
@@ -2765,14 +2787,8 @@ static void present_video_frame(void)
 {
     const char *caption = jc_captions_current_text(&captions);
     const jc_holiday_extra_t *holiday = NULL;
-    jc_caption_anchor_t holiday_anchor = JC_CAPTION_ANCHOR_TOP;
 
     memcpy(video_output, jc_core_framebuffer(&core), sizeof(video_output));
-    if (caption != NULL) {
-        (void)jc_caption_render(video_output, JC_FRAME_WIDTH, JC_FRAME_HEIGHT,
-                                JC_FRAME_WIDTH, caption, strlen(caption),
-                                &caption_render_options, NULL);
-    }
     if (holiday_selection.mode == JC_HOLIDAY_OVERLAY_AUTO) {
         time_t now = time(NULL);
         struct tm *calendar = now == (time_t)-1 ? NULL : localtime(&now);
@@ -2785,12 +2801,25 @@ static void present_video_frame(void)
         holiday = jc_holiday_overlay_resolve(&holiday_selection, 2000, 1, 1);
     }
     if (holiday != NULL) {
-        if (caption != NULL &&
-            caption_render_options.anchor == JC_CAPTION_ANCHOR_TOP)
-            holiday_anchor = JC_CAPTION_ANCHOR_BOTTOM;
-        (void)jc_holiday_overlay_render_anchored(
-            video_output, JC_FRAME_WIDTH, JC_FRAME_HEIGHT, JC_FRAME_WIDTH,
-            holiday, holiday_anchor, NULL);
+        const jc_palette_t *holiday_palette =
+            runtime_ready && runtime != NULL ?
+                story_runtime_palette(runtime) :
+                (walk_palette_ready ? &walk_palette : NULL);
+        if (holiday_palette != NULL &&
+            !jc_holiday_overlay_render_emblem(
+                video_output, JC_FRAME_WIDTH, JC_FRAME_HEIGHT,
+                JC_FRAME_WIDTH, holiday, holiday_palette, NULL) &&
+            holiday_sprites_ready) {
+            (void)jc_holiday_overlay_render_original(
+                video_output, JC_FRAME_WIDTH, JC_FRAME_HEIGHT,
+                JC_FRAME_WIDTH, holiday, holiday_palette,
+                &holiday_sprites, (uint8_t)story_transparent_index(), NULL);
+        }
+    }
+    if (caption != NULL) {
+        (void)jc_caption_render(video_output, JC_FRAME_WIDTH, JC_FRAME_HEIGHT,
+                                JC_FRAME_WIDTH, caption, strlen(caption),
+                                &caption_render_options, NULL);
     }
     if (automatic_transition == JC_AUTOMATIC_TRANSITION_FADE_OUT) {
         unsigned tick;
@@ -2951,6 +2980,8 @@ void retro_init(void)
     memset(&johnny_walk_sprites, 0, sizeof(johnny_walk_sprites));
     memset(&island_sprites, 0, sizeof(island_sprites));
     memset(&raft_sprites, 0, sizeof(raft_sprites));
+    memset(&holiday_sprites, 0, sizeof(holiday_sprites));
+    holiday_sprites_ready = false;
     walk_frame_pixels = NULL;
     memset(&walk_frame, 0, sizeof(walk_frame));
     walk_resources_ready = false;
@@ -3005,7 +3036,7 @@ void retro_get_system_info(struct retro_system_info *info)
 {
     memset(info, 0, sizeof(*info));
     info->library_name = "Johnny Castaway";
-    info->library_version = "0.1.3";
+    info->library_version = "0.1.4";
     info->valid_extensions = "map|001";
     info->need_fullpath = true;
     info->block_extract = false;
@@ -3906,6 +3937,16 @@ bool retro_load_game(const struct retro_game_info *game)
     } else if (log_cb != NULL) {
         log_cb(RETRO_LOG_INFO,
                "Johnny Castaway island walking: JOHNWALK and BACKGRND ready\n");
+    }
+
+    if (!load_original_holiday_sprites(error, sizeof(error))) {
+        if (log_cb != NULL)
+            log_cb(RETRO_LOG_WARN,
+                   "Johnny Castaway optional original holiday artwork: %s\n",
+                   error);
+    } else if (log_cb != NULL) {
+        log_cb(RETRO_LOG_INFO,
+               "Johnny Castaway original holiday artwork: four user-supplied frames ready\n");
     }
 
     if (jc_sfx_load(&sfx, &audio, game->path, vfs, &sfx_report) != JC_SFX_OK) {

@@ -38,9 +38,14 @@ of their respective rights holders. This repository distributes none of that con
   metadata, 36-holiday calendar, and ocean-ambience feature design were translated into
   portable catalogs for this core. Its centered, bottom-band caption presentation
   informed this port's independently drawn 5x7 software renderer. Its automatic/off/
-  manual holiday menu and title/date preview behavior informed this core's independently
-  written, asset-free holiday overlay; no `HOLIDAY.BMP` artwork was brought over. The ocean loop
-  pipeline was introduced by Hunter
+  manual holiday menu and scene-sprite placement behavior informed this core's
+  independently written asset-only renderer. The 32 emblems created for that GPL PlayStation port are
+  mechanically imported from frames 4-35 of its generated `HOLIDAY.BMP` at revision
+  `25c5d84593ac20cbee354eaab7779ab7397d6bbe`; the sheet's four leading Sierra frames
+  are deliberately excluded from the embedded payload; when available, they are decoded
+  at runtime from the user's required original resource archive. Hunter Davis authored and human-reviewed the emblem
+  generator, with primitive drafts credited there to an AI subagent, in commits
+  `cc2ef4d69a` and `0a3ef05ecf`. The ocean loop pipeline was introduced by Hunter
   Davis in PS1 commit `bb32de68aad33ecd1b8a7fbdc0a9278a35971238`, co-authored there
   with Claude Opus 4.7, and completed in commit
   `c194f1bf5716b460ba7276dcb8116b24a690c636`.

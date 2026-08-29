@@ -10,27 +10,14 @@
 #define WIDTH 640u
 #define HEIGHT 480u
 
-static uint64_t hash_pixels(const uint32_t *pixels, size_t count)
-{
-    uint64_t hash = 1469598103934665603ull;
-    size_t index;
-    for (index = 0u; index < count; ++index) {
-        hash ^= pixels[index];
-        hash *= 1099511628211ull;
-    }
-    return hash;
-}
-
 int main(void)
 {
     jc_holiday_overlay_selection_t selection;
     jc_holiday_overlay_choice_t choice;
     const jc_holiday_extra_t *holiday;
     uint32_t *pixels;
-    uint64_t hashes[36];
-    char text[128];
     size_t index;
-    size_t other;
+    jc_palette_t palette;
 
     assert(jc_holiday_overlay_choice_count() == 38u);
     assert(jc_holiday_overlay_choice_at(0u, &choice));
@@ -54,11 +41,10 @@ int main(void)
 
     pixels = (uint32_t *)calloc((size_t)WIDTH * HEIGHT, sizeof(*pixels));
     assert(pixels != NULL);
+    for (index = 0u; index < JC_PALETTE_COLORS; ++index)
+        palette.xrgb[index] = 0x00100000u + (uint32_t)index;
     for (index = 2u; index < jc_holiday_overlay_choice_count(); ++index) {
-        jc_caption_render_result_t result;
         const jc_holiday_extra_t *forced;
-        size_t pixel_index;
-        bool lower_frame_changed = false;
 
         assert(jc_holiday_overlay_choice_at(index, &choice));
         assert(choice.selection.mode == JC_HOLIDAY_OVERLAY_FORCED);
@@ -67,44 +53,58 @@ int main(void)
         forced = jc_holiday_overlay_resolve(&selection, 2000, 1, 2);
         assert(forced != NULL && forced->id == selection.holiday_id);
         assert(strcmp(choice.label, forced->title) == 0);
-        assert(jc_holiday_overlay_format(forced, text, sizeof(text)));
-        assert(strstr(text, forced->title) != NULL);
-        assert(strstr(text, forced->date_label) != NULL);
-
-        memset(pixels, 0, (size_t)WIDTH * HEIGHT * sizeof(*pixels));
-        assert(jc_holiday_overlay_render(pixels, WIDTH, HEIGHT, WIDTH,
-                                         forced, &result));
-        assert(result.line_count == 2u);
-        assert(result.foreground_pixels > 0u);
-        assert(result.y < 64u && result.height < 64u);
-        assert(pixels[(size_t)result.y * WIDTH] != 0u);
-        for (pixel_index = (size_t)HEIGHT / 2u * WIDTH;
-             pixel_index < (size_t)WIDTH * HEIGHT; ++pixel_index) {
-            if (pixels[pixel_index] != 0u)
-                lower_frame_changed = true;
-        }
-        assert(!lower_frame_changed);
-        hashes[index - 2u] = hash_pixels(pixels, (size_t)WIDTH * HEIGHT);
-        for (other = 0u; other < index - 2u; ++other)
-            assert(hashes[other] != hashes[index - 2u]);
     }
 
-    holiday = jc_holiday_extra_by_id(8);
-    assert(holiday != NULL);
-    assert(jc_holiday_overlay_format(holiday, text, sizeof(text)));
-    assert(strcmp(text, "HOLIDAY: Valentine's Day\nFEB 14") == 0);
-    assert(!jc_holiday_overlay_format(holiday, text, 8u));
-    assert(!jc_holiday_overlay_render(NULL, WIDTH, HEIGHT, WIDTH,
-                                      holiday, NULL));
-
-    memset(pixels, 0, (size_t)WIDTH * HEIGHT * sizeof(*pixels));
+    holiday = jc_holiday_extra_by_id(36);
+    assert(holiday != NULL && holiday->sprite_index == 14);
+    assert(jc_holiday_overlay_has_emblem(holiday));
+    memset(pixels, 0x5a, (size_t)WIDTH * HEIGHT * sizeof(*pixels));
     {
-        jc_caption_render_result_t result;
-        assert(jc_holiday_overlay_render_anchored(
-            pixels, WIDTH, HEIGHT, WIDTH, holiday,
-            JC_CAPTION_ANCHOR_BOTTOM, &result));
-        assert(result.y > HEIGHT / 2u);
-        assert(result.y + result.height <= HEIGHT);
+        size_t drawn = 0u;
+        const uint32_t untouched = UINT32_C(0x5a5a5a5a);
+        assert(jc_holiday_overlay_render_emblem(
+            pixels, WIDTH, HEIGHT, WIDTH, holiday, &palette, &drawn));
+        assert(drawn == 241u);
+        assert(pixels[(size_t)283u * WIDTH + 404u] == untouched);
+        assert(pixels[(size_t)284u * WIDTH + 403u] == untouched);
+        assert(pixels[(size_t)316u * WIDTH + 404u] == untouched);
+        assert(pixels[(size_t)284u * WIDTH + 436u] == untouched);
+        assert(!jc_holiday_overlay_render_emblem(
+            NULL, WIDTH, HEIGHT, WIDTH, holiday, &palette, NULL));
+    }
+
+    holiday = jc_holiday_extra_by_id(1);
+    assert(holiday != NULL && !jc_holiday_overlay_has_emblem(holiday));
+    assert(!jc_holiday_overlay_render_emblem(
+        pixels, WIDTH, HEIGHT, WIDTH, holiday, &palette, NULL));
+
+    {
+        jc_bmp_t sheet;
+        jc_bmp_image_t images[4];
+        uint8_t storage[4] = {2u, 2u, 2u, 2u};
+        size_t drawn = 0u;
+
+        memset(&sheet, 0, sizeof(sheet));
+        memset(images, 0, sizeof(images));
+        for (index = 0u; index < 4u; ++index) {
+            images[index].width = 1u;
+            images[index].height = 1u;
+            images[index].pixel_count = 1u;
+            images[index].pixels = &storage[index];
+        }
+        sheet.image_count = 4u;
+        sheet.images = images;
+        memset(pixels, 0x5a, (size_t)WIDTH * HEIGHT * sizeof(*pixels));
+        assert(jc_holiday_overlay_render_original(
+            pixels, WIDTH, HEIGHT, WIDTH, holiday, &palette,
+            &sheet, 0u, &drawn));
+        assert(drawn == 1u);
+        assert(pixels[(size_t)298u * WIDTH + 410u] == palette.xrgb[2]);
+        assert(pixels[(size_t)298u * WIDTH + 409u] ==
+               UINT32_C(0x5a5a5a5a));
+        assert(!jc_holiday_overlay_render_original(
+            pixels, WIDTH, HEIGHT, WIDTH, jc_holiday_extra_by_id(36),
+            &palette, &sheet, 0u, NULL));
     }
 
     free(pixels);

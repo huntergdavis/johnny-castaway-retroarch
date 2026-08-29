@@ -30,7 +30,7 @@ To test a downloaded release package instead:
 
 ```sh
 ./scripts/test-psp-ppsspp.sh \
-  build/release/v0.1.3/johnny-castaway-psp-frontend.zip
+  build/release/v0.1.4/johnny-castaway-psp-frontend.zip
 ```
 
 The host needs `curl`, `grep`, `sha256sum`, `timeout`, `unzip`, `xvfb-run`,

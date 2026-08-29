@@ -13,16 +13,22 @@
         <h1>Johnny Castaway</h1>
         <p>
           Choose your own <code>RESOURCE.MAP</code> and
-          <code>RESOURCE.001</code>, or stage them in the generated local test
-          directory for automatic startup. Selected files stay in the browser's
-          in-memory filesystem.
+          <code>RESOURCE.001</code>, plus any optional supported
+          <code>sound&lt;ID&gt;.wav</code> files, or stage them in the generated
+          local test directory for automatic startup. Selected files stay in
+          the browser's in-memory filesystem.
         </p>
       </header>
 
       <section class="controls" aria-label="Player controls">
         <label class="file-picker">
-          <span>Johnny data files</span>
-          <input id="content-files" type="file" accept=".map,.001" multiple>
+          <span>Johnny data and optional sound files</span>
+          <input
+            id="content-files"
+            type="file"
+            accept=".map,.001,.wav,audio/wav,audio/x-wav"
+            multiple
+          >
         </label>
         <button id="start" disabled>Start Johnny</button>
         <button id="menu" disabled>RetroArch menu</button>

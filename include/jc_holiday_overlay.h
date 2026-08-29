@@ -2,8 +2,9 @@
 #ifndef JC_HOLIDAY_OVERLAY_H
 #define JC_HOLIDAY_OVERLAY_H
 
-#include "jc_caption_render.h"
+#include "jc_bmp.h"
 #include "jc_extras.h"
+#include "jc_palette.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -38,22 +39,25 @@ const jc_holiday_extra_t *jc_holiday_overlay_resolve(
     const jc_holiday_overlay_selection_t *selection,
     int year, int month, int day);
 
-bool jc_holiday_overlay_format(const jc_holiday_extra_t *holiday,
-                               char *text, size_t text_size);
+/*
+ * The embedded emblem set contains only PS1-port-generated frames 4..35.
+ * Sierra's four original holiday sprites remain excluded.
+ */
+bool jc_holiday_overlay_has_emblem(const jc_holiday_extra_t *holiday);
+bool jc_holiday_overlay_render_emblem(
+    uint32_t *pixels, size_t width, size_t height, size_t stride,
+    const jc_holiday_extra_t *holiday, const jc_palette_t *palette,
+    size_t *drawn_pixels);
 
 /*
- * Draw an asset-free holiday title/date preview over an XRGB8888 surface.
- * The existing embedded 5x7 caption font is used, so no Sierra/Dynamix
- * artwork or platform font is needed. Stride is measured in pixels.
+ * Render one of the four original frames only from a caller-owned sheet,
+ * normally decoded from the user's RESOURCE archive. No original bytes are
+ * embedded by this module.
  */
-bool jc_holiday_overlay_render(uint32_t *pixels, size_t width, size_t height,
-                               size_t stride,
-                               const jc_holiday_extra_t *holiday,
-                               jc_caption_render_result_t *result);
-
-bool jc_holiday_overlay_render_anchored(
+bool jc_holiday_overlay_render_original(
     uint32_t *pixels, size_t width, size_t height, size_t stride,
-    const jc_holiday_extra_t *holiday, jc_caption_anchor_t anchor,
-    jc_caption_render_result_t *result);
+    const jc_holiday_extra_t *holiday, const jc_palette_t *palette,
+    jc_bmp_t *user_sheet, uint8_t transparent_index,
+    size_t *drawn_pixels);
 
 #endif

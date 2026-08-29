@@ -53,13 +53,18 @@ JOBS=8 ./scripts/build-web-player.sh
 
 - `build/emscripten/johnny_castaway_libretro_emscripten.bc` is linked into a
   real RetroArch Web `johnny_castaway_libretro.js` and `.wasm` pair.
-- Both resource files are selected at once and normalized to
+- Both resource files and any optional supported `sound<ID>.wav` siblings are
+  selected at once and normalized to
   `/home/web_user/retroarch/userdata/content/RESOURCE.MAP` and
-  `RESOURCE.001` in BrowserFS. This satisfies the core's full-path and sibling
-  archive lookup behavior.
-- Locally staged, optional `sound<ID>.wav` files are discovered and installed
-  beside the resource pair. They remain user-supplied data and are never part
-  of the generated Web distribution.
+  `RESOURCE.001` in BrowserFS, with sounds installed beside them. This satisfies
+  the core's full-path and sibling archive/audio lookup behavior.
+- Manually selected or locally staged optional `sound<ID>.wav` files are
+  validated, discovered, and installed beside the resource pair. They remain
+  user-supplied data and are never part of the generated Web distribution.
+- Normal authentic browser acceptance selects the 4/20 Day core option,
+  resumes gameplay, and requires a material change inside the exact PS1
+  32x32 emblem placement at `(404,284)`. Native tests bind that change to the
+  pinned GPL frame-14 payload and its 241 nontransparent pixels.
 - The content launches directly, without requiring navigation through
   RetroArch's content browser.
 - The RetroArch menu remains available through the page button, including all
@@ -185,8 +190,10 @@ changes; a fixed chapter requires material scripted-playfield changes. Both
 continuously queue and complete the pinned RetroArch Web Audio driver's 10 ms
 blocks during a separate idle five-second interval. The unchanged strict evaluator
 requires at least 95 queued buffers per elapsed second, scheduled duration between
-0.98 and 1.02 times observed wall time, at least 90% of queued buffers ended before
-the snapshot, the pinned 8-12 ms block-size range, and zero positive scheduler gaps.
+0.98 and 1.02 times observed wall time, the pinned 8-12 ms block-size range, zero
+positive scheduler gaps including across reset, and live scheduling headroom from
+-5 to 425 ms. Ended-buffer count remains diagnostic because Web Audio render completion
+callbacks run separately from scheduling and may legitimately trail a short snapshot.
 The stable-menu phase must either pass those same continuous-audio gates or report an
 exact intentional pause: zero queued/ended buffers, zero queued frames and scheduled
 seconds, and zero positive gaps. A partial or starved schedule fails either phase.

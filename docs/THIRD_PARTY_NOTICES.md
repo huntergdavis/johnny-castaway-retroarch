@@ -25,8 +25,18 @@ metadata are translated from Hunter Davis's GPLv3/GPL-3.0-or-later PlayStation p
 revision `25c5d84593ac20cbee354eaab7779ab7397d6bbe`. That project states that its caption
 text was freshly authored from scene content. The original Sierra/Dynamix media is not
 included in these tables. The holiday overlay reuses that port's automatic/off/manual
-interaction policy, but its C99 renderer is new and uses only the embedded conventional
-5x7 font; the PS1 port's `HOLIDAY.BMP` sprite media is not included.
+interaction and scene-placement policy, but its C99 indexed-emblem renderer is new and
+draws no title/date banner. Frames 4-35
+of the PS1 port's generated `HOLIDAY.BMP` are GPL-authored 32x32 emblems and are
+mechanically imported as `src/jc_holiday_emblems.inc`. The imported 16,384-byte payload
+has SHA-256 `59c9c3d2c4cb5c94684e3c5f7b5d90562aa18285d74bd786044a8d7ce54ce2db`.
+The first 8,892 bytes contain four Sierra holiday frames and are deliberately excluded
+from the embedded payload. The core can decode frames 0-3 from the user's own
+`RESOURCE.MAP`/`.001` at runtime; those bytes are never committed or packaged.
+The full pinned input is accepted only at SHA-256
+`e44b00840a6408037fa01a118b03fbc0a976274871126b3421eb3a6bcd0cc9ec`.
+The PS1 generator was authored and human-reviewed by Hunter Davis, with primitive
+drafts credited there to an AI subagent, in commits `cc2ef4d69a` and `0a3ef05ecf`.
 
 The automatic story policy, transition shapes, persistent-island restoration, and
 walk/tree-occlusion behavior were also studied from that pinned GPL PlayStation source.

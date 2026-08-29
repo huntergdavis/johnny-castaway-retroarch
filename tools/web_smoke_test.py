@@ -629,7 +629,9 @@ def diagnostics(driver: WebDriver) -> dict[str, Any]:
           pageErrors: smoke.pageErrors || [],
           rejections: smoke.rejections || [],
           consoleErrors: smoke.consoleErrors || [],
-          audioProbe: window.__jcAudioProbe || null,
+          audioProbe: typeof window.__jcSnapshotAudioProbe === 'function'
+            ? window.__jcSnapshotAudioProbe()
+            : window.__jcAudioProbe || null,
           webglProbe: window.__jcWebGLProbe || null,
         };
         """
@@ -1020,10 +1022,34 @@ def evaluate_strict_audio_window(
             f"{description} Web Audio scheduled duration is inconsistent "
             f"with wall time: {scheduled_seconds:.3f}s over {elapsed:.3f}s"
         )
-    if ended < queued * 0.90:
+    if ended > queued:
         failures.append(
-            f"{description} Web Audio ended only {ended}/{queued} "
-            "scheduled buffers"
+            f"{description} Web Audio ended {ended}/{queued} scheduled buffers"
+        )
+    schedule_leads = [
+        float(context["scheduleLeadSeconds"])
+        for context in running_contexts
+        if context.get("scheduleLeadSeconds") is not None
+    ]
+    # The bundled player configures a 384 ms RWebAudio queue. Its pinned
+    # driver can add a 10 ms start offset and Firefox adds 10 ms; one final
+    # 10 ms block plus 1 ms timestamp rounding yields a 415 ms hard bound.
+    # Keep a further 10 ms measurement margin without allowing a second block.
+    minimum_schedule_lead = -0.005
+    maximum_schedule_lead = 0.425
+    if len(schedule_leads) != len(running_contexts):
+        failures.append(
+            f"{description} Web Audio schedule headroom is unavailable: "
+            f"{contexts!r}"
+        )
+    elif any(
+        lead < minimum_schedule_lead or lead > maximum_schedule_lead
+        for lead in schedule_leads
+    ):
+        failures.append(
+            f"{description} Web Audio schedule headroom is outside "
+            f"{minimum_schedule_lead:.3f}..{maximum_schedule_lead:.3f}s: "
+            f"{schedule_leads!r}"
         )
     buffer_min = int(audio.get("windowBufferFramesMin") or 0)
     buffer_max = int(audio.get("windowBufferFramesMax") or 0)
@@ -1050,6 +1076,7 @@ def evaluate_strict_audio_window(
             "observation_elapsed_seconds": elapsed,
             "queued_buffers": queued,
             "ended_buffers": ended,
+            "pending_ended_buffers": max(0, queued - ended),
             "queued_frames": frames,
             "scheduled_seconds": scheduled_seconds,
             "scheduled_to_wall_ratio": cadence_ratio,
@@ -1058,6 +1085,11 @@ def evaluate_strict_audio_window(
             "positive_gap_count": positive_gaps,
             "maximum_positive_gap_ms": maximum_gap_ms,
             "maximum_queue_interval_ms": audio.get("windowMaxQueueIntervalMs"),
+            "schedule_lead_seconds": schedule_leads,
+            "schedule_lead_bounds_seconds": [
+                minimum_schedule_lead,
+                maximum_schedule_lead,
+            ],
         },
         failures,
     )
@@ -1077,11 +1109,8 @@ def capture_strict_audio_window(
     time.sleep(5.0)
     snapshot = driver.execute(
         """
-        if (!window.__jcAudioProbe) return null;
-        const copy = JSON.parse(JSON.stringify(window.__jcAudioProbe));
-        copy.observedWindowElapsedMs =
-          performance.now() - window.__jcAudioProbe.windowStartedAtMs;
-        return copy;
+        return typeof window.__jcSnapshotAudioProbe === 'function'
+          ? window.__jcSnapshotAudioProbe() : null;
         """
     )
     return evaluate_strict_audio_window(
@@ -1091,6 +1120,8 @@ def capture_strict_audio_window(
 
 LATE_ENDING_CLOCK_REGION = (0.38, 0.17, 0.56, 0.43)
 LATE_ENDING_LOWER_BAND_TOP = 0.72
+HOLIDAY_EMBLEM_REGION = (404 / 640, 284 / 480, 436 / 640, 316 / 480)
+HOLIDAY_FOUR_TWENTY_VALUE_INDEX = 14
 
 
 def late_ending_color_metrics(
@@ -1360,7 +1391,8 @@ def capture_temporal_gameplay(
           return copy;
         };
         return {
-          audio: snapshot(window.__jcAudioProbe),
+          audio: typeof window.__jcSnapshotAudioProbe === 'function'
+            ? window.__jcSnapshotAudioProbe() : null,
           webgl: snapshot(window.__jcWebGLProbe),
         };
         """
@@ -1579,6 +1611,7 @@ def run_smoke(args: argparse.Namespace, firefox: str, geckodriver: str) -> int:
                 f"--chapter value is not in src/jc_chapters.c: {args.chapter}"
             )
 
+    selected_sound_paths: list[pathlib.Path] = []
     if args.staged_local_content:
         staged_files = validate_staged_local_content(dist)
         local_content = dist / "local-content"
@@ -1618,6 +1651,12 @@ def run_smoke(args: argparse.Namespace, firefox: str, geckodriver: str) -> int:
             else None
         )
         content_description = "user-owned local data"
+        selected_sound_paths = [
+            path
+            for sample_id in range(25)
+            if sample_id not in (11, 13)
+            and (path := content_directory / f"sound{sample_id}.wav").is_file()
+        ]
         if args.chapter:
             content_description += f" (fixed {args.chapter} chapter)"
     server, url = start_web_server(dist)
@@ -1650,6 +1689,10 @@ def run_smoke(args: argparse.Namespace, firefox: str, geckodriver: str) -> int:
         result["test_early_chapter_motion"] = True
     if args.staged_local_content:
         result["staged_local_content"] = [path.name for path in staged_files]
+    elif selected_sound_paths:
+        result["selected_sound_files"] = [
+            path.name for path in selected_sound_paths
+        ]
     elif args.content_dir is None:
         result["synthetic_content"] = [
             str(map_path.relative_to(ROOT)),
@@ -1682,7 +1725,10 @@ def run_smoke(args: argparse.Namespace, firefox: str, geckodriver: str) -> int:
 
         if not args.staged_local_content:
             file_input = driver.find("#content-files")
-            driver.upload(file_input, [map_path, archive_path])
+            driver.upload(
+                file_input,
+                [map_path, archive_path, *selected_sound_paths],
+            )
             wait_until(
                 "both content files to be accepted",
                 args.timeout,
@@ -1743,6 +1789,21 @@ def run_smoke(args: argparse.Namespace, firefox: str, geckodriver: str) -> int:
             raise SmokeFailure(
                 "server-local auto-load did not load all 23 optional sound effects"
             )
+        if selected_sound_paths:
+            expected_sound_status = (
+                f"Loaded {len(selected_sound_paths)} optional sound effects."
+            )
+            if expected_sound_status not in state.get("status", ""):
+                raise SmokeFailure(
+                    "manual picker did not report every selected sound effect"
+                )
+            expected_sound_log = (
+                f"optional sound effects: {len(selected_sound_paths)} loaded"
+            )
+            if expected_sound_log not in joined_console:
+                raise SmokeFailure(
+                    "core did not load every manually selected sound effect"
+                )
         fatal_messages = (
             "[EMSCRIPTEN/WebGL] Failed",
             "[libretro ERROR]",
@@ -2072,6 +2133,50 @@ def run_smoke(args: argparse.Namespace, firefox: str, geckodriver: str) -> int:
         }
         if menu_audio_failures:
             raise SmokeFailure("; ".join(menu_audio_failures))
+
+        # From the Story category page, force the PS1-port-added 4/20 Day
+        # value, close the frontend menu, and prove its 32x32 emblem changes
+        # the exact PS1 placement region. Native tests bind that region to the
+        # mechanically imported frame-14 payload and its 241 opaque pixels.
+        driver.key_press(WEBDRIVER_KEY_HOME)
+        driver.key_press(WEBDRIVER_KEY_DOWN)
+        driver.key_press(RETROARCH_MENU_OK)
+        driver.key_press(WEBDRIVER_KEY_HOME)
+        for _ in range(HOLIDAY_FOUR_TWENTY_VALUE_INDEX):
+            driver.key_press(WEBDRIVER_KEY_DOWN)
+        driver.key_press(RETROARCH_MENU_OK)
+        driver.click(driver.find("#menu"))
+        holiday_path = artifacts / "holiday-420-gameplay.png"
+        holiday_hash = wait_until(
+            "4/20 Day holiday gameplay",
+            args.timeout,
+            lambda: (
+                current
+                if (
+                    current := driver.screenshot(canvas_element, holiday_path)
+                ) != story_bottom_hash
+                else None
+            ),
+        )
+        holiday_region_ratio = region_change_ratio(
+            png_pixels(game_paths[-1]),
+            png_pixels(holiday_path),
+            HOLIDAY_EMBLEM_REGION,
+        )
+        if holiday_region_ratio < 0.08:
+            raise SmokeFailure(
+                "4/20 Day changed only "
+                f"{holiday_region_ratio:.3%} of its PS1 emblem region"
+            )
+        result["screenshots"]["holiday_420_gameplay_sha256"] = holiday_hash
+        result["holiday_emblem"] = {
+            "value": "four_twenty",
+            "sprite_index": 14,
+            "region": HOLIDAY_EMBLEM_REGION,
+            "region_change_ratio": holiday_region_ratio,
+            "passed": True,
+        }
+        result["menu_navigation"]["route"] += "/Holiday/4/20 Day/Resume"
         final_state = diagnostics(driver)
         if final_state.get("pageErrors") or final_state.get("rejections"):
             raise SmokeFailure(

@@ -363,12 +363,14 @@ $(CAPTION_RENDER_TEST_TARGET): src/jc_caption_render.c src/jc_captions.c \
 	$(HOST_CC) -std=c99 $(WARNINGS) -Iinclude -O2 -o $@ \
 		src/jc_caption_render.c src/jc_captions.c tests/test_caption_render.c
 
-$(HOLIDAY_OVERLAY_TEST_TARGET): src/jc_caption_render.c src/jc_extras.c \
-                                src/jc_holiday_overlay.c \
+$(HOLIDAY_OVERLAY_TEST_TARGET): src/jc_bmp.c src/jc_decompress.c \
+                                src/jc_extras.c src/jc_holiday_overlay.c \
+                                src/jc_surface.c \
                                 tests/test_holiday_overlay.c
 	@mkdir -p $(dir $@)
 	$(HOST_CC) -std=c99 $(WARNINGS) -Iinclude -O2 -o $@ \
-		src/jc_caption_render.c src/jc_extras.c src/jc_holiday_overlay.c \
+		src/jc_bmp.c src/jc_decompress.c src/jc_extras.c \
+		src/jc_holiday_overlay.c src/jc_surface.c \
 		tests/test_holiday_overlay.c
 
 $(TTM_RENDERER_TEST_TARGET): src/jc_ads.c src/jc_bmp.c src/jc_compositor.c \

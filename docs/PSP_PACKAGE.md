@@ -77,9 +77,9 @@ provenance check rejects it:
 ALLOW_DIRTY=1 ./scripts/build-psp-frontend.sh --offline
 ```
 
-The script captures the exact HEAD, `0.1.3` metadata version, metadata hash, and a
+The script captures the exact HEAD, `0.1.4` metadata version, metadata hash, and a
 full tracked/untracked tree fingerprint before building and rejects any drift at the
-end. It requires a MIPS R3000 ELF32 executable, the PBP header, the linked `0.1.3`
+end. It requires a MIPS R3000 ELF32 executable, the PBP header, the linked `0.1.4`
 version, all 21 Core Option keys, a byte-identical packaged PBP, exact legal and
 provenance files, and no original game-data filenames. The install ZIP is made with
 `tools/make_deterministic_zip.py`; every member is a sorted, safe canonical path with

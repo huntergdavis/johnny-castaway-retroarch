@@ -169,6 +169,7 @@ function installAudioSmokeProbe() {
     contexts: [],
   };
   const contextRecords = new WeakMap();
+  const trackedContexts = [];
   const originalCreateBufferSource = prototype.createBufferSource;
 
   function contextRecord(context) {
@@ -185,6 +186,7 @@ function installAudioSmokeProbe() {
       };
       contextRecords.set(context, record);
       probe.contexts.push(record);
+      trackedContexts.push(context);
     }
     record.state = context.state;
     record.sampleRate = context.sampleRate;
@@ -205,11 +207,29 @@ function installAudioSmokeProbe() {
     probe.windowMaxQueueIntervalMs = 0;
     probe.windowBufferFramesMin = null;
     probe.windowBufferFramesMax = null;
-    probe.contexts.forEach((record) => {
-      record.lastScheduledEndSeconds = null;
-      record.lastQueueWallMs = null;
-    });
     return probe;
+  };
+
+  window.__jcSnapshotAudioProbe = () => {
+    const copy = JSON.parse(JSON.stringify(probe));
+    copy.observedWindowElapsedMs =
+      performance.now() - probe.windowStartedAtMs;
+    copy.contexts = probe.contexts.map((record, index) => {
+      const context = trackedContexts[index];
+      const currentTimeSeconds = context?.currentTime ?? null;
+      const lastScheduledEndSeconds = record.lastScheduledEndSeconds;
+      return {
+        ...record,
+        state: context?.state ?? record.state,
+        sampleRate: context?.sampleRate ?? record.sampleRate,
+        currentTimeSeconds,
+        scheduleLeadSeconds:
+          currentTimeSeconds === null || lastScheduledEndSeconds === null
+            ? null
+            : lastScheduledEndSeconds - currentTimeSeconds,
+      };
+    });
+    return copy;
   };
 
   prototype.createBufferSource = function (...createArguments) {
@@ -467,15 +487,52 @@ function setStatus(message, isError = false) {
   statusElement.classList.toggle("error", isError);
 }
 
-function selectedPair() {
+function selectedContent() {
   const selected = Array.from(contentInput.files || []);
   const map = selected.find((file) => file.name.toUpperCase().endsWith(".MAP"));
   const archive = selected.find((file) => file.name.toUpperCase().endsWith(".001"));
-  return map && archive ? { map, archive } : null;
+  const soundById = new Map();
+  const soundErrors = [];
+  selected
+    .filter((file) => file.name.toLowerCase().endsWith(".wav"))
+    .forEach((file) => {
+      const match = /^sound([0-9]+)\.wav$/i.exec(file.name);
+      const id = match ? Number(match[1]) : -1;
+      if (!match || !originalSoundIds.includes(id)) {
+        soundErrors.push(`${file.name} is not a supported sound<ID>.wav file`);
+      } else if (soundById.has(id)) {
+        soundErrors.push(`sound${id}.wav was selected more than once`);
+      } else {
+        soundById.set(id, { id, name: file.name, file });
+      }
+    });
+  const pair =
+    map && archive && soundErrors.length === 0
+      ? {
+          map,
+          archive,
+          sounds: Array.from(soundById.values()).sort((a, b) => a.id - b.id),
+        }
+      : null;
+  return { map, archive, sounds: Array.from(soundById.values()), soundErrors, pair };
+}
+
+function selectedPair() {
+  return selectedContent().pair;
 }
 
 function readFile(file) {
   return file.arrayBuffer().then((buffer) => new Uint8Array(buffer));
+}
+
+async function readSelectedSounds(sounds) {
+  return Promise.all(
+    sounds.map(async (sound) => ({
+      id: sound.id,
+      name: sound.name,
+      data: sound.data || (await readFile(sound.file)),
+    })),
+  );
 }
 
 async function localServerPair() {
@@ -611,13 +668,15 @@ export async function start(pair = selectedPair(), coreOptions = null) {
   setStatus("Loading the local RetroArch Web runtime…");
 
   try {
-    const [bundleResponse, mapData, archiveData, module] = await Promise.all([
+    const [bundleResponse, mapData, archiveData, sounds, module] =
+      await Promise.all([
       fetch("assets/frontend/bundle.zip").then((response) => {
         if (!response.ok) throw new Error(`asset bundle HTTP ${response.status}`);
         return response.arrayBuffer();
       }),
       pair.mapData || readFile(pair.map),
       pair.archiveData || readFile(pair.archive),
+      readSelectedSounds(pair.sounds || []),
       createModule(),
     ]);
     const zipFileSystem = await createZipFileSystem(bundleResponse);
@@ -628,7 +687,7 @@ export async function start(pair = selectedPair(), coreOptions = null) {
       pair,
       mapData,
       archiveData,
-      pair.sounds || [],
+      sounds,
       coreOptions,
     );
 
@@ -637,8 +696,8 @@ export async function start(pair = selectedPair(), coreOptions = null) {
     menuButton.disabled = false;
     resetButton.disabled = false;
     fullscreenButton.disabled = false;
-    const soundStatus = pair.sounds?.length
-      ? ` Loaded ${pair.sounds.length} optional sound effects.`
+    const soundStatus = sounds.length
+      ? ` Loaded ${sounds.length} optional sound effects.`
       : "";
     setStatus(`Running.${soundStatus} Use RetroArch menu to inspect core options.`);
     module.callMain(module.arguments);
@@ -689,13 +748,19 @@ function resetCore() {
 }
 
 contentInput.addEventListener("change", () => {
-  const pair = selectedPair();
+  const selection = selectedContent();
+  const pair = selection.pair;
   startButton.disabled = !pair;
   setStatus(
-    pair
-      ? `Ready: ${pair.map.name} + ${pair.archive.name}`
-      : "Choose one .MAP file and one .001 file.",
-    !pair && contentInput.files.length > 0,
+    selection.soundErrors.length
+      ? selection.soundErrors.join("; ")
+      : pair
+        ? `Ready: ${pair.map.name} + ${pair.archive.name}` +
+          (pair.sounds.length
+            ? ` + ${pair.sounds.length} optional sound effects`
+            : "")
+        : "Choose one .MAP file and one .001 file; optional sound<ID>.wav files may be selected at the same time.",
+    (!pair || selection.soundErrors.length > 0) && contentInput.files.length > 0,
   );
 });
 

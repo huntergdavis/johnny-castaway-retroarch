@@ -27,8 +27,6 @@ static unsigned story_control_options_found;
 static bool controller_registered;
 static bool frame_has_color;
 static size_t holiday_bar_pixels;
-static size_t holiday_bar_top_pixels;
-static size_t holiday_bar_bottom_pixels;
 static bool variable_updated;
 static const char *initial_screen_value = "intro";
 static const char *chapter_value = "screen";
@@ -52,6 +50,7 @@ static const char *caption_background_value = "bar";
 static const char *caption_opacity_value = "63";
 static const char *caption_position_value = "bottom";
 static uint64_t frame_hash;
+static uint64_t holiday_emblem_region_hash;
 static size_t magenta_pixels;
 static size_t canonical_key_pixels;
 static size_t canonical_key_longest_run;
@@ -624,11 +623,10 @@ static void RETRO_CALLCONV video(const void *data, unsigned width,
     assert(width == 640u && height == 480u);
     assert(pitch == width * sizeof(uint32_t));
     holiday_bar_pixels = 0u;
-    holiday_bar_top_pixels = 0u;
-    holiday_bar_bottom_pixels = 0u;
     magenta_pixels = 0u;
     canonical_key_pixels = 0u;
     canonical_key_longest_run = 0u;
+    holiday_emblem_region_hash = UINT64_C(1469598103934665603);
     for (index = 0u; index < count; ++index) {
         unsigned red = (pixels[index] >> 16) & 0xffu;
         unsigned green = (pixels[index] >> 8) & 0xffu;
@@ -637,15 +635,15 @@ static void RETRO_CALLCONV video(const void *data, unsigned width,
         unsigned maximum = red > blue ? red : blue;
         hash ^= pixels[index];
         hash *= 1099511628211ull;
+        if (index / width >= 284u && index / width < 316u &&
+            index % width >= 404u && index % width < 436u) {
+            holiday_emblem_region_hash ^= pixels[index];
+            holiday_emblem_region_hash *= UINT64_C(1099511628211);
+        }
         if (pixels[index] != 0u)
             frame_has_color = true;
-        if (pixels[index] == 0x00132945u) {
+        if (pixels[index] == 0x00132945u)
             ++holiday_bar_pixels;
-            if (index < count / 2u)
-                ++holiday_bar_top_pixels;
-            else
-                ++holiday_bar_bottom_pixels;
-        }
         if (minimum >= 144u && green <= 48u && maximum - minimum <= 24u &&
             minimum - green >= 112u)
             ++magenta_pixels;
@@ -740,6 +738,7 @@ int main(int argc, char **argv)
     size_t legacy_size;
     uint64_t intro_hash;
     uint64_t diagnostic_hash;
+    uint64_t diagnostic_emblem_region_hash;
     uint64_t chapter_hash;
     uint64_t restored_hash;
     bool restored_audio_signal;
@@ -815,12 +814,14 @@ int main(int argc, char **argv)
     variable_updated = true;
     retro_run();
     diagnostic_hash = frame_hash;
+    diagnostic_emblem_region_hash = holiday_emblem_region_hash;
     assert(diagnostic_hash != intro_hash);
 
-    holiday_value = "valentines_day";
+    holiday_value = "four_twenty";
     variable_updated = true;
     retro_run();
-    assert(holiday_bar_pixels > 1000u);
+    assert(holiday_emblem_region_hash != diagnostic_emblem_region_hash);
+    assert(holiday_bar_pixels == 0u);
 
     holiday_value = "off";
     variable_updated = true;
@@ -962,11 +963,10 @@ int main(int argc, char **argv)
     retro_run();
     assert(frame_hash != chapter_hash);
 
-    holiday_value = "valentines_day";
+    holiday_value = "four_twenty";
     variable_updated = true;
     retro_run();
-    assert(holiday_bar_bottom_pixels > 1000u);
-    assert(holiday_bar_top_pixels == 0u);
+    assert(holiday_bar_pixels == 0u);
 
     holiday_value = "off";
     variable_updated = true;
